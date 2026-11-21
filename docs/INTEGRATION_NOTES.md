@@ -16,7 +16,7 @@ Mikro-Klima'ya sunucudan sunucuya bir uç eklendi (`worker/nexus.js`) ve `src/in
 
 ## 1b. Giriş = FOREVYE ID (BAĞLANDI)
 `POST /api/auth/id/start` (PKCE adresi), `GET /api/auth/id/callback` (kod değişimi → çerez oturumu), `POST /api/auth/id/complete` (ilk girişte kullanıcı adı + kart ismi).
-Tablolar: `id_links` (Nexus kullanıcısı ↔ ID kullanıcısı), `id_states`, `id_pending` (migrations/0002_forevye_id.sql). Ayarlar: `ID_URL`, `ID_API_URL`; Mikro-Klima tarafında `ID_REDIRECTS`'e `sanal-banka=<site>/api/auth/id/callback`.
+Tablolar: `id_links` (Nexus kullanıcısı ↔ ID kullanıcısı), `id_states`, `id_pending` (migrations/0003_forevye_id.sql). Ayarlar: `ID_URL`, `ID_API_URL`; Mikro-Klima tarafında `ID_REDIRECTS`'e `sanal-banka=<site>/api/auth/id/callback`.
 Eski e-posta hesabı, aynı doğrulanmış e-posta ile ID'ye ilk girişte otomatik bağlanır. `LEGACY_LOGIN="off"` e-posta/şifre kayıt ve girişini (410) kapatır; önce herkesin ID ile bağlandığından emin ol.
 
 ## 2. Oyun içi alışveriş (sunucudan sunucuya)
