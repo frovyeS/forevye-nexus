@@ -17,6 +17,19 @@ const idConfigured = (env) => Boolean(env.ID_URL && env.ID_API_URL);
 const idCallbackUrl = (url) => `${url.origin}/api/auth/id/callback`;
 const ID_APP = 'sanal-banka';
 
+// 0003_forevye_id.sql canlı D1'e uygulanmadıysa "no such table: id_states" → 500 "Beklenmeyen bir hata oluştu" olurdu.
+// Tablolar eksikse (IF NOT EXISTS, migration'la birebir aynı şema) burada kendiliğinden kurulur; isolate başına bir kez çalışır.
+const ID_SCHEMA_OK = new WeakSet();
+async function ensureIdSchema(env) {
+  if (!env.DB || ID_SCHEMA_OK.has(env.DB)) return;
+  await env.DB.batch([
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS id_links (user_id TEXT PRIMARY KEY REFERENCES users(id), id_user_id TEXT NOT NULL UNIQUE, linked_at INTEGER NOT NULL)'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS id_states (state_hash TEXT PRIMARY KEY, verifier TEXT NOT NULL, expires_at INTEGER NOT NULL)'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS id_pending (token_hash TEXT PRIMARY KEY, id_user_id TEXT NOT NULL, email TEXT NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER)'),
+  ]);
+  ID_SCHEMA_OK.add(env.DB);
+}
+
 const CODE_TTL = 10 * MIN;
 const MAX_ATTEMPTS = 5;
 
@@ -189,6 +202,7 @@ export const authRoutes = {
   // start → ID sitesi (izin) → callback (kod değişimi, sunucudan sunucuya) → oturum çerezi. ID parolayı hiç Nexus'a vermez.
   async idStart(req, env, url) {
     if (!idConfigured(env)) throw new HttpError(503, 'id_unavailable', 'FOREVYE ID ile giriş bu sunucuda ayarlı değil.');
+    await ensureIdSchema(env);
     await rateLimit(env, `idstart:ip:${clientIp(req)}`, 20, 10 * MIN);
     const verifier = randomToken(32), state = randomToken(18), t = now(env);
     await env.DB.batch([
@@ -203,6 +217,7 @@ export const authRoutes = {
   async idCallback(req, env, url) {
     const fail = (code) => new Response(null, { status: 302, headers: { location: `/?id_error=${code}` } });
     if (!idConfigured(env)) return fail('id_unavailable');
+    try { await ensureIdSchema(env); } catch { return fail('id_failed'); }
     try { await rateLimit(env, `idcb:ip:${clientIp(req)}`, 30, 10 * MIN); } catch { return fail('rate_limited'); }
     const code = url.searchParams.get('code') || '', state = url.searchParams.get('state') || '';
     if (!code || !state) return fail('id_failed');
@@ -248,6 +263,7 @@ export const authRoutes = {
 
   // İlk kez ID ile gelen kullanıcı: Nexus kullanıcı adı + kart ismi seçer (şifre yok; kimlik ID'dedir).
   async idComplete(req, env) {
+    await ensureIdSchema(env);
     const b = await readJson(req);
     await rateLimit(env, `idc:ip:${clientIp(req)}`, 20, HOUR);
     if (typeof b.token !== 'string') throw new HttpError(400, 'invalid_token', 'Kayıt oturumu geçersiz. Baştan başlayın.');
