@@ -1,5 +1,5 @@
 import { api, onUnauth } from './api.js';
-import { h, mount, toast, money, dt, load, field, busy, empty } from './ui.js';
+import { h, mount, toast, money, dt, load, field, pwField, busy, empty, icon, back } from './ui.js';
 import { renderCard } from './cardview.js';
 import { defaultDesign, validateDesign } from './card-contract.js';
 
@@ -12,7 +12,7 @@ function ask(msg) { const r = prompt(msg); return r && r.trim().length >= 3 ? r.
 function loginGate() {
   const email = h('input', { type: 'email', required: true, autocomplete: 'username' }); const pw = h('input', { type: 'password', required: true, autocomplete: 'current-password' });
   const err = h('p', { class: 'err-text', role: 'alert' }); const btn = h('button', { class: 'btn primary block', type: 'submit', text: 'Giriş yap' });
-  mount(root, h('div', { class: 'auth' }, h('h1', { text: 'Yönetim girişi' }), h('form', { onSubmit: (e) => { e.preventDefault(); busy(btn, async () => { try { await api.post('/api/auth/login', { email: email.value, password: pw.value }); init(); } catch (ex) { err.textContent = ex.message; } }); } }, field('E-posta', email), field('Şifre', pw), err, btn)));
+  mount(root, h('div', { class: 'auth' }, h('h1', { text: 'Yönetim girişi' }), h('form', { onSubmit: (e) => { e.preventDefault(); busy(btn, async () => { try { await api.post('/api/auth/login', { email: email.value, password: pw.value }); init(); } catch (ex) { err.textContent = ex.message; } }); } }, field('E-posta', email), pwField('Şifre', pw), err, btn)));
 }
 
 async function init() {
@@ -26,7 +26,7 @@ async function init() {
   const bar = h('div', { class: 'seg' });
   const show = (k) => { current = k; for (const b of bar.children) b.setAttribute('aria-pressed', String(b.dataset.k === k)); ({ users: usersTab, announce: announceTab, templates: templatesTab, audit: auditTab, gift: giftTab, roles: rolesTab })[k](body); };
   tabs.forEach(([k, l]) => bar.append(h('button', { type: 'button', 'data-k': k, 'aria-pressed': 'false', text: l, onClick: () => show(k) })));
-  mount(root, h('div', { class: 'shell' }, h('main', { class: 'screen' }, h('div', { class: 'topbar' }, h('h1', { text: 'FOREVYE NEXUS • Yönetim' }), h('span', { class: 'chip', text: `${admin.username} (${admin.role})` })), bar, body, h('p', { class: 'virtual' }, h('a', { href: '/', text: '‹ Uygulamaya dön' })))));
+  mount(root, h('div', { class: 'shell' }, h('main', { class: 'screen' }, h('div', { class: 'topbar' }, h('h1', { text: 'FOREVYE NEXUS • Yönetim' }), h('span', { class: 'chip', text: `${admin.username} (${admin.role})` })), bar, body, h('p', { class: 'virtual' }, back('/', 'Uygulamaya dön')))));
   show('users');
 }
 

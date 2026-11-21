@@ -1,12 +1,13 @@
 // Kristal borsası ekranı. Fiyat ve tutarlar SUNUCUDAN gelir; istemci yalnızca gösterir ve niyet (yön + miktar) gönderir.
 import { api } from './api.js';
-import { h, mount, toast, money, dt, load, field, busy, empty } from './ui.js';
+import { h, mount, toast, money, dt, load, field, busy, empty, icon } from './ui.js';
 import { state, refreshMe, cur } from './state.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 export const fnPrice = (micro) => `${(micro / 1e6).toLocaleString('tr-TR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} FN`;
 export const qtyFmt = (q) => (q / 1e4).toLocaleString('tr-TR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-const pct = (v) => `${v > 0 ? '▲' : v < 0 ? '▼' : '•'} %${Math.abs(v).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const pct = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}%${Math.abs(v).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const deltaEl = (v) => h('span', { class: `delta ${cls(v)}` }, v > 0 ? icon('up', 16) : v < 0 ? icon('down', 16) : null, pct(v));
 const cls = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
 
 function sparkline(points) {
@@ -31,17 +32,17 @@ export function marketView(screen) {
   async function draw() {
     let m, hist;
     try { [m, hist] = await Promise.all([api.get('/api/market'), api.get(`/api/market/history?range=${range}`)]); }
-    catch (e) { return mount(holder, h('div', { class: 'notice bad', role: 'alert', text: e.message })); }
-    if (!m.available) return mount(holder, h('div', { class: 'notice warn', text: 'Borsa şu an fiyat alamıyor. Birkaç dakika sonra tekrar deneyin.' }));
+    catch (e) { return mount(holder, h('div', { class: 'notice bad', role: 'alert' }, icon('alert', 18), e.message)); }
+    if (!m.available) return mount(holder, h('div', { class: 'notice warn' }, icon('alert', 18), 'Borsa şu an fiyat alamıyor. Birkaç dakika sonra tekrar deneyin.'));
 
     const tabs = h('div', { class: 'seg', role: 'group', 'aria-label': 'Grafik aralığı' }, [['1d', '24 saat'], ['7d', '7 gün'], ['30d', '30 gün']].map(([v, l]) =>
       h('button', { type: 'button', 'aria-pressed': String(range === v), text: l, onClick: () => { range = v; draw(); } })));
     const upd = Math.max(0, Math.round((Date.now() - m.updated_at) / 60000));
     const you = m.you;
     mount(holder,
-      m.tradable ? null : h('div', { class: 'notice warn', role: 'alert', text: 'Fiyat verisi güncel değil; işlemler geçici olarak durduruldu.' }),
+      m.tradable ? null : h('div', { class: 'notice warn', role: 'alert' }, icon('alert', 18), 'Fiyat verisi güncel değil; işlemler geçici olarak durduruldu.'),
       h('div', { class: 'market-hero' },
-        h('div', { class: 'row between' }, h('span', { class: 'muted', text: '💎 Kristal / FN' }), h('span', { class: `delta ${cls(m.change_pct)}`, text: pct(m.change_pct) })),
+        h('div', { class: 'row between' }, h('span', { class: 'row muted' }, icon('market', 18), 'Kristal / FN'), deltaEl(m.change_pct)),
         h('div', { class: 'price', text: fnPrice(m.price_micro) }),
         sparkline(hist.points), tabs,
         h('div', { class: 'stats' },
@@ -114,7 +115,7 @@ function tradesPanel() {
   const holder = h('div');
   const box = h('div', { class: 'panel' }, h('h3', { text: 'Borsa işlemlerin' }), holder);
   load(holder, () => api.get('/api/market/trades?limit=8'), (d) => d.items.length ? h('ul', { class: 'list' }, d.items.map((t) => h('li', { class: 'item' },
-    h('div', { class: 'avatar', 'aria-hidden': 'true', text: t.side === 'buy' ? '＋' : '−' }),
+    h('div', { class: 'avatar', 'aria-hidden': 'true' }, icon(t.side === 'buy' ? 'plus' : 'minus', 20)),
     h('div', { class: 'grow' }, h('div', { class: 't', text: `${t.side === 'buy' ? 'Alış' : 'Satış'} • ${qtyFmt(t.qty)} KRS` }), h('div', { class: 'muted small', text: `${dt(t.created_at)} • ${fnPrice(t.price_micro)}` })),
     h('div', { class: `strong ${t.side === 'buy' ? 'neg' : 'pos'}`, text: `${t.side === 'buy' ? '−' : '+'}${money(t.total, cur())}` })))) : empty('Henüz borsa işlemin yok', 'İlk kristalini yukarıdan alabilirsin.'));
   return box;
@@ -122,13 +123,13 @@ function tradesPanel() {
 
 // Ana sayfa için küçük özet kartı
 export function marketMini() {
-  const box = h('a', { class: 'panel mini-market', href: '#/market', style: { textDecoration: 'none' } }, h('div', { class: 'gem', 'aria-hidden': 'true', text: '💎' }), h('div', { class: 'grow' }, h('div', { class: 'muted small', text: 'Kristal Borsası' }), h('div', { class: 'strong', text: 'Yükleniyor…' })));
+  const box = h('a', { class: 'panel mini-market', href: '#/market', style: { textDecoration: 'none' } }, h('div', { class: 'gem', 'aria-hidden': 'true' }, icon('market', 22)), h('div', { class: 'grow' }, h('div', { class: 'muted small', text: 'Kristal Borsası' }), h('div', { class: 'strong', text: 'Yükleniyor…' })));
   api.get('/api/market').then((m) => {
     if (!m.available) { box.querySelector('.strong').textContent = 'Fiyat alınamıyor'; return; }
     const kids = [h('div', { class: 'muted small', text: 'Kristal Borsası' }), h('div', { class: 'strong', text: fnPrice(m.price_micro) })];
     if (m.you.qty) kids.push(h('div', { class: 'muted small', text: `${qtyFmt(m.you.qty)} KRS • ${money(m.you.value_minor, cur())}` }));
     box.querySelector('.grow').replaceChildren(...kids);
-    box.append(h('span', { class: `delta ${cls(m.change_pct)}`, text: pct(m.change_pct) }));
+    box.append(deltaEl(m.change_pct));
   }).catch(() => { box.querySelector('.strong').textContent = 'Bağlantı yok'; });
   return box;
 }

@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { h, mount, toast, dt, load, field, busy, empty } from './ui.js';
+import { h, mount, toast, dt, load, field, busy, empty, icon, back } from './ui.js';
 import { state, refreshMe } from './state.js';
 import { renderCard } from './cardview.js';
 import { validateLabel, LABEL_MAX } from './card-contract.js';
@@ -13,7 +13,7 @@ export async function openEditor(cardId, label) {
 
 export function cardsList(screen) {
   const holder = h('div');
-  mount(screen, h('div', { class: 'topbar' }, h('h1', { text: 'Kartlarım' }), h('a', { class: 'btn small primary', href: '#/cards/new', text: '+ Yeni kart' })), holder,
+  mount(screen, h('div', { class: 'topbar' }, h('h1', { text: 'Kartlarım' }), h('a', { class: 'btn small primary', href: '#/cards/new' }, icon('plus', 18), 'Yeni kart')), holder,
     h('p', { class: 'virtual', text: 'Bunlar yalnızca oyun içi sanal kartlardır; gerçek ödeme kartı değildir.' }));
   load(holder, () => api.get('/api/cards'), (d) => {
     if (!d.cards.length) return empty('Henüz kartın yok', 'İlk sanal kartını oluştur.');
@@ -29,7 +29,7 @@ export function cardNew(screen) {
   const label = h('input', { type: 'text', maxlength: String(LABEL_MAX), placeholder: 'Örn. Oyun harcamaları' });
   const err = h('p', { class: 'err-text', role: 'alert' });
   const btn = h('button', { class: 'btn primary block', type: 'submit', text: 'Kart editörünü aç' });
-  mount(screen, h('a', { class: 'back', href: '#/cards', text: '‹ Kartlarım' }), h('h1', { text: 'Yeni kart' }),
+  mount(screen, back('#/cards', 'Kartlarım'), h('h1', { text: 'Yeni kart' }),
     h('div', { class: 'panel' }, h('form', { onSubmit: (e) => { e.preventDefault(); busy(btn, async () => {
       err.textContent = '';
       const v = validateLabel(label.value); if (!v.ok) { err.textContent = v.error; return; }
@@ -48,7 +48,7 @@ export async function editorLaunch(screen, arg) {
 
 export async function cardDetail(screen, id) {
   const holder = h('div');
-  mount(screen, h('a', { class: 'back', href: '#/cards', text: '‹ Kartlarım' }), holder);
+  mount(screen, back('#/cards', 'Kartlarım'), holder);
   await load(holder, () => api.get(`/api/cards/${id}`), (card) => buildDetail(card));
 }
 
@@ -56,7 +56,7 @@ function buildDetail(card) {
   const labelIn = h('input', { type: 'text', maxlength: String(LABEL_MAX), value: card.label, placeholder: 'Örn. Oyun harcamaları' });
   const lerr = h('p', { class: 'err-text', role: 'alert' });
   const lbtn = h('button', { class: 'btn small', type: 'submit', text: 'Özel adı kaydet' });
-  const designBtn = h('button', { class: 'btn primary block', type: 'button', text: 'Kartını tasarla', onClick: (e) => busy(e.currentTarget, async () => { try { await openEditor(card.id); } catch (ex) { toast(ex.message, 'error'); } }) });
+  const designBtn = h('button', { class: 'btn primary block', type: 'button', onClick: (e) => busy(e.currentTarget, async () => { try { await openEditor(card.id); } catch (ex) { toast(ex.message, 'error'); } }) }, icon('edit', 18), 'Kartını tasarla');
 
   const manage = h('div', { class: 'panel' }, h('h3', { text: 'Kart yönetimi' }), h('p', { class: 'muted small', text: 'Kart numarası/kimliği sistem tarafından atanır ve değiştirilemez.' }),
     h('div', { class: 'row wrap' },
@@ -84,10 +84,10 @@ function buildDetail(card) {
 
 export function vaultView(screen) {
   const holder = h('div');
-  mount(screen, h('a', { class: 'back', href: '#/profile', text: '‹ Profil' }), h('h1', { text: 'Nexus Vault' }), holder);
+  mount(screen, back('#/profile', 'Profil'), h('h1', { text: 'Nexus Vault' }), holder);
   load(holder, () => api.get('/api/vault'), (v) => h('div', {},
     h('div', { class: 'panel' }, h('h3', { text: 'Rozetler (Nexus Achievements)' }), h('ul', { class: 'list' }, v.badges.map((b) => h('li', { class: 'item' },
-      h('div', { class: 'avatar', text: b.earned_at ? '★' : '☆' }), h('div', { class: 'grow' }, h('div', { class: 't', text: b.title }), h('div', { class: 'muted small', text: b.earned_at ? `Kazanıldı: ${dt(b.earned_at)}` : b.desc })))))),
+      h('div', { class: 'avatar' }, icon('star', 20, b.earned_at ? 'fill' : '')), h('div', { class: 'grow' }, h('div', { class: 't', text: b.title }), h('div', { class: 'muted small', text: b.earned_at ? `Kazanıldı: ${dt(b.earned_at)}` : b.desc })))))),
     h('div', { class: 'panel' }, h('h3', { text: 'Kart temaları (Nexus Collection)' }), v.themes.length ? h('div', { class: 'cards-grid' }, v.themes.map((t) => h('div', {}, renderCard(t.design, { display_name: t.name }), h('div', { class: 'muted small', text: t.limited_until ? `Sınırlı süre: ${dt(t.limited_until)}` : 'Kalıcı tema' })))) : empty('Şu an tema yok')),
     h('div', { class: 'panel' }, h('h3', { text: 'Kayıtlı tasarımlar' }), v.saved_designs.length ? h('div', { class: 'cards-grid' }, v.saved_designs.map((s) => h('a', { href: `#/cards/${s.card_id}`, style: { textDecoration: 'none', color: 'inherit' } }, renderCard(s.design, { display_name: s.display_name }), h('div', { class: 'muted small', text: `Sürüm ${s.version} • ${dt(s.created_at)}` })))) : empty('Kayıtlı tasarım yok'))));
 }
