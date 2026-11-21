@@ -47,8 +47,9 @@ ID_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
 LEGACY_LOGIN = "on"
 GIFTCARD_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev/api/ext/giftcard"
 GIFTCARD_MINOR_PER_KRISTAL = "100"   # 1 kristal = 1,00 FN (minor unit 100). Kur kararını sen ver; değiştirmek için bu sayıyı güncelle.
-EMAIL_PROVIDER = "resend"
-EMAIL_FROM = "FOREVYE NEXUS <no-reply@example.com>"
+# Brevo: BREVO_API_KEY secret olarak verilir. EMAIL_FROM adresi Brevo > Senders bölümünde doğrulanmış olmalı (ör. Gmail adresin).
+EMAIL_PROVIDER = "brevo"
+EMAIL_FROM = "FOREVYE NEXUS <SENIN-DOGRULANMIS-ADRESIN@gmail.com>"
 
 # Test/staging ortamı: ayrı D1 ve R2 kullanılır, üretim verisiyle karıştırılmaz.
 [env.staging]
