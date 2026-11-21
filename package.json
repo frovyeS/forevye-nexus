@@ -1,0 +1,18 @@
+{
+  "name": "forevye-nexus",
+  "version": "1.1.0",
+  "private": true,
+  "description": "FOREVYE NEXUS - sanal ekonomi mobil bankacılık benzeri uygulama (gerçek para/banka yok)",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply forevye-nexus --local",
+    "db:migrate:remote": "wrangler d1 migrations apply forevye-nexus --remote",
+    "sync-shared": "cp shared/card-contract.js public/js/card-contract.js",
+    "test": "node --test test/app.test.mjs test/market.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

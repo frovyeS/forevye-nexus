@@ -1,0 +1,144 @@
+import { HttpError, json } from './lib/util.js';
+import { authenticate, requireAdmin } from './lib/auth.js';
+import { authRoutes } from './routes/auth.js';
+import { profileRoutes } from './routes/profile.js';
+import { walletRoutes } from './routes/wallet.js';
+import { cardRoutes } from './routes/cards.js';
+import { miscRoutes } from './routes/misc.js';
+import { adminRoutes } from './routes/admin.js';
+import { internalRoutes } from './routes/internal.js';
+import { marketRoutes } from './routes/market.js';
+import { cronTick } from './lib/market.js';
+
+// [yöntem, yol, işleyici, erişim]  erişim: 'public' | 'user' | 'admin' | 'super' | 'internal'
+const R = [];
+const add = (m, path, h, access = 'user') => R.push({ m, re: new RegExp(`^${path.replace(/:(\w+)/g, '(?<$1>[^/]+)')}$`), h, access });
+
+add('POST', '/api/auth/register/start', authRoutes.registerStart, 'public');
+add('POST', '/api/auth/register/verify', authRoutes.registerVerify, 'public');
+add('GET', '/api/auth/username-available', authRoutes.usernameAvailable, 'public');
+add('POST', '/api/auth/register/complete', authRoutes.registerComplete, 'public');
+add('POST', '/api/auth/login', authRoutes.login, 'public');
+add('POST', '/api/auth/forgot', authRoutes.forgot, 'public');
+add('POST', '/api/auth/reset', authRoutes.reset, 'public');
+add('POST', '/api/auth/logout', authRoutes.logout);
+
+add('GET', '/api/me', miscRoutes.me);
+add('GET', '/api/notifications', miscRoutes.notifications);
+add('POST', '/api/notifications/read', miscRoutes.markRead);
+add('GET', '/api/vault', miscRoutes.vault);
+add('GET', '/api/giftcard/status', miscRoutes.giftcardStatus);
+add('POST', '/api/giftcard/redeem', miscRoutes.giftcardRedeem);
+
+add('GET', '/api/profile', profileRoutes.get);
+add('POST', '/api/profile/username', profileRoutes.changeUsername);
+add('POST', '/api/profile/password', profileRoutes.changePassword);
+add('GET', '/api/profile/sessions', profileRoutes.sessions);
+add('POST', '/api/profile/sessions/revoke-others', profileRoutes.revokeOthers);
+add('PUT', '/api/profile/avatar', profileRoutes.putAvatar);
+add('GET', '/api/profile/avatar', profileRoutes.getAvatar);
+add('DELETE', '/api/profile/avatar', profileRoutes.deleteAvatar);
+
+add('GET', '/api/wallet', walletRoutes.balance);
+add('GET', '/api/transactions', walletRoutes.transactions);
+add('POST', '/api/transfers/lookup', walletRoutes.lookup);
+add('POST', '/api/transfers', walletRoutes.transfer);
+
+add('GET', '/api/transfers/recent', walletRoutes.recent);
+
+add('GET', '/api/market', marketRoutes.overview);
+add('GET', '/api/market/history', marketRoutes.history);
+add('GET', '/api/market/trades', marketRoutes.trades);
+add('POST', '/api/market/trade', marketRoutes.trade);
+
+add('GET', '/api/cards', cardRoutes.list);
+add('POST', '/api/cards', cardRoutes.create);
+add('GET', '/api/card-templates', cardRoutes.templates);
+add('GET', '/api/cards/:id', cardRoutes.get);
+add('PATCH', '/api/cards/:id', cardRoutes.update);
+add('POST', '/api/cards/:id/default', cardRoutes.setDefault);
+add('POST', '/api/cards/:id/status', cardRoutes.setStatus);
+add('GET', '/api/cards/:id/history', cardRoutes.history);
+add('POST', '/api/cards/:id/revert', cardRoutes.revert);
+
+add('POST', '/api/internal/purchase', internalRoutes.purchase, 'internal');
+add('POST', '/api/internal/refund', internalRoutes.refund, 'internal');
+
+add('GET', '/api/admin/me', adminRoutes.me, 'admin');
+add('GET', '/api/admin/users', adminRoutes.searchUsers, 'admin');
+add('GET', '/api/admin/users/:id', adminRoutes.userDetail, 'admin');
+add('GET', '/api/admin/users/:id/ledger', adminRoutes.userLedger, 'admin');
+add('POST', '/api/admin/users/:id/suspend', adminRoutes.suspend, 'admin');
+add('POST', '/api/admin/users/:id/unsuspend', adminRoutes.unsuspend, 'admin');
+add('POST', '/api/admin/ledger/reverse', adminRoutes.reverse, 'super');
+add('POST', '/api/admin/ledger/adjust', adminRoutes.adjust, 'super');
+add('GET', '/api/admin/announcements', adminRoutes.listAnnouncements, 'admin');
+add('POST', '/api/admin/announcements', adminRoutes.createAnnouncement, 'admin');
+add('POST', '/api/admin/announcements/:id/deactivate', adminRoutes.deactivateAnnouncement, 'admin');
+add('GET', '/api/admin/templates', adminRoutes.listTemplates, 'admin');
+add('POST', '/api/admin/templates', adminRoutes.createTemplate, 'admin');
+add('POST', '/api/admin/templates/:id/active', adminRoutes.setTemplateActive, 'admin');
+add('GET', '/api/admin/audit', adminRoutes.audit, 'admin');
+add('GET', '/api/admin/giftcard', adminRoutes.giftcard, 'admin');
+add('GET', '/api/admin/admins', adminRoutes.listAdmins, 'super');
+add('POST', '/api/admin/roles', adminRoutes.setRole, 'super');
+
+const SEC = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+  'cross-origin-resource-policy': 'same-origin',
+};
+
+async function handleApi(req, env) {
+  const url = new URL(req.url);
+  const method = req.method === 'HEAD' ? 'GET' : req.method;
+  const route = R.find((r) => r.m === method && r.re.test(url.pathname));
+  if (!route) {
+    if (R.some((r) => r.re.test(url.pathname))) throw new HttpError(405, 'method_not_allowed', 'Yöntem desteklenmiyor.');
+    throw new HttpError(404, 'not_found', 'Bulunamadı.');
+  }
+  // CSRF: durum değiştiren isteklerde özel başlık + aynı kaynak (Origin) zorunlu. Çerez ayrıca SameSite=Strict'tir.
+  if (method !== 'GET' && route.access !== 'internal') {
+    if (req.headers.get('x-nx-csrf') !== '1') throw new HttpError(403, 'csrf', 'Geçersiz istek.');
+    const origin = req.headers.get('origin');
+    if (origin && origin !== url.origin) throw new HttpError(403, 'csrf', 'Geçersiz istek.');
+  }
+  const params = req.method === 'HEAD' ? {} : (route.re.exec(url.pathname).groups || {});
+  let auth = null;
+  if (route.access === 'user') {
+    auth = await authenticate(env, req);
+    if (!auth) throw new HttpError(401, 'unauthenticated', 'Oturum gerekli.');
+  } else if (route.access === 'admin' || route.access === 'super') {
+    auth = await requireAdmin(env, req, { superOnly: route.access === 'super' });
+  } else if (route.access === 'public') {
+    auth = await authenticate(env, req).catch(() => null); // logout için gerekli olabilir
+  }
+  // Tüm işleyiciler aynı imzayı alır: (req, env, url, auth, params).
+  return route.h(req, env, url, auth, params);
+}
+
+export default {
+  async fetch(req, env, ctx) {
+    const url = new URL(req.url);
+    if (!url.pathname.startsWith('/api/')) {
+      return env.ASSETS ? env.ASSETS.fetch(req) : new Response('Not found', { status: 404 });
+    }
+    try {
+      const res = await handleApi(req, env);
+      const out = new Response(res.body, res);
+      for (const [k, v] of Object.entries(SEC)) out.headers.set(k, v);
+      if (!out.headers.has('cache-control')) out.headers.set('cache-control', 'no-store');
+      return out;
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return json({ error: { code: err.code, message: err.message, ...(err.extra || {}) } }, err.status, SEC);
+      }
+      console.error('unhandled', err && err.stack ? err.stack : err);
+      return json({ error: { code: 'server_error', message: 'Beklenmeyen bir hata oluştu.' } }, 500, SEC);
+    }
+  },
+  // Cloudflare Cron Trigger (wrangler.toml [triggers]): kristal fiyatını gerçek altından yeniler.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(cronTick(env));
+  },
+};
