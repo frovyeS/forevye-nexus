@@ -169,3 +169,12 @@ test('posta: röle çökerse ve doğrudan Brevo da yoksa kayıt 503 verir (sessi
     assert.deepEqual(hosts, ['mikro.example', 'api.brevo.com']);
   } finally { globalThis.fetch = real; }
 });
+
+test('editör: 0004 migration canlı DB\'ye uygulanmamış olsa da bilet üretilir (tablolar kendiliğinden kurulur)', async () => {
+  const { env, u } = await setup();
+  env.DB.raw.exec('DROP TABLE editor_tickets; DROP TABLE editor_tokens;');
+  const t = await u.cl.post('/api/editor/ticket', { label: 'gg' });
+  assert.equal(t.status, 200, JSON.stringify(t.data));
+  const ex = await asEditor(env, 'POST', '/api/editor/exchange', { body: { ticket: ticketOf(t.data.url) } });
+  assert.equal(ex.status, 200);
+});

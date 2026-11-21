@@ -14,6 +14,24 @@ import { shape, ownCard, createCard, updateCard } from './cards.js';
 
 const TICKET_TTL = 5 * MIN, TOKEN_SLIDE = 30 * MIN, TOKEN_MAX = 4 * HOUR;
 
+// 0004_editor.sql canlı D1'e uygulanmadıysa "no such table: editor_tickets" → 500 "Beklenmeyen bir hata oluştu" olurdu.
+// Tablolar eksikse (IF NOT EXISTS ile, migration'la birebir aynı şema) burada kendiliğinden kurulur; isolate başına bir kez çalışır.
+const SCHEMA_OK = new WeakSet();
+async function ensureEditorSchema(env) {
+  if (!env.DB || SCHEMA_OK.has(env.DB)) return;
+  await env.DB.batch([
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS editor_tickets (
+      token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), card_id TEXT,
+      label TEXT NOT NULL DEFAULT '', expires_at INTEGER NOT NULL, consumed_at INTEGER)`),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_editor_tickets_exp ON editor_tickets(expires_at)'),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS editor_tokens (
+      token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), card_id TEXT,
+      label TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_editor_tokens_exp ON editor_tokens(expires_at)'),
+  ]);
+  SCHEMA_OK.add(env.DB);
+}
+
 export const editorUrl = (env) => String(env.EDITOR_URL || '').trim();
 export function editorOrigins(env) {
   const out = [];
@@ -38,6 +56,7 @@ async function useToken(env, req) {
   const m = /^Bearer ([A-Za-z0-9_-]{20,80})$/.exec(req.headers.get('authorization') || '');
   const bad = () => new HttpError(401, 'editor_token', 'Editör oturumu geçersiz veya süresi dolmuş. Nexus’tan yeniden açın.');
   if (!m) throw bad();
+  await ensureEditorSchema(env);
   const t = now(env), th = await sha256hex(m[1]);
   const tok = await env.DB.prepare('SELECT * FROM editor_tokens WHERE token_hash = ? AND expires_at > ?').bind(th, t).first();
   if (!tok) throw bad();
@@ -53,6 +72,7 @@ export const editorRoutes = {
     const url = editorUrl(env);
     if (!url) throw new HttpError(503, 'editor_unavailable', 'Kart editörü bu sunucuda ayarlı değil.');
     const b = await readJson(req);
+    await ensureEditorSchema(env);
     await rateLimit(env, `edticket:${user.id}`, 30, 10 * MIN);
     let cardId = null;
     if (b.card_id !== undefined && b.card_id !== null) cardId = (await ownCard(env, user.id, String(b.card_id))).id;
@@ -69,6 +89,7 @@ export const editorRoutes = {
 
   async exchange(req, env) {
     const b = await readJson(req);
+    await ensureEditorSchema(env);
     await rateLimit(env, `edex:ip:${clientIp(req)}`, 40, 10 * MIN);
     const bad = () => new HttpError(400, 'invalid_ticket', 'Bilet geçersiz veya süresi dolmuş. Nexus’tan yeniden açın.');
     if (typeof b.ticket !== 'string' || !/^[A-Za-z0-9_-]{20,80}$/.test(b.ticket)) throw bad();
