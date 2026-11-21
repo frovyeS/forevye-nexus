@@ -2,7 +2,7 @@ import { HttpError, json, readJson, now, HOUR, isSuspended, str } from '../lib/u
 import { notifyStmt } from '../lib/auth.js';
 import { reverseRef, runBatch, entryStmts } from '../lib/ledger.js';
 import { newRef } from '../lib/util.js';
-import { validateDesign } from '../../shared/card-contract.js';
+import { validateDesign, readStoredDesign } from '../../shared/card-contract.js';
 import { giftcardStatus } from '../integrations/giftcard.js';
 import { balanceOf } from './wallet.js';
 
@@ -148,10 +148,10 @@ export const adminRoutes = {
 
   async listTemplates(req, env) {
     const rows = (await env.DB.prepare('SELECT id, name, design_json, active, limited_until, created_at FROM card_templates ORDER BY created_at DESC LIMIT 100').all()).results;
-    return json({ items: rows.map((r) => ({ ...r, design: JSON.parse(r.design_json), design_json: undefined })) });
+    return json({ items: rows.map((r) => ({ ...r, design: readStoredDesign(r.design_json, 'NEXUS'), design_json: undefined })) });
   },
   async createTemplate(req, env, ctx, { user }) {
-    const b = await readJson(req);
+    const b = await readJson(req, 96 * 1024);
     const name = str(b.name, { min: 2, max: 40, name: 'Ad' });
     const v = validateDesign(b.design);
     if (!v.ok) throw new HttpError(400, 'invalid_design', v.errors[0], { errors: v.errors });

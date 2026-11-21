@@ -8,9 +8,11 @@ import { miscRoutes } from './routes/misc.js';
 import { adminRoutes } from './routes/admin.js';
 import { internalRoutes } from './routes/internal.js';
 import { marketRoutes } from './routes/market.js';
+import { editorRoutes, editorOrigins } from './routes/editor.js';
 import { cronTick } from './lib/market.js';
 
-// [yöntem, yol, işleyici, erişim]  erişim: 'public' | 'user' | 'admin' | 'super' | 'internal'
+// [yöntem, yol, işleyici, erişim]  erişim: 'public' | 'user' | 'admin' | 'super' | 'internal' | 'editor'
+// 'editor': çerez yok; kart editörü (ayrı site) biletle/Bearer jetonla gelir, CORS yalnızca EDITOR_URL kaynağına açıktır.
 const R = [];
 const add = (m, path, h, access = 'user') => R.push({ m, re: new RegExp(`^${path.replace(/:(\w+)/g, '(?<$1>[^/]+)')}$`), h, access });
 
@@ -57,6 +59,10 @@ add('POST', '/api/market/trade', marketRoutes.trade);
 add('GET', '/api/cards', cardRoutes.list);
 add('POST', '/api/cards', cardRoutes.create);
 add('GET', '/api/card-templates', cardRoutes.templates);
+add('POST', '/api/editor/ticket', editorRoutes.ticket);
+add('POST', '/api/editor/exchange', editorRoutes.exchange, 'editor');
+add('GET', '/api/editor/card', editorRoutes.card, 'editor');
+add('PUT', '/api/editor/card', editorRoutes.save, 'editor');
 add('GET', '/api/cards/:id', cardRoutes.get);
 add('PATCH', '/api/cards/:id', cardRoutes.update);
 add('POST', '/api/cards/:id/default', cardRoutes.setDefault);
@@ -101,7 +107,7 @@ async function handleApi(req, env) {
     throw new HttpError(404, 'not_found', 'Bulunamadı.');
   }
   // CSRF: durum değiştiren isteklerde özel başlık + aynı kaynak (Origin) zorunlu. Çerez ayrıca SameSite=Strict'tir.
-  if (method !== 'GET' && route.access !== 'internal') {
+  if (method !== 'GET' && route.access !== 'internal' && route.access !== 'editor') {
     if (req.headers.get('x-nx-csrf') !== '1') throw new HttpError(403, 'csrf', 'Geçersiz istek.');
     const origin = req.headers.get('origin');
     if (origin && origin !== url.origin) throw new HttpError(403, 'csrf', 'Geçersiz istek.');
@@ -120,24 +126,37 @@ async function handleApi(req, env) {
   return route.h(req, env, url, auth, params);
 }
 
+// Kart editörü (ayrı site) uçları için CORS: yalnızca EDITOR_URL (+ EDITOR_ORIGINS) kaynağına izin verilir. Çerez gönderilmez; kimlik bilet/Bearer jetondadır.
+const EDITOR_PATHS = new Set(['/api/editor/exchange', '/api/editor/card']);
+function editorCors(req, env, url) {
+  if (!EDITOR_PATHS.has(url.pathname)) return null;
+  const o = req.headers.get('origin') || '';
+  if (!o || !editorOrigins(env).includes(o)) return null;
+  return { 'access-control-allow-origin': o, 'access-control-allow-methods': 'GET, POST, PUT, OPTIONS', 'access-control-allow-headers': 'content-type, authorization', 'access-control-max-age': '86400', vary: 'Origin', 'cross-origin-resource-policy': 'cross-origin' };
+}
+
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     if (!url.pathname.startsWith('/api/')) {
       return env.ASSETS ? env.ASSETS.fetch(req) : new Response('Not found', { status: 404 });
     }
+    const cors = editorCors(req, env, url);
+    if (req.method === 'OPTIONS' && EDITOR_PATHS.has(url.pathname)) return new Response(null, { status: cors ? 204 : 403, headers: cors || {} });
     try {
       const res = await handleApi(req, env);
       const out = new Response(res.body, res);
       for (const [k, v] of Object.entries(SEC)) out.headers.set(k, v);
+      if (cors) for (const [k, v] of Object.entries(cors)) out.headers.set(k, v);
       if (!out.headers.has('cache-control')) out.headers.set('cache-control', 'no-store');
       return out;
     } catch (err) {
+      const H = { ...SEC, ...(cors || {}) };
       if (err instanceof HttpError) {
-        return json({ error: { code: err.code, message: err.message, ...(err.extra || {}) } }, err.status, SEC);
+        return json({ error: { code: err.code, message: err.message, ...(err.extra || {}) } }, err.status, H);
       }
       console.error('unhandled', err && err.stack ? err.stack : err);
-      return json({ error: { code: 'server_error', message: 'Beklenmeyen bir hata oluştu.' } }, 500, SEC);
+      return json({ error: { code: 'server_error', message: 'Beklenmeyen bir hata oluştu.' } }, 500, H);
     }
   },
   // Cloudflare Cron Trigger (wrangler.toml [triggers]): kristal fiyatını gerçek altından yeniler.

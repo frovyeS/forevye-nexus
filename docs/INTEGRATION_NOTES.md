@@ -24,17 +24,24 @@ Eski e-posta hesabı, aynı doğrulanmış e-posta ile ID'ye ilk girişte otomat
 Aynı `external_ref` tekrar gönderilirse ikinci kez düşülmez. İade: `POST /api/internal/refund` { ref }.
 Mevcut oyun/mağaza sistemini bu uçlara bağlayın; kullanıcı kimliği olarak `user_id` (UUID) kullanılır.
 
-## 3. Ayrı kart editörü
-Veri sözleşmesi `shared/card-contract.js` (sürüm 1) dosyasındadır; sunucu da istemci de aynı dosyayı kullanır
-(`npm run sync-shared` ile `public/js/` altına kopyalanır). Alan seti, renk biçimi, süs sınırları ve korunan bölgeler orada.
-Ayrı editör bu dosyayı içe aktarıp `validateDesign` kullanmalı; kaydetme `PATCH /api/cards/:id` ile yapılır.
+## 3. Kart editörü = forevye_nexus_bank (BAĞLANDI)
+Kart tasarımı artık yalnızca banka editöründe (ayrı site) yapılır; Nexus'taki eski süs/desen editörü kaldırıldı.
+- Akış: Nexus → **Kartını tasarla** → `POST /api/editor/ticket` (tek kullanımlık, 5 dk, URL'nin `#t=` kısmında) → editör `POST /api/editor/exchange` ile bileti jetona çevirir (30 dk kayan, en çok 4 saat) → **Kaydet** = `PUT /api/editor/card` → **Çık** = `NEXUS/#/cards/<id>`.
+- Doğrulama: `shared/card-rules.js` = editörün `js/rules.js` dosyasının BİREBİR kopyası (iki depoda aynı kalmalı). Sunucu istemciye güvenmez: `designId/ownerId/version` ve kart adını kendisi yazar; çip/marka/kart bilgisi veri modelinde yoktur.
+- Sözleşme sürümü 2 (856×540, katmanlar). Eski sürüm 1 kartlar (320×200) veritabanında olduğu gibi durur, okunurken `convertV1` ile çevrilir; editörde ilk kayıtta sürüm 2 olarak yazılır.
+- Kart adı (2–18 karakter) = tasarımın `userDisplayName` alanı; kayıt/ID kayıt formları da aynı kuralı kullanır.
+- Ayar: `EDITOR_URL` (editörün yayın adresi; CORS yalnızca bu kaynağa açılır), isteğe bağlı `EDITOR_ORIGINS`. Migration: `0004_editor.sql`.
+- Giriş: editör açıkken oturum yoksa kapı gösterilir → `NEXUS/#/editor-launch/<kart|new>` → (FOREVYE ID ile) giriş → bilet → editör. FOREVYE ID girişi sayfadan çıkıp döndüğü için hedef sekme belleğinde (`sessionStorage.nx_next`) tutulur.
+- Dosyaları eşitle: `npm run sync-shared` (`shared/*.js` → `public/js/`). Çizici `public/js/card-render.js` = editörün `js/render.js` dosyası.
 
 ## 3b. Logo
-`public/assets/logo.svg` YER TUTUCUDUR. Resmî logoyu aynı dosya adıyla koyun.
-
-## 3c. Kart editörü ile bağlama planı (sonraki aşama)
-Bugün iki ayrı kart modeli var: bu depodaki sözleşme v1 (320×200, `decor` listesi) ve `forevye_nexus_bank` editörünün modeli (856×540, `layers[]`, `userDisplayName`, `chipStyle`, `nameStyle`).
-Önerilen yol: editörün `js/rules.js` dosyası (DOM'suz, `module.exports` var) Worker'da `validateDesign` olarak kullanılır; `cards.design_json` bu şemayı taşır, `design_version` aynen kalır. Marka/çip/kart bilgisi **veri modelinde yoktur**, çizimde sistemden eklenir; bu yüzden kullanıcı bunları silemez/taşıyamaz. Geçişte `shared/card-contract.js` yerine editör kuralları + `FNXRender` kullanılır, eski v1 kartlar için bir kerelik dönüştürücü yazılır.
+`public/assets/logo.svg` YER TUTUCUDUR. Resmî logoyu aynı dosya adıyla koyun. Kart üzerindeki logo `wordmark.png` ile çizilir.
 
 ## 4. Kristal borsası
 Altın fiyat kaynağı ve parametreler için README'deki "Para birimi ve Kristal Borsası" bölümüne bakın. Oyun içi mağaza kristalle ödeme isterse `POST /api/internal/purchase` FN düşer; kristal→FN dönüşümü kullanıcı tarafından borsadan yapılır.
+
+## 5. Ortak e-posta (Brevo) ve yük aktarımı — Mikro-Klima Worker
+Mikro-Klima, FOREVYE ID ve Nexus için ortak hizmetleri üstlenir; Nexus Worker'ı bu işlerle yorulmaz:
+- **Posta:** `POST {MAIL_RELAY_URL}/api/ext/mail` (imza: hediye kartıyla aynı HMAC). FOREVYE ID de aynı `worker/mail.js` modülünü kullanır → tek Brevo hesabı, tek gönderen adresi. Nexus'ta `EMAIL_PROVIDER="relay"`; `BREVO_API_KEY`/`EMAIL_FROM` yalnızca Mikro-Klima'da gerekir (Nexus'ta isteğe bağlı yedek). Alıcı başına 10 dk'da 5, toplam 10 dk'da 80 posta sınırı vardır.
+- **Altın fiyatı:** `GET /api/ext/gold` Mikro-Klima'da 60 sn önbelleklenir; Nexus `GOLD_API_URL` ile oradan okur (çökerse doğrudan yedek kaynağa düşer).
+- Gizli anahtar: `GIFTCARD_API_SECRET` (Nexus) = `NEXUS_SECRET` (Mikro-Klima), aynı değer.

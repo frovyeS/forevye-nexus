@@ -106,7 +106,7 @@ export const authRoutes = {
 
     const id = crypto.randomUUID();
     const cardId = crypto.randomUUID();
-    const design = JSON.stringify(defaultDesign());
+    const design = JSON.stringify({ ...defaultDesign(dn.value), designId: cardId, ownerId: id });
     const pw = await hashPassword(password);
     try {
       await env.DB.batch([
@@ -258,7 +258,7 @@ export const authRoutes = {
     const dn = validateDisplayName(b.card_display_name);
     if (!dn.ok) throw new HttpError(400, 'invalid_display_name', dn.error);
     if (await usernameTaken(env, username, null)) throw new HttpError(409, 'username_taken', 'Bu kullanıcı adı alınmış.');
-    const id = crypto.randomUUID(), cardId = crypto.randomUUID(), design = JSON.stringify(defaultDesign());
+    const id = crypto.randomUUID(), cardId = crypto.randomUUID(), design = JSON.stringify({ ...defaultDesign(dn.value), designId: cardId, ownerId: id });
     const pw = await hashPassword(randomToken(32));   // kullanılamaz parola: giriş yalnızca ID ile
     try {
       await env.DB.batch([

@@ -3,7 +3,7 @@ import { h, mount, toast, money, dt, load, field, busy, empty } from './ui.js';
 import { state, refreshMe, setHide, cur, initial } from './state.js';
 import { renderCard } from './cardview.js';
 import { opsMenu, txList, txRow, sendFlow, giftFlow } from './views-ops.js';
-import { cardsList, cardEditor, vaultView } from './views-cards.js';
+import { cardsList, cardNew, cardDetail, editorLaunch, vaultView } from './views-cards.js';
 import { marketView, marketMini } from './views-market.js';
 
 const root = document.getElementById('app');
@@ -13,6 +13,12 @@ const LOGO = '/assets/logo.svg';
 const off = document.getElementById('offline');
 const syncOnline = () => { off.hidden = navigator.onLine; };
 addEventListener('online', syncOnline); addEventListener('offline', syncOnline); syncOnline();
+
+// ---------- Giriş sonrası hedef ----------
+// Banka editörü "giriş gerekli" diyerek #/editor-launch/<kart|new> adresine yollar. FOREVYE ID girişi sayfadan çıkıp geri döndüğü için hedef oturum belleğinde (yalnızca bu sekme) tutulur.
+const NEXT_OK = /^#\/(editor-launch\/[A-Za-z0-9-]{1,40}|cards(\/[A-Za-z0-9-]{1,40})?)$/;
+function rememberNext() { try { if (NEXT_OK.test(location.hash)) sessionStorage.setItem('nx_next', location.hash); } catch { /* depolama yok */ } }
+function takeNext() { try { const n = sessionStorage.getItem('nx_next'); sessionStorage.removeItem('nx_next'); return n && NEXT_OK.test(n) ? n : ''; } catch { return ''; } }
 
 // ---------- Giriş / Kayıt / Şifre sıfırlama ----------
 function authView(initialMode = 'login') {
@@ -32,13 +38,13 @@ function authView(initialMode = 'login') {
   // FOREVYE ID ile giriş: sunucu ID sitesinin adresini (PKCE ile) hazırlar; parola Nexus'a hiç gelmez.
   const ID_ERR = { id_unavailable: 'FOREVYE ID şu an kullanılamıyor.', id_state: 'Giriş oturumu süresi doldu. Tekrar deneyin.', id_failed: 'FOREVYE ID girişi tamamlanamadı.', id_unverified: 'FOREVYE ID e-postanız doğrulanmamış.', id_conflict: 'Bu Nexus hesabı başka bir FOREVYE ID ile birleşmiş.', rate_limited: 'Çok fazla deneme. Biraz bekleyin.' };
   const idNotice = () => { const c = new URLSearchParams(location.search).get('id_error'); if (!c) return null; history.replaceState(null, '', location.pathname + location.hash); return h('div', { class: 'notice warn', role: 'alert', text: ID_ERR[c] || 'FOREVYE ID girişi başarısız.' }); };
-  const idButton = () => h('button', { class: 'btn primary block', type: 'button', text: 'FOREVYE ID ile giriş', onClick: (e) => busy(e.currentTarget, async () => { try { const r = await api.post('/api/auth/id/start'); location.href = r.url; } catch (ex) { toast(ex.message, 'err'); } }) });
+  const idButton = () => h('button', { class: 'btn primary block', type: 'button', text: 'FOREVYE ID ile giriş', onClick: (e) => busy(e.currentTarget, async () => { try { rememberNext(); const r = await api.post('/api/auth/id/start'); location.href = r.url; } catch (ex) { toast(ex.message, 'err'); } }) });
   const idRegForm = () => {
     const token = decodeURIComponent((location.hash.split('/')[2] || '').trim());
     const un = h('input', { type: 'text', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false', maxlength: '20', required: true });
     const hint = h('small', { class: 'muted', text: '3-20 karakter: harf, rakam, _ ve .' });
     let t; un.addEventListener('input', () => { clearTimeout(t); t = setTimeout(async () => { if (!/^[A-Za-z0-9_.]{3,20}$/.test(un.value)) return; try { const r = await api.get(`/api/auth/username-available?name=${encodeURIComponent(un.value)}`); hint.textContent = r.available ? '✓ Kullanılabilir' : '✗ Bu ad alınmış'; } catch { /* sunucu kontrol eder */ } }, 400); });
-    const cn = h('input', { type: 'text', maxlength: '24', required: true });
+    const cn = h('input', { type: 'text', maxlength: '18', required: true });
     const err = h('p', { class: 'err-text', role: 'alert' }); const btn = h('button', { class: 'btn primary block', type: 'submit', text: 'Hesabı oluştur' });
     return h('div', {}, h('h2', { text: 'FOREVYE ID bağlandı' }), h('p', { class: 'muted', text: 'Son adım: Nexus kullanıcı adını ve kartta görünecek ismi seç. Şifre gerekmez.' }),
       h('form', { onSubmit: (e) => { e.preventDefault(); busy(btn, async () => { err.textContent = ''; try { await api.post('/api/auth/id/complete', { token, username: un.value, card_display_name: cn.value }); location.hash = '#/home'; await start(); } catch (ex) { err.textContent = ex.message; } }); } },
@@ -75,7 +81,7 @@ function authView(initialMode = 'login') {
         const hint = h('small', { class: 'muted', text: '3-20 karakter: harf, rakam, _ ve .' });
         let t; un.addEventListener('input', () => { clearTimeout(t); t = setTimeout(async () => { if (!/^[A-Za-z0-9_.]{3,20}$/.test(un.value)) return; try { const r = await api.get(`/api/auth/username-available?name=${encodeURIComponent(un.value)}`); hint.textContent = r.available ? '✓ Kullanılabilir' : '✗ Bu ad alınmış'; } catch { /* sunucu kontrol eder */ } }, 400); });
         const pw = h('input', { type: 'password', autocomplete: 'new-password', required: true, minlength: '10' });
-        const cn = h('input', { type: 'text', maxlength: '24', required: true });
+        const cn = h('input', { type: 'text', maxlength: '18', required: true });
         const err = h('p', { class: 'err-text', role: 'alert' }); const btn = h('button', { class: 'btn primary block', type: 'submit', text: 'Hesabı oluştur' });
         mount(w, dots(), h('form', { onSubmit: (e) => { e.preventDefault(); busy(btn, async () => { err.textContent = ''; try { await api.post('/api/auth/register/complete', { token: s.token, username: un.value, password: pw.value, card_display_name: cn.value }); await start(); } catch (ex) { err.textContent = ex.message; } }); } },
           h('div', { class: 'field' }, h('label', { text: 'Hesap kullanıcı adı' }), un, hint),
@@ -205,7 +211,7 @@ async function route() {
   const hash = location.hash || '#/home';
   const parts = hash.slice(2).split('/');
   const top = parts[0];
-  const active = { home: '#/home', ops: '#/ops', market: '#/market', cards: '#/cards', profile: '#/profile', notifications: '#/profile', vault: '#/profile' }[top] || '#/home';
+  const active = { home: '#/home', ops: '#/ops', market: '#/market', cards: '#/cards', 'editor-launch': '#/cards', profile: '#/profile', notifications: '#/profile', vault: '#/profile' }[top] || '#/home';
   const screen = shell(active);
   scrollTo(0, 0);
   if (top === 'ops') {
@@ -216,14 +222,20 @@ async function route() {
     return opsMenu(screen);
   }
   if (top === 'market') return marketView(screen);
-  if (top === 'cards') return parts[1] ? cardEditor(screen, parts[1]) : cardsList(screen);
+  if (top === 'cards') return parts[1] === 'new' ? cardNew(screen) : parts[1] ? cardDetail(screen, parts[1]) : cardsList(screen);
+  if (top === 'editor-launch') return editorLaunch(screen, parts[1]);
   if (top === 'profile') return parts[1] === 'security' ? securityView(screen) : profileView(screen);
   if (top === 'notifications') return notificationsView(screen);
   if (top === 'vault') return vaultView(screen);
   return homeView(screen);
 }
 
-async function start() { try { await refreshMe(); } catch { return authView(location.hash.startsWith('#/id-kayit/') ? 'idreg' : 'login'); } if (!location.hash) location.hash = '#/home'; route(); }
+async function start() {
+  try { await refreshMe(); } catch { rememberNext(); return authView(location.hash.startsWith('#/id-kayit/') ? 'idreg' : 'login'); }
+  const next = takeNext(); if (next) { if (location.hash === next) return route(); location.hash = next; return; }   // hashchange → route()
+  if (!location.hash || location.hash.startsWith('#/id-kayit/')) location.hash = '#/home';
+  route();
+}
 addEventListener('hashchange', route);
 onUnauth(() => { state.me = null; authView(); toast('Oturumun sona erdi. Lütfen tekrar giriş yap.', 'error'); });
 start();

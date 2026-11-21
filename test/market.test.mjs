@@ -161,15 +161,14 @@ test('ilk kristal rozeti ve borsa geçmişi', async () => {
   assert.equal((await u.cl.get('/api/market/history?range=zz')).status, 400);
 });
 
-test('kart sözleşmesi: zeminle kontrastı düşük yazı rengi reddedilir (marka okunabilirliği)', async () => {
-  const { validateDesign, defaultDesign, contrast } = await import('../shared/card-contract.js');
+test('kart sözleşmesi: zeminle kontrastı düşük ad rengi reddedilir (marka okunabilirliği)', async () => {
+  const { validateDesign, defaultDesign } = await import('../shared/card-contract.js');
   assert.equal(validateDesign(defaultDesign()).ok, true);
-  const bad = validateDesign({ ...defaultDesign(), textColor: '#1b2a6b' });
+  const bad = validateDesign({ ...defaultDesign(), nameStyle: { color: '#ECEEF5' } });   // açık zemin üstünde açık ad
   assert.equal(bad.ok, false);
-  assert.match(bad.errors[0], /kontrast/);
-  assert.ok(contrast('#ffffff', '#000000') > 20);
+  assert.match(bad.errors.join(' '), /kontrast/);
   // Sunucu da aynı kuralı uygular
-  const { env, u } = await setup();
-  const r = await u.cl.post('/api/cards', { display_name: 'Kontrast', design: { ...defaultDesign(), textColor: '#0b1020' } });
+  const { u } = await setup();
+  const r = await u.cl.post('/api/cards', { display_name: 'Kontrast', design: { ...defaultDesign(), nameStyle: { color: '#ECEEF5' } } });
   assert.equal(r.status, 400); assert.equal(r.data.error.code, 'invalid_design');
 });

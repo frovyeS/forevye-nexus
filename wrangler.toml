@@ -38,18 +38,29 @@ MARKET_MAX_TRADE_MINOR = "1000000" # işlem başına en fazla 10.000 FN değerin
 MARKET_REFRESH_SEC = "60"
 MARKET_STALE_SEC = "900"          # fiyat 15 dk güncellenmezse işlem durur
 # GOLD_BASE_USD = "..."           # İsteğe bağlı: baz altın fiyatını (USD/ons) elle sabitler. Boşsa ilk çekilen fiyat baz olur.
-# GOLD_API_URL = "https://api.gold-api.com/price/XAU"
+# GOLD_API_URL_2 = "..."          # Yedek kaynak (varsayılan: Yahoo GC=F). Birincil kaynak yukarıda Mikro-Klima aktarımıdır.
 # Hediye kartı = Mikro-Klima kristal kartları. Gizli anahtar (GIFTCARD_API_SECRET) wrangler secret ile verilir, Mikro-Klima'daki NEXUS_SECRET ile aynı olmalı.
 # FOREVYE ID ile giriş: ID_URL = ID arayüzünün adresi, ID_API_URL = kimlik sunucusu (Mikro-Klima Worker). Mikro-Klima wrangler.toml → ID_REDIRECTS'e
 # "sanal-banka=https://<bu-sitenin-adresi>/api/auth/id/callback" eklenmeli. LEGACY_LOGIN="off" olunca e-posta/şifre kayıt ve girişi kapanır (varsayılan: açık).
-ID_URL = ""
+ID_URL = "https://mhaforevye.github.io/forevye-id"   # FOREVYE ID arayüzünün adresi (BOŞSA "FOREVYE ID ile giriş" çalışmaz!). Gerçek adresi yaz.
 ID_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
 LEGACY_LOGIN = "on"
 GIFTCARD_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev/api/ext/giftcard"
 GIFTCARD_MINOR_PER_KRISTAL = "100"   # 1 kristal = 1,00 FN (minor unit 100). Kur kararını sen ver; değiştirmek için bu sayıyı güncelle.
-# Brevo: BREVO_API_KEY secret olarak verilir. EMAIL_FROM adresi Brevo > Senders bölümünde doğrulanmış olmalı (ör. Gmail adresin).
-EMAIL_PROVIDER = "brevo"
-EMAIL_FROM = "FOREVYE NEXUS <SENIN-DOGRULANMIS-ADRESIN@gmail.com>"
+# E-posta: ORTAK posta servisi (Mikro-Klima Worker, FOREVYE ID ile aynı Brevo hesabı). Nexus'ta BREVO_API_KEY / EMAIL_FROM gerekmez.
+# İmza için GIFTCARD_API_SECRET (= Mikro-Klima'daki NEXUS_SECRET) yeterlidir; hediye kartıyla aynı anahtar.
+# Röle çökerse BREVO_API_KEY (secret) + EMAIL_FROM tanımlıysa doğrudan Brevo'ya düşer (yedek; zorunlu değil).
+EMAIL_PROVIDER = "relay"
+MAIL_RELAY_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
+EMAIL_FROM = ""
+
+# Kristal fiyatı: dış altın kaynağına yalnızca Mikro-Klima gider (60 sn önbellek); Nexus oradan okur. Çökerse doğrudan gold-api/Yahoo'ya düşer.
+GOLD_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev/api/ext/gold"
+
+# Kart editörü = forevye_nexus_bank deposunun yayın adresi (ayrı site). "Kartını tasarla" bu adrese bilet ile yönlendirir.
+# Tasarım orada yapılır, kayıt buraya (/api/editor/card) gelir. Adresin SON hâli buraya; yalnızca kaynağı (https://alanadi) CORS'a izinli olur.
+EDITOR_URL = "https://mhaforevye.github.io/forevye_nexus_bank/"
+# EDITOR_ORIGINS = "https://baska-alan.pages.dev"   # (isteğe bağlı) ek editör kaynakları, virgülle
 
 # Test/staging ortamı: ayrı D1 ve R2 kullanılır, üretim verisiyle karıştırılmaz.
 [env.staging]

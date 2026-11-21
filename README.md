@@ -12,13 +12,13 @@ Yığın: Cloudflare Workers + D1 (SQLite) + R2 (profil fotoğrafı) + statik ar
     npx wrangler r2 bucket create forevye-nexus-avatars
     npm run db:migrate:local
     npm run dev                                  # http://localhost:8787
-Üretim: `npm run db:migrate:remote`, sırlar için `wrangler secret put RESEND_API_KEY|CODE_PEPPER|INTERNAL_API_KEY|GIFTCARD_API_SECRET`,
-`GIFTCARD_API_URL` için de secret/var, ardından `npm run deploy`. `EMAIL_FROM` alan adınızı doğrulatın (Resend).
+Üretim: `npm run db:migrate:remote`, sırlar için `wrangler secret put CODE_PEPPER|INTERNAL_API_KEY|GIFTCARD_API_SECRET` (e-posta Mikro-Klima'daki ortak Brevo servisinden gider; `BREVO_API_KEY` yalnızca Mikro-Klima'da gerekir),
+`GIFTCARD_API_URL` için de secret/var, ardından `npm run deploy`. `wrangler.toml` içinde `EDITOR_URL` (kart editörü adresi) ve `ID_URL` (FOREVYE ID adresi) dolu olmalı.
 İlk süper yönetici: kayıt olup `scripts/make-superadmin.sql` çalıştırın. Yönetim paneli: `/admin.html`.
 Test için ayrı ortam: `wrangler.toml` içindeki `[env.staging]` (ayrı D1/R2).
 
 ## Testler
-    npm test        # Node 22+; gerçek şemayı node:sqlite üzerinde çalıştırır (31 test)
+    npm test        # Node 22+; gerçek şemayı node:sqlite üzerinde çalıştırır (44 test)
 
 ## Para birimi ve Kristal Borsası (v1.1)
 - **FN** kesin para birimidir (1 FN = 100 minor; eski "geçici" notu kalktı).
@@ -48,4 +48,4 @@ yönetici paneli (kullanıcı ara, askı, duyuru, şablon, rol, ters kayıt/düz
 - Rate limit sayaçları D1'de tutulur (basit, tek-bölge uygunluğu); yoğun saldırı için Cloudflare WAF/Turnstile önerilir.
 - Parola özeti PBKDF2-SHA256 100k tur (Workers sınırı); ileride Argon2 destekli servise geçilebilir.
 - Rozetler 6 tanımlı rozetle sınırlıdır (ilk kristal eklendi).
-- Kart tasarımı sözleşmesi (v1, 320×200, süs nesneleri) ayrı kart editörünün modelinden (856×540, katmanlar) farklıdır; bağlama aşamasında bkz. docs/INTEGRATION_NOTES.md §3c. Kart sözleşmesine zemin/yazı **kontrast zorunluluğu** eklendi (marka okunabilirliği).
+- Kart tasarımı banka kart editöründe yapılır (sözleşme sürüm 2, 856×540); eski v1 kartlar okunurken çevrilir. Ayrıntı: docs/INTEGRATION_NOTES.md §3.

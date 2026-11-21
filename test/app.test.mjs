@@ -221,14 +221,17 @@ test('kartlar: oluşturma, korunan alanlar, sahiplik, limit, geri dönüş', asy
   for (const f of [{ card_token: 'NXC-HACK-HACK' }, { status: 'disabled' }, { user_id: 'x' }, { is_default: true }]) {
     assert.equal((await a.cl.patch(`/api/cards/${main.id}`, f)).data.error.code, 'protected_field');
   }
-  // Korunan bölge (çip) üzerine süs bindirilemez
-  const d = defaultDesign();
-  d.decor = [{ id: 'star', x: 30, y: 85, size: 20 }];
+  // Korunan bölge (çip) üzerine nesne bindirilemez (sunucu, editörle aynı kural dosyasını çalıştırır)
+  const blob = (x, y) => ({ id: 'x1', type: 'shape', name: 'Daire', locked: false, visible: true, zIndex: 0, properties: { kind: 'circle', x, y, width: 60, height: 60, rotation: 0, opacity: 1, fill: '#FF0000', stroke: 'none', strokeWidth: 0, flipX: false, flipY: false, lockRatio: false, effects: [] } });
+  const d = defaultDesign('Test Kişi');
+  d.layers.push(blob(60, 190));
   assert.equal((await a.cl.patch(`/api/cards/${main.id}`, { design: d })).data.error.code, 'invalid_design');
-  d.decor = [{ id: 'star', x: 280, y: 100, size: 20 }];
+  d.layers[d.layers.length - 1] = blob(620, 250);
   const ok = await a.cl.patch(`/api/cards/${main.id}`, { design: d, display_name: 'Ada L.' });
   assert.equal(ok.status, 200);
   assert.equal(ok.data.version, 2);
+  assert.equal(ok.data.display_name, 'Ada L.');
+  assert.equal(ok.data.design.userDisplayName, 'Ada L.', 'kart adı tasarımla senkron');
   assert.equal((await a.cl.patch(`/api/cards/${main.id}`, { display_name: '<script>' })).status, 400);
   assert.equal((await a.cl.patch(`/api/cards/${main.id}`, { display_name: 'x'.repeat(40) })).status, 400);
 
@@ -255,11 +258,16 @@ test('kartlar: oluşturma, korunan alanlar, sahiplik, limit, geri dönüş', asy
   assert.equal(after.filter((c) => c.is_default).length, 1);
 });
 
-test('kart sözleşmesi: bilinmeyen alan ve geçersiz renk reddedilir', () => {
-  assert.equal(validateDesign({ ...defaultDesign(), extra: 1 }).ok, false);
-  assert.equal(validateDesign({ ...defaultDesign(), accent: 'red' }).ok, false);
-  assert.equal(validateDesign({ ...defaultDesign(), pattern: 'evil' }).ok, false);
+test('kart sözleşmesi: geçersiz renk, sistem katmanı ve bilinmeyen şablon reddedilir', () => {
+  const bad = defaultDesign(); bad.layers[0].properties.colors = ['red', '#000000'];
+  assert.equal(validateDesign(bad).ok, false);
+  const sys = defaultDesign(); sys.layers.push({ id: 'z1', type: 'system_chip', properties: {} });
+  assert.equal(validateDesign(sys).ok, false, 'sistem katmanı istemciden kabul edilmez');
+  assert.equal(validateDesign({ ...defaultDesign(), template: 'evil' }).ok, false);
+  assert.equal(validateDesign({ ...defaultDesign(), canvas: { width: 10, height: 10 } }).ok, false);
   assert.equal(validateDesign(defaultDesign()).ok, true);
+  // Bilinmeyen alanlar atılır (izin listesiyle yeniden kurulur)
+  assert.equal('extra' in validateDesign({ ...defaultDesign(), extra: 1 }).design, false);
 });
 
 test('yönetici: yetkisiz erişim, rol yönetimi, askı, ters kayıt, denetim kaydı', async () => {

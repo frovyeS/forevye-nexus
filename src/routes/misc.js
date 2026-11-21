@@ -5,6 +5,7 @@ import { creditExternal } from '../lib/ledger.js';
 import { giftcardStatus, redeemViaExistingModule } from '../integrations/giftcard.js';
 import { balanceOf } from './wallet.js';
 import { usernameChangeStatus } from './profile.js';
+import { readStoredDesign } from '../../shared/card-contract.js';
 
 // Rozet tanımları. Koşullar SUNUCUDA değerlendirilir; kullanıcı kendine rozet atayamaz.
 export const ACHIEVEMENTS = {
@@ -27,7 +28,7 @@ export async function meSummary(env, user) {
     balanceOf(env, user.id),
     env.DB.prepare('SELECT COUNT(*) AS c FROM notifications WHERE user_id = ? AND read_at IS NULL').bind(user.id).first(),
     env.DB.prepare('SELECT id, title, body, created_at FROM announcements WHERE active = 1 ORDER BY created_at DESC LIMIT 3').all(),
-    env.DB.prepare('SELECT id, display_name, card_token, status, design_json FROM cards WHERE user_id = ? AND is_default = 1').bind(user.id).first(),
+    env.DB.prepare('SELECT id, display_name, card_token, status, design_json, design_version FROM cards WHERE user_id = ? AND is_default = 1').bind(user.id).first(),
     usernameChangeStatus(env, user),
   ]);
   return {
@@ -37,7 +38,7 @@ export async function meSummary(env, user) {
       is_admin: ['admin', 'superadmin'].includes(user.role), // yalnızca bağlantıyı göstermek için; yetki sunucuda denetlenir
     },
     balance, unread: unread.c, announcements: ann.results,
-    default_card: card ? { ...card, design: JSON.parse(card.design_json), design_json: undefined } : null,
+    default_card: card ? { ...card, design: readStoredDesign(card.design_json, card.display_name, card.design_version), design_json: undefined, design_version: undefined } : null,
     config: {
       currency: env.CURRENCY_CODE || 'FN',
       max_transfer: cfgNum(env, 'MAX_TRANSFER_MINOR', 500000),
@@ -73,9 +74,9 @@ export const miscRoutes = {
     const earned = (await env.DB.prepare('SELECT key, earned_at FROM user_achievements WHERE user_id = ?').bind(user.id).all()).results;
     const designs = (await env.DB.prepare(
       'SELECT h.id, h.card_id, h.version, h.display_name, h.design_json, h.created_at FROM card_design_history h WHERE h.user_id = ? ORDER BY h.created_at DESC LIMIT 20',
-    ).bind(user.id).all()).results.map((d) => ({ ...d, design: JSON.parse(d.design_json), design_json: undefined }));
+    ).bind(user.id).all()).results.map((d) => ({ ...d, design: readStoredDesign(d.design_json, d.display_name, d.version), design_json: undefined }));
     const themes = (await env.DB.prepare('SELECT id, name, design_json, limited_until FROM card_templates WHERE active = 1 AND (limited_until IS NULL OR limited_until > ?) ORDER BY created_at DESC').bind(t).all())
-      .results.map((x) => ({ ...x, design: JSON.parse(x.design_json), design_json: undefined }));
+      .results.map((x) => ({ ...x, design: readStoredDesign(x.design_json, 'NEXUS'), design_json: undefined }));
     return json({
       badges: Object.entries(ACHIEVEMENTS).map(([key, v]) => ({ key, ...v, earned_at: earned.find((e) => e.key === key)?.earned_at ?? null })),
       saved_designs: designs, themes,
