@@ -1,18 +1,23 @@
 # Entegrasyon notları
 
-## 1. Hediye kartı sistemi (mevcut ZIP) — ÖNEMLİ
-Şartname, mevcut hediye kartı sisteminin yeniden yazılmamasını istiyor. Bu teslimat sırasında o ZIP dosyaları
-konuşmaya eklenmemişti (yalnızca şartname PDF'i geldi), bu yüzden mevcut modülün gerçek API'si bilinmiyor.
-`src/integrations/giftcard.js` bu yüzden ÖNERİLEN bir sözleşmeyle yazılmış ince bağdaştırıcıdır:
+## 1. Hediye kartı sistemi = Mikro-Klima kristal kartları (BAĞLANDI)
+Mevcut hediye kartı sistemi Mikro-Klima Worker'ındaki `gcards`'tır (kristal kartı: no + CVV + SKT). Yeniden yazılmadı;
+Mikro-Klima'ya sunucudan sunucuya bir uç eklendi (`worker/nexus.js`) ve `src/integrations/giftcard.js` ona bağlandı:
 
-    POST {GIFTCARD_API_URL}/redeem
+    POST {GIFTCARD_API_URL}/redeem      GET {GIFTCARD_API_URL}/health
     x-nx-timestamp, x-nx-signature = HMAC-SHA256(GIFTCARD_API_SECRET, "<timestamp>.<gövde>")
-    gövde: { user_id, code, idempotency_key }
-    200: { ok:true, amount:<minor unit>, reference:"<benzersiz>" }   4xx: { ok:false, error:"invalid|used|expired" }
+    gövde: { user_id, code: "NNNNNNNN CVV AA/YY", idempotency_key }
+    200: { ok:true, amount:<kristal>, unit:"kristal", reference:"mkgc:<kart no>" }   4xx: { ok:false, error:"invalid|used|expired" }
 
-Yapılacak: ZIP'teki modülü inceleyip bu dosyadaki tek fonksiyonu (`redeemViaExistingModule`) gerçek API'ye göre uyarlayın.
-Kod doğrulama/süre/kullanım kontrolü o modülde kalır. Bu uygulama yalnızca `reference` ile bakiyeyi
-tekrar-güvenli (aynı referans ikinci kez yüklenmez) yükler. `GIFTCARD_API_URL` boşsa özellik "bağlı değil" görünür.
+- Kart kodu tek metindir (`12345674 123 05/27`); Nexus arayüzündeki kod kutusu değişmeden çalışır.
+- Kristal → FN kuru `GIFTCARD_MINOR_PER_KRISTAL` (wrangler.toml, varsayılan 100: 1 kristal = 1,00 FN). Bu bir ekonomi kararıdır; kuru sen belirle.
+- `GIFTCARD_API_SECRET` (Nexus) = `NEXUS_SECRET` (Mikro-Klima): `npx wrangler secret put ...` ile her iki tarafa AYNI değer (en az 16 karakter).
+- Aynı kullanıcı aynı kartı tekrar gönderirse aynı `reference` döner; defter referansla tekrar-güvenlidir. Kart başka kullanıcıdaysa `used`.
+
+## 1b. Giriş = FOREVYE ID (BAĞLANDI)
+`POST /api/auth/id/start` (PKCE adresi), `GET /api/auth/id/callback` (kod değişimi → çerez oturumu), `POST /api/auth/id/complete` (ilk girişte kullanıcı adı + kart ismi).
+Tablolar: `id_links` (Nexus kullanıcısı ↔ ID kullanıcısı), `id_states`, `id_pending` (migrations/0002_forevye_id.sql). Ayarlar: `ID_URL`, `ID_API_URL`; Mikro-Klima tarafında `ID_REDIRECTS`'e `sanal-banka=<site>/api/auth/id/callback`.
+Eski e-posta hesabı, aynı doğrulanmış e-posta ile ID'ye ilk girişte otomatik bağlanır. `LEGACY_LOGIN="off"` e-posta/şifre kayıt ve girişini (410) kapatır; önce herkesin ID ile bağlandığından emin ol.
 
 ## 2. Oyun içi alışveriş (sunucudan sunucuya)
 `POST /api/internal/purchase` { user_id, amount:"10.00", external_ref } — `Authorization: Bearer INTERNAL_API_KEY`.

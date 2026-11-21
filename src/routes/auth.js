@@ -1,5 +1,5 @@
 import { HttpError, json, readJson, now, MIN, HOUR, clientIp, isConstraint } from '../lib/util.js';
-import { hashPassword, verifyPassword, dummyVerify, sha256hex, randomToken, randomCode6, safeEqual } from '../lib/crypto.js';
+import { hashPassword, verifyPassword, dummyVerify, sha256hex, randomToken, randomCode6, safeEqual, b64url } from '../lib/crypto.js';
 import { rateLimit } from '../lib/rate.js';
 import { sendMail } from '../lib/mail.js';
 import { normEmail, validateUsername, validatePassword } from '../lib/validate.js';
@@ -8,6 +8,14 @@ import { validateDisplayName, defaultDesign } from '../../shared/card-contract.j
 import { newRef, randomBase32 } from '../lib/util.js';
 import { usernameTaken } from './profile.js';
 import { meSummary } from './misc.js';
+
+// LEGACY_LOGIN=off → e-posta kodu/şifre ile kayıt ve giriş kapanır; yalnızca FOREVYE ID ile giriş kalır.
+function legacyGuard(env) {
+  if (env.LEGACY_LOGIN === 'off') throw new HttpError(410, 'legacy_login_off', 'E-posta ile giriş kapatıldı. FOREVYE ID ile giriş yapın.');
+}
+const idConfigured = (env) => Boolean(env.ID_URL && env.ID_API_URL);
+const idCallbackUrl = (url) => `${url.origin}/api/auth/id/callback`;
+const ID_APP = 'sanal-banka';
 
 const CODE_TTL = 10 * MIN;
 const MAX_ATTEMPTS = 5;
@@ -51,6 +59,7 @@ async function deliverCode(env, email, purpose) {
 
 export const authRoutes = {
   async registerStart(req, env) {
+    legacyGuard(env);
     const { email: raw } = await readJson(req);
     const email = normEmail(raw);
     await rateLimit(env, `reg:ip:${clientIp(req)}`, 10, HOUR);
@@ -63,6 +72,7 @@ export const authRoutes = {
   },
 
   async registerVerify(req, env) {
+    legacyGuard(env);
     const { email: raw, code } = await readJson(req);
     const email = normEmail(raw);
     await rateLimit(env, `regv:ip:${clientIp(req)}`, 30, HOUR);
@@ -80,6 +90,7 @@ export const authRoutes = {
   },
 
   async registerComplete(req, env) {
+    legacyGuard(env);
     const b = await readJson(req);
     await rateLimit(env, `regc:ip:${clientIp(req)}`, 20, HOUR);
     if (typeof b.token !== 'string') throw new HttpError(400, 'invalid_token', 'Kayıt oturumu geçersiz. Baştan başlayın.');
@@ -122,6 +133,7 @@ export const authRoutes = {
   },
 
   async login(req, env) {
+    legacyGuard(env);
     const { email: raw, password } = await readJson(req);
     const ip = clientIp(req);
     await rateLimit(env, `login:ip:${ip}`, 30, 10 * MIN);
@@ -144,6 +156,7 @@ export const authRoutes = {
   },
 
   async forgot(req, env) {
+    legacyGuard(env);
     const { email: raw } = await readJson(req);
     const email = normEmail(raw);
     await rateLimit(env, `forgot:ip:${clientIp(req)}`, 10, HOUR);
@@ -155,6 +168,7 @@ export const authRoutes = {
   },
 
   async reset(req, env) {
+    legacyGuard(env);
     const b = await readJson(req);
     const email = normEmail(b.email);
     await rateLimit(env, `reset:ip:${clientIp(req)}`, 20, HOUR);
@@ -169,5 +183,105 @@ export const authRoutes = {
       notifyStmt(env, user.id, 'password_reset', 'Şifre sıfırlandı', 'Şifreniz sıfırlandı ve tüm oturumlar kapatıldı.'),
     ]);
     return json({ ok: true });
+  },
+
+  // ---------- FOREVYE ID ile giriş (kod + PKCE) ----------
+  // start → ID sitesi (izin) → callback (kod değişimi, sunucudan sunucuya) → oturum çerezi. ID parolayı hiç Nexus'a vermez.
+  async idStart(req, env, url) {
+    if (!idConfigured(env)) throw new HttpError(503, 'id_unavailable', 'FOREVYE ID ile giriş bu sunucuda ayarlı değil.');
+    await rateLimit(env, `idstart:ip:${clientIp(req)}`, 20, 10 * MIN);
+    const verifier = randomToken(32), state = randomToken(18), t = now(env);
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM id_states WHERE expires_at < ?').bind(t),
+      env.DB.prepare('INSERT INTO id_states (state_hash, verifier, expires_at) VALUES (?,?,?)').bind(await sha256hex(state), verifier, t + 10 * MIN),
+    ]);
+    const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+    const q = new URLSearchParams({ app: ID_APP, redirect: idCallbackUrl(url), state, challenge });
+    return json({ url: `${env.ID_URL.replace(/\/+$/, '')}/#/baglan?${q}` });
+  },
+
+  async idCallback(req, env, url) {
+    const fail = (code) => new Response(null, { status: 302, headers: { location: `/?id_error=${code}` } });
+    if (!idConfigured(env)) return fail('id_unavailable');
+    try { await rateLimit(env, `idcb:ip:${clientIp(req)}`, 30, 10 * MIN); } catch { return fail('rate_limited'); }
+    const code = url.searchParams.get('code') || '', state = url.searchParams.get('state') || '';
+    if (!code || !state) return fail('id_failed');
+    const t = now(env);
+    const st = await env.DB.prepare('DELETE FROM id_states WHERE state_hash = ? AND expires_at > ? RETURNING verifier').bind(await sha256hex(state), t).first();
+    if (!st) return fail('id_state');
+    let data;
+    try {
+      const res = await fetch(`${env.ID_API_URL.replace(/\/+$/, '')}/identity/token/exchange`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code, verifier: st.verifier, app: ID_APP, redirect: idCallbackUrl(url), tokens: false }),
+      });
+      data = await res.json();
+      if (!res.ok || !data.user) return fail('id_failed');
+    } catch { return fail('id_unavailable'); }
+    const idu = data.user;
+    if (!idu.emailVerified || typeof idu.email !== 'string') return fail('id_unverified');
+    let email; try { email = normEmail(idu.email); } catch { return fail('id_failed'); }
+
+    let user = await env.DB.prepare('SELECT u.* FROM id_links l JOIN users u ON u.id = l.user_id WHERE l.id_user_id = ?').bind(idu.userId).first();
+    if (!user) {
+      // Aynı doğrulanmış e-postalı mevcut Nexus hesabı varsa (eski e-posta girişi) ona bağlanır; her iki taraf da e-postayı doğrulamıştır.
+      const old = await env.DB.prepare('SELECT * FROM users WHERE email = ? AND email_verified_at IS NOT NULL').bind(email).first();
+      if (old) {
+        const has = await env.DB.prepare('SELECT 1 AS x FROM id_links WHERE user_id = ?').bind(old.id).first();
+        if (has) return fail('id_conflict');
+        await env.DB.batch([
+          env.DB.prepare('INSERT INTO id_links (user_id, id_user_id, linked_at) VALUES (?,?,?)').bind(old.id, idu.userId, t),
+          notifyStmt(env, old.id, 'id_linked', 'FOREVYE ID bağlandı', 'Hesabınız FOREVYE ID ile birleştirildi. Artık ID ile giriş yapabilirsiniz.'),
+        ]);
+        user = old;
+      }
+    }
+    if (!user) {
+      const token = randomToken(32);
+      await env.DB.prepare('INSERT INTO id_pending (token_hash, id_user_id, email, expires_at) VALUES (?,?,?,?)').bind(await sha256hex(token), idu.userId, email, t + 30 * MIN).run();
+      return new Response(null, { status: 302, headers: { location: `/#/id-kayit/${token}` } });
+    }
+    const s = await createSession(env, req, user.id);
+    if (s.newDevice) await notify(env, user.id, 'new_device', 'Yeni cihazdan giriş', 'Hesabınıza yeni bir cihazdan giriş yapıldı. Siz değilseniz şifrenizi değiştirin.');
+    return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': s.cookie } });
+  },
+
+  // İlk kez ID ile gelen kullanıcı: Nexus kullanıcı adı + kart ismi seçer (şifre yok; kimlik ID'dedir).
+  async idComplete(req, env) {
+    const b = await readJson(req);
+    await rateLimit(env, `idc:ip:${clientIp(req)}`, 20, HOUR);
+    if (typeof b.token !== 'string') throw new HttpError(400, 'invalid_token', 'Kayıt oturumu geçersiz. Baştan başlayın.');
+    const t = now(env), th = await sha256hex(b.token);
+    const tok = await env.DB.prepare('SELECT id_user_id, email FROM id_pending WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ?').bind(th, t).first();
+    if (!tok) throw new HttpError(400, 'invalid_token', 'Kayıt oturumu geçersiz veya süresi dolmuş. ID ile yeniden giriş yapın.');
+    const username = validateUsername(b.username);
+    const dn = validateDisplayName(b.card_display_name);
+    if (!dn.ok) throw new HttpError(400, 'invalid_display_name', dn.error);
+    if (await usernameTaken(env, username, null)) throw new HttpError(409, 'username_taken', 'Bu kullanıcı adı alınmış.');
+    const id = crypto.randomUUID(), cardId = crypto.randomUUID(), design = JSON.stringify(defaultDesign());
+    const pw = await hashPassword(randomToken(32));   // kullanılamaz parola: giriş yalnızca ID ile
+    try {
+      await env.DB.batch([
+        env.DB.prepare('UPDATE id_pending SET consumed_at = ? WHERE token_hash = ? AND consumed_at IS NULL').bind(t, th),
+        env.DB.prepare('INSERT INTO users (id, email, email_verified_at, username, username_lower, password_hash, created_at) VALUES (?,?,?,?,?,?,?)')
+          .bind(id, tok.email, t, username, username.toLowerCase(), pw, t),
+        env.DB.prepare('INSERT INTO id_links (user_id, id_user_id, linked_at) VALUES (?,?,?)').bind(id, tok.id_user_id, t),
+        env.DB.prepare('INSERT INTO wallets (user_id, balance, updated_at) VALUES (?,0,?)').bind(id, t),
+        env.DB.prepare(
+          `INSERT INTO cards (id, user_id, label, display_name, card_token, status, is_default, design_json, design_version, created_at, updated_at)
+           VALUES (?,?,?,?,?,'active',1,?,1,?,?)`,
+        ).bind(cardId, id, 'Ana kart', dn.value, `NXC-${randomBase32(4)}-${randomBase32(4)}`, design, t, t),
+        env.DB.prepare('INSERT INTO card_design_history (id, card_id, user_id, version, display_name, design_json, created_at) VALUES (?,?,?,?,?,?,?)')
+          .bind(crypto.randomUUID(), cardId, id, 1, dn.value, design, t),
+        notifyStmt(env, id, 'welcome', 'Hoş geldiniz', 'FOREVYE NEXUS bir sanal oyun ekonomisidir; gerçek para içermez.'),
+      ]);
+    } catch (err) {
+      if (isConstraint(err, 'users.username_lower')) throw new HttpError(409, 'username_taken', 'Bu kullanıcı adı alınmış.');
+      if (isConstraint(err, 'users.email') || isConstraint(err, 'id_links')) throw new HttpError(409, 'register_failed', 'Kayıt tamamlanamadı. ID ile yeniden giriş yapın.');
+      throw err;
+    }
+    const s = await createSession(env, req, id);
+    const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
+    return json({ ok: true, ...(await meSummary(env, user)) }, 201, { 'set-cookie': s.cookie });
   },
 };

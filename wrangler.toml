@@ -39,6 +39,14 @@ MARKET_REFRESH_SEC = "60"
 MARKET_STALE_SEC = "900"          # fiyat 15 dk güncellenmezse işlem durur
 # GOLD_BASE_USD = "..."           # İsteğe bağlı: baz altın fiyatını (USD/ons) elle sabitler. Boşsa ilk çekilen fiyat baz olur.
 # GOLD_API_URL = "https://api.gold-api.com/price/XAU"
+# Hediye kartı = Mikro-Klima kristal kartları. Gizli anahtar (GIFTCARD_API_SECRET) wrangler secret ile verilir, Mikro-Klima'daki NEXUS_SECRET ile aynı olmalı.
+# FOREVYE ID ile giriş: ID_URL = ID arayüzünün adresi, ID_API_URL = kimlik sunucusu (Mikro-Klima Worker). Mikro-Klima wrangler.toml → ID_REDIRECTS'e
+# "sanal-banka=https://<bu-sitenin-adresi>/api/auth/id/callback" eklenmeli. LEGACY_LOGIN="off" olunca e-posta/şifre kayıt ve girişi kapanır (varsayılan: açık).
+ID_URL = ""
+ID_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
+LEGACY_LOGIN = "on"
+GIFTCARD_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev/api/ext/giftcard"
+GIFTCARD_MINOR_PER_KRISTAL = "100"   # 1 kristal = 1,00 FN (minor unit 100). Kur kararını sen ver; değiştirmek için bu sayıyı güncelle.
 EMAIL_PROVIDER = "resend"
 EMAIL_FROM = "FOREVYE NEXUS <no-reply@example.com>"
 

@@ -46,7 +46,11 @@ export async function redeemViaExistingModule(env, { userId, code, idempotencyKe
   }
   const data = await res.json().catch(() => ({}));
   if (res.ok && data.ok && Number.isSafeInteger(data.amount) && data.amount > 0 && typeof data.reference === 'string') {
-    return { amount: data.amount, reference: data.reference };
+    // Mikro-Klima kristal cinsinden döner (unit:'kristal'); defter minor unit tutar. 1 kristal = GIFTCARD_MINOR_PER_KRISTAL (varsayılan 100).
+    const per = data.unit === 'kristal' ? (Number.parseInt(env.GIFTCARD_MINOR_PER_KRISTAL, 10) || 100) : 1;
+    const amount = data.amount * per;
+    if (!Number.isSafeInteger(amount)) throw new HttpError(503, 'giftcard_unavailable', 'Hediye kartı hizmeti şu an kullanılamıyor.');
+    return { amount, reference: data.reference };
   }
   const msgs = { invalid: 'Kod geçersiz.', used: 'Bu kod daha önce kullanılmış.', expired: 'Kodun süresi dolmuş.' };
   if (res.status >= 400 && res.status < 500) throw new HttpError(400, 'giftcard_rejected', msgs[data.error] || 'Kod kabul edilmedi.');
