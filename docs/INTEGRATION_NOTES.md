@@ -45,3 +45,8 @@ Mikro-Klima, FOREVYE ID ve Nexus için ortak hizmetleri üstlenir; Nexus Worker'
 - **Posta:** `POST {MAIL_RELAY_URL}/api/ext/mail` (imza: hediye kartıyla aynı HMAC). FOREVYE ID de aynı `worker/mail.js` modülünü kullanır → tek Brevo hesabı, tek gönderen adresi. Nexus'ta `EMAIL_PROVIDER="relay"`; `BREVO_API_KEY`/`EMAIL_FROM` yalnızca Mikro-Klima'da gerekir (Nexus'ta isteğe bağlı yedek). Alıcı başına 10 dk'da 5, toplam 10 dk'da 80 posta sınırı vardır.
 - **Kristal fiyatı:** Nexus içindeki piyasa simülasyonu tarafından üretilir; Mikro-Klima'nın altın fiyat servisine bağımlılık kaldırılmıştır.
 - Gizli anahtar: `GIFTCARD_API_SECRET` (Nexus) = `NEXUS_SECRET` (Mikro-Klima), aynı değer.
+
+## 6. Nexus Pass (üyelik) entegrasyonu
+- **Pass sitesi** (nexus-pass deposu) Nexus'tan bilet ile açılır; FN ile satın alır. Ayrıntı: README → "Nexus Pass".
+- **Mikro-Klima / Hava / Mağaza**: üyelik kontrolü için sunucudan sunucuya `POST {NEXUS}/api/internal/entitlement` (`Authorization: Bearer INTERNAL_API_KEY`), gövde `{ "id_user_id": "<FOREVYE ID kimliği>" }` veya `{ "user_id": "<Nexus kullanıcı id>" }`, isteğe bağlı `app` / `product_id`. Yanıt `active` ve `expires_at` içerir; sonucu kısa süre (örn. 60 sn) önbelleğe alın.
+- FOREVYE ID ile giriş yapan kullanıcılar `id_links` tablosuyla Nexus hesabına bağlıdır; kimlik eşlemesi bu tablodan yapılır. Bağlı Nexus hesabı olmayan ID kullanıcısı için uç 404 döner (üyelik yok sayın).

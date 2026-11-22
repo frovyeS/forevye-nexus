@@ -18,7 +18,7 @@ Yığın: Cloudflare Workers + D1 (SQLite) + R2 (profil fotoğrafı) + statik ar
 Test için ayrı ortam: `wrangler.toml` içindeki `[env.staging]` (ayrı D1/R2).
 
 ## Testler
-    npm test        # Node 22+; gerçek şemayı node:sqlite üzerinde çalıştırır (44 test)
+    npm test        # Node 22+; gerçek şemayı node:sqlite üzerinde çalıştırır (51 test)
 
 ## Para birimi ve Kristal Borsası (v1.1)
 - **FN** kesin para birimidir (1 FN = 100 minor; eski "geçici" notu kalktı). Yeni hesap cüzdanı kayıt sırasında 0 FN ile açılır; mevcut hesap bakiyeleri otomatik sıfırlanmaz.
@@ -32,6 +32,15 @@ Test için ayrı ortam: `wrangler.toml` içindeki `[env.staging]` (ayrı D1/R2).
 
 ## Kart QR ve sanal kart kodu
 Kart ön yüzünde tam NXC kart kodu ve sağ altta çevrimdışı üretilen QR yer alır. Kartlarım → QR okut ekranında kamera ile (BarcodeDetector destekli tarayıcı) tarama veya elle kart kodu girişi yapılabilir. Sunucu aktif kartı doğrular ve kart sahibinin kullanıcı adı, kartta görünen adı ve sanal kart kodunu tek tıkla kopyalatır. QR gerçek banka kartı/ödeme bilgisi içermez; fiziksel NFC çipi yerine geçmez.
+
+## Nexus Pass (üyelikler)
+Süreli üyelikler FN bakiyesiyle alınır; ayrı site olan **nexus-pass** deposu arayüzdür, arka uç bu Worker'dadır (`src/routes/pass.js`).
+- Akış (kart editörüyle aynı yöntem): Nexus → **İşlemler → Nexus Pass** → tek kullanımlık bilet → Pass sitesi `POST /api/pass/exchange` ile jeton alır (30 dk kayan, en çok 8 saat). Jeton yalnızca `/api/pass/*` uçlarında geçerlidir; CORS yalnızca `PASS_URL` kaynağına açıktır.
+- Satın alma tek atomik D1 batch'tir: hesap aktif mi + çift aktif üyelik koruması + bakiye düşümü (defter: `purchase`) + satın alma kaydı + süre. Fiyat/süre yalnızca sunucudadır; `idem` anahtarıyla çift gönderim engellenir; aktif üyelik varken aynı paket tekrar alınamaz, süre bitince aynı kayıt yenilenir.
+- **Diğer sistemler** (Hava, Mağaza, …): `POST /api/internal/entitlement` (`INTERNAL_API_KEY`) gövde `{ user_id | id_user_id (FOREVYE ID), app?, product_id? }` → `{ active, entitlements[] }`. Tarayıcıdan çağrılamaz.
+- İade/düzeltme (`/api/internal/refund`, yönetici ters kaydı) üyeliği hemen kapatır ve satın almayı `refunded` yapar.
+- Katalog: `pass_products` (0006 migration iki örnek paketle gelir). Yönetim: `GET /api/admin/pass/products` (admin), `POST /api/admin/pass/products` (süper yönetici, denetim kaydı tutulur); fiyat FN olarak (`"5.00"`), süre gün olarak verilir.
+- Ayarlar: `PASS_URL` (Pass sitesinin adresi), `PASS_ORIGINS` (isteğe bağlı). Dağıtımda `npm run db:migrate:remote` ile 0006 uygulanır (uygulanmazsa tablolar ilk çağrıda kendiliğinden kurulur).
 
 ## Şartnameden uygulananlar
 Kayıt (e-posta kodu doğrulama), giriş, şifre sıfırlama, oturum yönetimi; Ana Sayfa / İşlemler / Kartlarım / Profil;

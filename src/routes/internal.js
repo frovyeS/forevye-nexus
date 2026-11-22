@@ -5,6 +5,7 @@ import { purchase, reverseRef, runBatch } from '../lib/ledger.js';
 import { grantAchievement } from './misc.js';
 import { balanceOf } from './wallet.js';
 import { auditStmt } from './admin.js';
+import { passRevokeStmts } from '../lib/pass.js';
 
 function requireKey(req, env) {
   const h = req.headers.get('authorization') || '';
@@ -32,7 +33,7 @@ export const internalRoutes = {
     const orig = await env.DB.prepare('SELECT type, user_id FROM ledger_entries WHERE tx_ref = ?').bind(ref).first();
     if (!orig || orig.type !== 'purchase') throw new HttpError(400, 'not_refundable', 'Yalnızca alışveriş kayıtları iade edilebilir.');
     const { ref: rref, stmts } = await reverseRef(env, { originalRef: ref, type: 'refund', actor: 'internal-api' });
-    await runBatch(env, [...stmts, auditStmt(env, 'internal-api', 'purchase.refund', ref, 'oyun içi iade', 'success', `refund=${rref}`)]);
+    await runBatch(env, [...stmts, ...(await passRevokeStmts(env, ref)), auditStmt(env, 'internal-api', 'purchase.refund', ref, 'oyun içi iade', 'success', `refund=${rref}`)]);
     return json({ ok: true, ref: rref, balance: await balanceOf(env, orig.user_id) }, 201);
   },
 };

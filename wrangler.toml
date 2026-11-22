@@ -61,6 +61,11 @@ EMAIL_FROM = ""
 EDITOR_URL = "https://mhaforevye.github.io/forevye_nexus_bank/"
 # EDITOR_ORIGINS = "https://baska-alan.pages.dev"   # (isteğe bağlı) ek editör kaynakları, virgülle
 
+# Nexus Pass = nexus-pass deposunun yayın adresi (ayrı site). Üyelikler FN ile alınır; Nexus'tan bilet ile açılır, kayıt/ödeme buraya (/api/pass/*) gelir.
+# Adresin SON hâli buraya; yalnızca kaynağı (https://alanadi) CORS'a izinli olur. Diğer sistemler (Hava, Mağaza) yetkiyi POST /api/internal/entitlement ile (INTERNAL_API_KEY) sorar.
+PASS_URL = "https://mhaforevye.github.io/nexus-pass/"
+# PASS_ORIGINS = "https://baska-alan.pages.dev"   # (isteğe bağlı) ek Pass kaynakları, virgülle
+
 # Test/staging ortamı: ayrı D1 ve R2 kullanılır, üretim verisiyle karıştırılmaz.
 [env.staging]
 name = "forevye-nexus-staging"

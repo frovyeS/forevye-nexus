@@ -23,3 +23,11 @@ Web sayfasındaki bir QR kodu görünmez olamaz; kamera onu optik olarak okuyabi
 - Kart yüzü: sağ alttaki "•••• XXXX" metni özgün konumuna (x=830) döndürüldü; uzun kart adlarıyla çakışması önlendi.
 - QR okuyucu: ilk başarılı taramadan sonra kamera yeniden açıldığında taramanın durması hatası düzeltildi.
 - Not: 0005 migration geçmiş fiyatları siler ama mevcut kristal envanterini korur; eski fiyatla (~1 FN) alınmış kristaller yeni fiyattan (25 FN) satılabilir. Canlı veri varsa MARKET_INITIAL_PRICE_MICRO'yu buna göre seçin.
+
+## Nexus Pass entegrasyonu
+- Yeni: `migrations/0006_pass.sql`, `src/routes/pass.js`, `src/lib/pass.js`, `test/pass.test.mjs`, `public/js/views-pass.js`.
+- Üyelik ödemesi artık Nexus cüzdanından (FN) yapılır; eski Mikro-Klima `/api/npass/*` ve ayrı "kristal hesabı" akışı yerine Nexus oturumu + bilet kullanılır.
+- Diğer sistemler için `POST /api/internal/entitlement`; iade/ters kayıt üyeliği kapatır.
+- Nexus arayüzü: İşlemler → Nexus Pass (üyeliklerim + Pass'i aç).
+- Pass sitesinde `[hidden]` CSS hatası düzeltildi (gizli onay katmanı tıklamaları engelliyordu).
+- Dikkat: Mikro-Klima tarafındaki eski `/api/npass/*` üyelikleri bu sisteme otomatik taşınmaz; eski üyelikler gerekiyorsa elle aktarılmalıdır.
