@@ -1,25 +1,25 @@
 import { api } from './api.js';
-import { h, mount, toast, money, dt, load, field, pwField, busy, empty, spinner, errorBox, icon, back } from './ui.js';
+import { h, mount, toast, money, dt, load, field, busy, empty, spinner, errorBox } from './ui.js';
 import { state, refreshMe, cur, initial } from './state.js';
 
 const TYPE = {
-  transfer_out: (t) => ({ ico: 'send', title: `Transfer gönderildi${t.counterparty ? ` • @${t.counterparty}` : ''}` }),
-  transfer_in: (t) => ({ ico: 'receive', title: `Transfer alındı${t.counterparty ? ` • @${t.counterparty}` : ''}` }),
-  topup: () => ({ ico: 'plus', title: 'Hediye kartı yüklemesi' }),
-  purchase: () => ({ ico: 'cart', title: 'Oyun içi alışveriş' }),
-  refund: () => ({ ico: 'undo', title: 'İade' }),
-  reversal: () => ({ ico: 'undo', title: 'Düzeltme kaydı' }),
-  adjustment: () => ({ ico: 'settings', title: 'Bakiye düzeltmesi' }),
-  market_buy: () => ({ ico: 'market', title: 'Kristal alımı' }),
-  market_sell: () => ({ ico: 'market', title: 'Kristal satışı' }),
+  transfer_out: (t) => ({ ico: '↗', title: `Transfer gönderildi${t.counterparty ? ` • @${t.counterparty}` : ''}` }),
+  transfer_in: (t) => ({ ico: '↙', title: `Transfer alındı${t.counterparty ? ` • @${t.counterparty}` : ''}` }),
+  topup: () => ({ ico: '＋', title: 'Hediye kartı yüklemesi' }),
+  purchase: () => ({ ico: '🛒', title: 'Oyun içi alışveriş' }),
+  refund: () => ({ ico: '↺', title: 'İade' }),
+  reversal: () => ({ ico: '↺', title: 'Düzeltme kaydı' }),
+  adjustment: () => ({ ico: '⚙', title: 'Bakiye düzeltmesi' }),
+  market_buy: () => ({ ico: '💎', title: 'Kristal alımı' }),
+  market_sell: () => ({ ico: '💎', title: 'Kristal satışı' }),
 };
 const STATUS = { success: 'Başarılı', pending: 'Bekliyor', failed: 'Başarısız', cancelled: 'İptal edildi' };
 
 export function txRow(t) {
-  const m = (TYPE[t.type] || (() => ({ ico: 'info', title: t.type })))(t);
+  const m = (TYPE[t.type] || (() => ({ ico: '•', title: t.type })))(t);
   const sign = t.amount > 0 ? '+' : '−';
   return h('li', { class: 'item' },
-    h('div', { class: 'avatar', 'aria-hidden': 'true' }, icon(m.ico, 20)),
+    h('div', { class: 'avatar', 'aria-hidden': 'true', text: m.ico }),
     h('div', { class: 'grow' },
       h('div', { class: 't', text: m.title }),
       h('div', { class: 'muted small', text: `${dt(t.created_at)} • ${STATUS[t.status] || t.status}` }),
@@ -28,16 +28,14 @@ export function txRow(t) {
 }
 
 export function opsMenu(screen) {
-  const link = (href, ico, title, sub) => h('a', { class: 'item', href },
-    h('div', { class: 'avatar' }, icon(ico, 22)), h('div', { class: 'grow' }, h('div', { class: 't', text: title }), h('div', { class: 'muted small', text: sub })), icon('chevron', 18));
+  const link = (href, ico, title, sub) => h('a', { class: 'item', href, style: { textDecoration: 'none', color: 'inherit' } },
+    h('div', { class: 'avatar', text: ico }), h('div', { class: 'grow' }, h('div', { class: 't', text: title }), h('div', { class: 'muted small', text: sub })), h('span', { class: 'muted', text: '›' }));
   mount(screen, h('h1', { text: 'İşlemler' }), h('div', { class: 'panel' }, h('ul', { class: 'list' },
-    link('#/ops/send', 'send', 'Para gönder', 'Başka bir kullanıcıya sanal bakiye gönder'),
-    link('#/market', 'market', 'Kristal Borsası', 'Kristal al/sat; bağımsız oyun piyasası'),
-    link('#/shop', 'cart', 'Nexus Market', 'Premium tasarım kartları ve fonksiyonel kartlar'),
-    link('#/pass', 'star', 'Nexus Pass', 'Süreli üyelikler; FN ile al, uygulamalarda kullan'),
-    link('#/ops/history', 'history', 'İşlem geçmişi', 'Transfer, borsa, alışveriş, iade'),
-    link('#/ops/gift', 'gift', 'Hediye kartı kullan', 'Kodunu gir, bakiyene yükle'),
-    link('#/ops/moves', 'list', 'Bakiye hareketleri', 'Giriş/çıkışları filtrele'))),
+    link('#/ops/send', '↗', 'Para gönder', 'Başka bir kullanıcıya sanal bakiye gönder'),
+    link('#/market', '💎', 'Kristal Borsası', 'Kristal al/sat; fiyat gerçek altını izler'),
+    link('#/ops/history', '☰', 'İşlem geçmişi', 'Transfer, borsa, alışveriş, iade'),
+    link('#/ops/gift', '🎁', 'Hediye kartı kullan', 'Kodunu gir, bakiyene yükle'),
+    link('#/ops/moves', '⇅', 'Bakiye hareketleri', 'Giriş/çıkışları filtrele'))),
     h('p', { class: 'virtual', text: 'Tüm bakiye ve işlemler sanal oyun ekonomisine aittir; gerçek para değildir.' }));
 }
 
@@ -74,7 +72,7 @@ export function txList(screen, { moves }) {
     try { await fetchPage(false); } catch (e) { mount(holder, errorBox(e, reload)); }
   }
   mount(screen,
-    back('#/ops', 'İşlemler'),
+    h('a', { class: 'back', href: '#/ops', text: '‹ İşlemler' }),
     h('h1', { text: moves ? 'Bakiye hareketleri' : 'İşlem geçmişi' }),
     seg([['', 'Tümü'], ['transfer', 'Transfer'], ['topup', 'Yükleme'], ['purchase', 'Alışveriş'], ['market', 'Borsa'], ['refund', 'İade/düzeltme']], 'kind'),
     moves ? seg([['', 'Hepsi'], ['in', 'Giriş'], ['out', 'Çıkış']], 'dir') : null,
@@ -96,7 +94,7 @@ export function sendFlow(screen) {
     if (s.step === 3) return drawConfirm();
     return drawDone();
   }
-  const head = (t) => [back('#/ops', 'İşlemler'), h('h1', { text: t }), h('div', { class: 'pill-step' }, [1, 2, 3].map((i) => h('i', { class: i <= s.step ? 'on' : '' })))];
+  const head = (t) => [h('a', { class: 'back', href: '#/ops', text: '‹ İşlemler' }), h('h1', { text: t }), h('div', { class: 'pill-step' }, [1, 2, 3].map((i) => h('i', { class: i <= s.step ? 'on' : '' })))];
 
   function drawRecipient() {
     const inp = h('input', { type: 'text', autocomplete: 'off', autocapitalize: 'none', autocorrect: 'off', spellcheck: 'false', placeholder: 'kullanici_adi', value: s.recipient, maxlength: '20' });
@@ -150,17 +148,17 @@ export function sendFlow(screen) {
       } catch (ex) { err.textContent = ex.message; }
     }));
     mount(screen, head('Onay'),
-      h('div', { class: 'notice warn' }, icon('alert', 18), 'Alıcıyı dikkatle kontrol edin. Gönderilen sanal bakiye geri alınamaz.'),
+      h('div', { class: 'notice warn', text: 'Alıcıyı dikkatle kontrol edin. Gönderilen sanal bakiye geri alınamaz.' }),
       h('div', { class: 'panel' }, h('dl', { class: 'kv' },
         h('dt', { text: 'Alıcı' }), h('dd', { class: 'strong', text: `@${s.recipient}` }),
         h('dt', { text: 'Tutar' }), h('dd', { class: 'strong', text: money(minor, cur()) }),
         h('dt', { text: 'Kalan bakiye' }), h('dd', { text: money(state.me.balance - minor, cur()) }))),
-      pw ? pwField('Güvenlik için şifrenizi girin', pw) : null, err,
+      pw ? field('Güvenlik için şifrenizi girin', pw) : null, err,
       h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', text: 'Geri', onClick: () => step(2) }), btn));
   }
 
   function drawDone() {
-    mount(screen, h('div', { class: 'success' }, h('div', { class: 'big' }, icon('check', 32)), h('h1', { text: s.result.replayed ? 'Bu işlem zaten tamamlanmıştı' : 'Transfer tamamlandı' }),
+    mount(screen, h('div', { class: 'success' }, h('div', { class: 'big', text: '✓' }), h('h1', { text: s.result.replayed ? 'Bu işlem zaten tamamlanmıştı' : 'Transfer tamamlandı' }),
       h('p', { class: 'muted', text: `${money(s.result.amount, cur())} → @${s.recipient}` }), h('p', { class: 'muted small', text: `Referans: ${s.result.ref}` })),
       h('a', { class: 'btn primary block', href: '#/home', text: 'Ana sayfa' }), h('div', { style: { height: '10px' } }), h('a', { class: 'btn block', href: '#/ops/history', text: 'İşlem geçmişi' }));
   }
@@ -169,10 +167,10 @@ export function sendFlow(screen) {
 
 export function giftFlow(screen) {
   const holder = h('div');
-  mount(screen, back('#/ops', 'İşlemler'), h('h1', { text: 'Hediye kartı kullan' }), holder);
+  mount(screen, h('a', { class: 'back', href: '#/ops', text: '‹ İşlemler' }), h('h1', { text: 'Hediye kartı kullan' }), holder);
   load(holder, () => api.get('/api/giftcard/status'), (st) => {
-    if (!st.available) return h('div', { class: 'notice warn' }, icon('alert', 18), 'Hediye kartı hizmeti şu an bağlı değil. Lütfen daha sonra tekrar deneyin.');
-    const inp = h('input', { type: 'text', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', placeholder: 'XXXX-XXXX', maxlength: '64' });
+    if (!st.available) return h('div', { class: 'notice warn', text: 'Hediye kartı hizmeti şu an bağlı değil. Lütfen daha sonra tekrar deneyin.' });
+    const inp = h('input', { type: 'text', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', placeholder: '12345678 123 05/28', maxlength: '64' });
     const err = h('p', { class: 'err-text', role: 'alert' });
     const btn = h('button', { class: 'btn primary block', type: 'submit', text: 'Bakiyeye yükle' });
     const key = crypto.randomUUID();
@@ -181,8 +179,8 @@ export function giftFlow(screen) {
       try {
         const r = await api.post('/api/giftcard/redeem', { code: inp.value, idempotency_key: key });
         await refreshMe().catch(() => {});
-        mount(holder, h('div', { class: 'success' }, h('div', { class: 'big' }, icon('check', 32)), h('h2', { text: `${money(r.amount, cur())} yüklendi` }), h('p', { class: 'muted small', text: `Referans: ${r.ref}` })), h('a', { class: 'btn primary block', href: '#/home', text: 'Ana sayfa' }));
+        mount(holder, h('div', { class: 'success' }, h('div', { class: 'big', text: '✓' }), h('h2', { text: `${money(r.amount, cur())} yüklendi` }), h('p', { class: 'muted small', text: `Referans: ${r.ref}` })), h('a', { class: 'btn primary block', href: '#/home', text: 'Ana sayfa' }));
       } catch (ex) { err.textContent = ex.message; }
-    }); } }, field('Hediye kodu', inp), err, btn);
+    }); } }, field('Kart no, CVV ve son kullanma (AA/YY)', inp), err, btn);
   });
 }

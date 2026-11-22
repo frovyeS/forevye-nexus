@@ -1,52 +1,34 @@
 # Entegrasyon notları
 
-## 1. Hediye kartı sistemi = Mikro-Klima kristal kartları (BAĞLANDI)
-Mevcut hediye kartı sistemi Mikro-Klima Worker'ındaki `gcards`'tır (kristal kartı: no + CVV + SKT). Yeniden yazılmadı;
-Mikro-Klima'ya sunucudan sunucuya bir uç eklendi (`worker/nexus.js`) ve `src/integrations/giftcard.js` ona bağlandı:
+## 1. Hediye kartı sistemi (Mikro-Klima kristal kartı)
+Kart sistemi Mikro-Klima Worker'ında kalır; `src/integrations/giftcard.js` yalnızca ince bağdaştırıcıdır.
 
-    POST {GIFTCARD_API_URL}/redeem      GET {GIFTCARD_API_URL}/health
+    GET  {GIFTCARD_API_URL}/api/ext/giftcard/health
+    POST {GIFTCARD_API_URL}/api/ext/giftcard/redeem
     x-nx-timestamp, x-nx-signature = HMAC-SHA256(GIFTCARD_API_SECRET, "<timestamp>.<gövde>")
     gövde: { user_id, code: "NNNNNNNN CVV AA/YY", idempotency_key }
-    200: { ok:true, amount:<kristal>, unit:"kristal", reference:"mkgc:<kart no>" }   4xx: { ok:false, error:"invalid|used|expired" }
+    200: { ok:true, amount:<kristal>, unit:"kristal", reference }   4xx: { ok:false, error:"invalid|used|expired|rate_limited" }
 
-- Kart kodu tek metindir (`12345674 123 05/27`); Nexus arayüzündeki kod kutusu değişmeden çalışır.
-- Kristal → FN kuru `GIFTCARD_MINOR_PER_KRISTAL` (wrangler.toml, varsayılan 100: 1 kristal = 1,00 FN). Bu bir ekonomi kararıdır; kuru sen belirle.
-- `GIFTCARD_API_SECRET` (Nexus) = `NEXUS_SECRET` (Mikro-Klima): `npx wrangler secret put ...` ile her iki tarafa AYNI değer (en az 16 karakter).
-- Aynı kullanıcı aynı kartı tekrar gönderirse aynı `reference` döner; defter referansla tekrar-güvenlidir. Kart başka kullanıcıdaysa `used`.
-
-## 1b. Giriş = FOREVYE ID (BAĞLANDI)
-`POST /api/auth/id/start` (PKCE adresi), `GET /api/auth/id/callback` (kod değişimi → çerez oturumu), `POST /api/auth/id/complete` (ilk girişte kullanıcı adı + kart ismi).
-Tablolar: `id_links` (Nexus kullanıcısı ↔ ID kullanıcısı), `id_states`, `id_pending` (migrations/0003_forevye_id.sql). Ayarlar: `ID_URL`, `ID_API_URL`; Mikro-Klima tarafında `ID_REDIRECTS`'e `sanal-banka=<site>/api/auth/id/callback`.
-Eski e-posta hesabı, aynı doğrulanmış e-posta ile ID'ye ilk girişte otomatik bağlanır. `LEGACY_LOGIN="off"` e-posta/şifre kayıt ve girişini (410) kapatır; önce herkesin ID ile bağlandığından emin ol.
+Kristal tutarı `GIFTCARD_MINOR_PER_KRISTAL` (varsayılan 100) ile FN minor unit'e çevrilir ve defter `reference` ile
+tekrar-güvenli yüklenir. Kurulum: `wrangler.toml` içinde `GIFTCARD_API_URL` hazır; `npx wrangler secret put GIFTCARD_API_SECRET`
+değeri Mikro-Klima'daki `NEXUS_SECRET` ile aynı olmalı. İkisi birden tanımlı değilse özellik "bağlı değil" görünür.
 
 ## 2. Oyun içi alışveriş (sunucudan sunucuya)
 `POST /api/internal/purchase` { user_id, amount:"10.00", external_ref } — `Authorization: Bearer INTERNAL_API_KEY`.
 Aynı `external_ref` tekrar gönderilirse ikinci kez düşülmez. İade: `POST /api/internal/refund` { ref }.
 Mevcut oyun/mağaza sistemini bu uçlara bağlayın; kullanıcı kimliği olarak `user_id` (UUID) kullanılır.
 
-## 3. Kart editörü = forevye_nexus_bank (BAĞLANDI)
-Kart tasarımı artık yalnızca banka editöründe (ayrı site) yapılır; Nexus'taki eski süs/desen editörü kaldırıldı.
-- Akış: Nexus → **Kartını tasarla** → `POST /api/editor/ticket` (tek kullanımlık, 5 dk, URL'nin `#t=` kısmında) → editör `POST /api/editor/exchange` ile bileti jetona çevirir (30 dk kayan, en çok 4 saat) → **Kaydet** = `PUT /api/editor/card` → **Çık** = `NEXUS/#/cards/<id>`.
-- Doğrulama: `shared/card-rules.js` = editörün `js/rules.js` dosyasının BİREBİR kopyası (iki depoda aynı kalmalı). Sunucu istemciye güvenmez: `designId/ownerId/version` ve kart adını kendisi yazar; çip/marka/kart bilgisi veri modelinde yoktur.
-- Sözleşme sürümü 2 (856×540, katmanlar). Eski sürüm 1 kartlar (320×200) veritabanında olduğu gibi durur, okunurken `convertV1` ile çevrilir; editörde ilk kayıtta sürüm 2 olarak yazılır.
-- Kart adı (2–18 karakter) = tasarımın `userDisplayName` alanı; kayıt/ID kayıt formları da aynı kuralı kullanır.
-- Ayar: `EDITOR_URL` (editörün yayın adresi; CORS yalnızca bu kaynağa açılır), isteğe bağlı `EDITOR_ORIGINS`. Migration: `0004_editor.sql`.
-- Giriş: editör açıkken oturum yoksa kapı gösterilir → `NEXUS/#/editor-launch/<kart|new>` → (FOREVYE ID ile) giriş → bilet → editör. FOREVYE ID girişi sayfadan çıkıp döndüğü için hedef sekme belleğinde (`sessionStorage.nx_next`) tutulur.
-- Dosyaları eşitle: `npm run sync-shared` (`shared/*.js` → `public/js/`). Çizici `public/js/card-render.js` = editörün `js/render.js` dosyası.
+## 3. Ayrı kart editörü
+Veri sözleşmesi `shared/card-contract.js` (sürüm 1) dosyasındadır; sunucu da istemci de aynı dosyayı kullanır
+(`npm run sync-shared` ile `public/js/` altına kopyalanır). Alan seti, renk biçimi, süs sınırları ve korunan bölgeler orada.
+Ayrı editör bu dosyayı içe aktarıp `validateDesign` kullanmalı; kaydetme `PATCH /api/cards/:id` ile yapılır.
 
 ## 3b. Logo
-`public/assets/logo.svg` YER TUTUCUDUR. Resmî logoyu aynı dosya adıyla koyun. Kart üzerindeki logo `wordmark.png` ile çizilir.
+`public/assets/logo.svg` YER TUTUCUDUR. Resmî logoyu aynı dosya adıyla koyun.
+
+## 3c. Kart editörü ile bağlama planı (sonraki aşama)
+Bugün iki ayrı kart modeli var: bu depodaki sözleşme v1 (320×200, `decor` listesi) ve `forevye_nexus_bank` editörünün modeli (856×540, `layers[]`, `userDisplayName`, `chipStyle`, `nameStyle`).
+Önerilen yol: editörün `js/rules.js` dosyası (DOM'suz, `module.exports` var) Worker'da `validateDesign` olarak kullanılır; `cards.design_json` bu şemayı taşır, `design_version` aynen kalır. Marka/çip/kart bilgisi **veri modelinde yoktur**, çizimde sistemden eklenir; bu yüzden kullanıcı bunları silemez/taşıyamaz. Geçişte `shared/card-contract.js` yerine editör kuralları + `FNXRender` kullanılır, eski v1 kartlar için bir kerelik dönüştürücü yazılır.
 
 ## 4. Kristal borsası
-Kristal artık bağımsız oyun içi piyasa simülasyonuyla fiyatlanır; ayarlar README içindeki "Para birimi ve Kristal Borsası" bölümündedir. Oyun içi mağaza kristalle ödeme isterse `POST /api/internal/purchase` FN düşer; kristal→FN dönüşümü kullanıcı tarafından borsadan yapılır.
-
-## 5. Ortak e-posta (Brevo) ve yük aktarımı — Mikro-Klima Worker
-Mikro-Klima, FOREVYE ID ve Nexus için ortak hizmetleri üstlenir; Nexus Worker'ı bu işlerle yorulmaz:
-- **Posta:** `POST {MAIL_RELAY_URL}/api/ext/mail` (imza: hediye kartıyla aynı HMAC). FOREVYE ID de aynı `worker/mail.js` modülünü kullanır → tek Brevo hesabı, tek gönderen adresi. Nexus'ta `EMAIL_PROVIDER="relay"`; `BREVO_API_KEY`/`EMAIL_FROM` yalnızca Mikro-Klima'da gerekir (Nexus'ta isteğe bağlı yedek). Alıcı başına 10 dk'da 5, toplam 10 dk'da 80 posta sınırı vardır.
-- **Kristal fiyatı:** Nexus içindeki piyasa simülasyonu tarafından üretilir; Mikro-Klima'nın altın fiyat servisine bağımlılık kaldırılmıştır.
-- Gizli anahtar: `GIFTCARD_API_SECRET` (Nexus) = `NEXUS_SECRET` (Mikro-Klima), aynı değer.
-
-## 6. Nexus Pass (üyelik) entegrasyonu
-- **Pass sitesi** (nexus-pass deposu) Nexus'tan bilet ile açılır; FN ile satın alır. Ayrıntı: README → "Nexus Pass".
-- **Mikro-Klima / Hava / Mağaza**: üyelik kontrolü için sunucudan sunucuya `POST {NEXUS}/api/internal/entitlement` (`Authorization: Bearer INTERNAL_API_KEY`), gövde `{ "id_user_id": "<FOREVYE ID kimliği>" }` veya `{ "user_id": "<Nexus kullanıcı id>" }`, isteğe bağlı `app` / `product_id`. Yanıt `active` ve `expires_at` içerir; sonucu kısa süre (örn. 60 sn) önbelleğe alın.
-- FOREVYE ID ile giriş yapan kullanıcılar `id_links` tablosuyla Nexus hesabına bağlıdır; kimlik eşlemesi bu tablodan yapılır. Bağlı Nexus hesabı olmayan ID kullanıcısı için uç 404 döner (üyelik yok sayın).
+Altın fiyat kaynağı ve parametreler için README'deki "Para birimi ve Kristal Borsası" bölümüne bakın. Oyun içi mağaza kristalle ödeme isterse `POST /api/internal/purchase` FN düşer; kristal→FN dönüşümü kullanıcı tarafından borsadan yapılır.

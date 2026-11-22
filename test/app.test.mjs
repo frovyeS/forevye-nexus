@@ -221,17 +221,14 @@ test('kartlar: oluşturma, korunan alanlar, sahiplik, limit, geri dönüş', asy
   for (const f of [{ card_token: 'NXC-HACK-HACK' }, { status: 'disabled' }, { user_id: 'x' }, { is_default: true }]) {
     assert.equal((await a.cl.patch(`/api/cards/${main.id}`, f)).data.error.code, 'protected_field');
   }
-  // v3: dekoratif nesne çipin üstüne konabilir (serbest yerleşim); sistem öğeleri çizimde yine en üsttedir (sunucu, editörle aynı kural dosyasını çalıştırır)
-  const blob = (x, y) => ({ id: 'x1', type: 'shape', name: 'Daire', locked: false, visible: true, zIndex: 0, properties: { kind: 'circle', x, y, width: 60, height: 60, rotation: 0, opacity: 1, fill: '#FF0000', stroke: 'none', strokeWidth: 0, flipX: false, flipY: false, lockRatio: false, effects: [] } });
-  const d = defaultDesign('Test Kişi');
-  d.layers.push(blob(60, 190));
-  assert.equal((await a.cl.patch(`/api/cards/${main.id}`, { design: d })).status, 200, 'çip üstüne dekoratif nesne serbest');
-  d.layers[d.layers.length - 1] = blob(620, 250);
+  // Korunan bölge (çip) üzerine süs bindirilemez
+  const d = defaultDesign();
+  d.decor = [{ id: 'star', x: 30, y: 85, size: 20 }];
+  assert.equal((await a.cl.patch(`/api/cards/${main.id}`, { design: d })).data.error.code, 'invalid_design');
+  d.decor = [{ id: 'star', x: 280, y: 100, size: 20 }];
   const ok = await a.cl.patch(`/api/cards/${main.id}`, { design: d, display_name: 'Ada L.' });
   assert.equal(ok.status, 200);
-  assert.equal(ok.data.version, 3);
-  assert.equal(ok.data.display_name, 'Ada L.');
-  assert.equal(ok.data.design.userDisplayName, 'Ada L.', 'kart adı tasarımla senkron');
+  assert.equal(ok.data.version, 2);
   assert.equal((await a.cl.patch(`/api/cards/${main.id}`, { display_name: '<script>' })).status, 400);
   assert.equal((await a.cl.patch(`/api/cards/${main.id}`, { display_name: 'x'.repeat(40) })).status, 400);
 
@@ -244,7 +241,7 @@ test('kartlar: oluşturma, korunan alanlar, sahiplik, limit, geri dönüş', asy
   // Geri dön
   const rv = await a.cl.post(`/api/cards/${main.id}/revert`, { version: 1 });
   assert.equal(rv.data.display_name, 'Test Kişi');
-  assert.equal(rv.data.version, 4);
+  assert.equal(rv.data.version, 3);
 
   // Limit, devre dışı bırakma, varsayılan kart
   assert.equal((await a.cl.post('/api/cards', { display_name: 'İkinci' })).status, 201);
@@ -258,16 +255,11 @@ test('kartlar: oluşturma, korunan alanlar, sahiplik, limit, geri dönüş', asy
   assert.equal(after.filter((c) => c.is_default).length, 1);
 });
 
-test('kart sözleşmesi: geçersiz renk, sistem katmanı ve bilinmeyen şablon reddedilir', () => {
-  const bad = defaultDesign(); bad.layers[0].properties.colors = ['red', '#000000'];
-  assert.equal(validateDesign(bad).ok, false);
-  const sys = defaultDesign(); sys.layers.push({ id: 'z1', type: 'system_chip', properties: {} });
-  assert.equal(validateDesign(sys).ok, false, 'sistem katmanı istemciden kabul edilmez');
-  assert.equal(validateDesign({ ...defaultDesign(), template: 'evil' }).ok, false);
-  assert.equal(validateDesign({ ...defaultDesign(), canvas: { width: 10, height: 10 } }).ok, false);
+test('kart sözleşmesi: bilinmeyen alan ve geçersiz renk reddedilir', () => {
+  assert.equal(validateDesign({ ...defaultDesign(), extra: 1 }).ok, false);
+  assert.equal(validateDesign({ ...defaultDesign(), accent: 'red' }).ok, false);
+  assert.equal(validateDesign({ ...defaultDesign(), pattern: 'evil' }).ok, false);
   assert.equal(validateDesign(defaultDesign()).ok, true);
-  // Bilinmeyen alanlar atılır (izin listesiyle yeniden kurulur)
-  assert.equal('extra' in validateDesign({ ...defaultDesign(), extra: 1 }).design, false);
 });
 
 test('yönetici: yetkisiz erişim, rol yönetimi, askı, ters kayıt, denetim kaydı', async () => {
@@ -360,6 +352,7 @@ test('hediye kartı: modül bağlı değilken güvenli hata; bağlıyken yalnız
     const sig = init.headers['x-nx-signature'];
     assert.ok(sig && init.headers['x-nx-timestamp']);
     const body = JSON.parse(init.body);
+    assert.ok(String(url).startsWith('https://gift.internal.test/api/ext/giftcard/'), 'Mikro-Klima uç adresi');
     if (body.code === 'BAD-CODE') return new Response(JSON.stringify({ ok: false, error: 'used' }), { status: 409 });
     return new Response(JSON.stringify({ ok: true, amount: 2500, reference: 'GC-777' }), { status: 200 });
   };
@@ -376,23 +369,18 @@ test('hediye kartı: modül bağlı değilken güvenli hata; bağlıyken yalnız
   await assertLedgerConsistent(env);
 });
 
-test('hediye kartı: Mikro-Klima kristal cinsinden döner → minor unit\'e çevrilir (varsayılan 1 kristal = 100)', async () => {
+test('hediye kartı: kristal tutarı FN minor unit\'e çevrilir', async () => {
   const env = makeEnv();
-  env.GIFTCARD_API_URL = 'https://mk.internal.test/api/ext/giftcard'; env.GIFTCARD_API_SECRET = 'shh';
+  env.GIFTCARD_API_URL = 'https://gift.internal.test/';
+  env.GIFTCARD_API_SECRET = 'shh';
   const a = await register(env, 'k@example.com', 'gift_k');
-  const realFetch = globalThis.fetch; let n = 0;
-  globalThis.fetch = async (url, init) => {
-    assert.equal(url, 'https://mk.internal.test/api/ext/giftcard/redeem');
-    assert.equal(JSON.parse(init.body).code, '12345674 123 05/27');
-    return new Response(JSON.stringify({ ok: true, amount: 200, unit: 'kristal', reference: 'mkgc:' + (++n) }), { status: 200 });
-  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ ok: true, amount: 7, unit: 'kristal', reference: 'mkgc:12345678' }), { status: 200 });
   try {
-    const r = await a.cl.post('/api/giftcard/redeem', { code: '12345674 123 05/27' });
-    assert.equal(r.status, 200); assert.equal(r.data.balance, 20000, '200 kristal = 200,00 FN');
-    env.GIFTCARD_MINOR_PER_KRISTAL = '10';
-    const b = await register(env, 'k2@example.com', 'gift_k2');
-    const r2 = await b.cl.post('/api/giftcard/redeem', { code: '12345674 123 05/27' });
-    assert.equal(r2.data.balance, 2000, 'kur değişkeni uygulanır');
+    const r = await a.cl.post('/api/giftcard/redeem', { code: '12345678 123 05/28' });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.amount, 700);
+    assert.equal(r.data.balance, 700);
   } finally { globalThis.fetch = realFetch; }
   await assertLedgerConsistent(env);
 });
@@ -435,75 +423,4 @@ test('bildirimler okundu durumu ve rozetler sunucuda hesaplanır', async () => {
   assert.equal(vault.data.badges.find((x) => x.key === 'anniversary_1y').earned_at, null);
   env.__NOW = T0 + 366 * D;
   assert.ok((await b.cl.get('/api/vault')).data.badges.find((x) => x.key === 'anniversary_1y').earned_at);
-});
-
-// ---------- FOREVYE ID ile giriş ----------
-import { createHash } from 'node:crypto';
-function idEnv(extra = {}) { return makeEnv({ ID_URL: 'https://id.test/forevye-id/', ID_API_URL: 'https://mk.internal.test', ...extra }); }
-// ID sunucusunu taklit eder: authorize'dan sonra tarayıcı callback'e döner; kod değişiminde PKCE doğrulanır.
-function fakeId(users) {
-  const codes = new Map(); const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    assert.equal(url, 'https://mk.internal.test/identity/token/exchange');
-    const b = JSON.parse(init.body);
-    const c = codes.get(b.code); codes.delete(b.code);
-    if (!c || b.app !== 'sanal-banka' || b.tokens !== false || b.redirect !== 'https://nexus.test/api/auth/id/callback' || createHash('sha256').update(b.verifier).digest('base64url') !== c.challenge) return new Response(JSON.stringify({ code: 'CODE_INVALID' }), { status: 400 });
-    return new Response(JSON.stringify({ user: users[c.who] }), { status: 200 });
-  };
-  return { restore: () => { globalThis.fetch = realFetch; }, issue: (startUrl, who) => { const q = new URLSearchParams(startUrl.split('?')[1]); const code = 'code' + codes.size + 'x'.repeat(30); codes.set(code, { challenge: q.get('challenge'), who }); return { code, state: q.get('state') }; } };
-}
-const IDU = { a: { userId: 'usr_aaaaaaaaaaaaaaaa', email: 'ida@example.com', emailVerified: true, username: '#IDUSER001' }, bad: { userId: 'usr_bbbbbbbbbbbbbbbb', email: 'idb@example.com', emailVerified: false } };
-
-test('ID ile giriş: ayarlı değilse 503; start PKCE adresi üretir', async () => {
-  const env = makeEnv(); const cl = client(env);
-  assert.equal((await cl.post('/api/auth/id/start')).status, 503);
-  const env2 = idEnv(); const r = await client(env2).post('/api/auth/id/start');
-  assert.equal(r.status, 200); const u = new URL(r.data.url);
-  assert.equal(u.origin + u.pathname, 'https://id.test/forevye-id/'); assert.match(u.hash, /^#\/baglan\?/);
-  const q = new URLSearchParams(u.hash.split('?')[1]);
-  assert.equal(q.get('app'), 'sanal-banka'); assert.equal(q.get('redirect'), 'https://nexus.test/api/auth/id/callback'); assert.match(q.get('challenge'), /^[A-Za-z0-9_-]{43}$/);
-});
-test('ID ile giriş: yeni kullanıcı → kayıt adımı → hesap; sonraki girişte doğrudan oturum; state tek kullanımlık', async () => {
-  const env = idEnv(), id = fakeId(IDU); const cl = client(env);
-  try {
-    const st = (await cl.post('/api/auth/id/start')).data.url;
-    const a = id.issue(st, 'a');
-    const cb = await cl.get(`/api/auth/id/callback?code=${a.code}&state=${a.state}`);
-    assert.equal(cb.status, 302); const loc = cb.res.headers.get('location'); assert.match(loc, /^\/#\/id-kayit\/[A-Za-z0-9_-]+$/);
-    const reuse = await cl.get(`/api/auth/id/callback?code=${a.code}&state=${a.state}`);
-    assert.equal(reuse.res.headers.get('location'), '/?id_error=id_state', 'state ikinci kez kullanılamaz');
-    const token = loc.split('/')[3];
-    assert.equal((await cl.post('/api/auth/id/complete', { token, username: 'x', card_display_name: 'Ali' })).status, 400, 'kısa kullanıcı adı');
-    const done = await cl.post('/api/auth/id/complete', { token, username: 'id_ali', card_display_name: 'Ali Veli' });
-    assert.equal(done.status, 201, JSON.stringify(done.data)); assert.equal((await cl.get('/api/me')).status, 200, 'oturum açıldı');
-    assert.equal((await cl.post('/api/auth/id/complete', { token, username: 'id_ali2', card_display_name: 'Ali' })).status, 400, 'bekleyen kayıt tek kullanımlık');
-    const row = await one(env, 'SELECT u.email, u.email_verified_at FROM id_links l JOIN users u ON u.id = l.user_id WHERE l.id_user_id = ?', IDU.a.userId);
-    assert.equal(row.email, 'ida@example.com'); assert.ok(row.email_verified_at);
-    // ikinci giriş (yeni tarayıcı): doğrudan oturum
-    const cl2 = client(env); const a2 = id.issue((await cl2.post('/api/auth/id/start')).data.url, 'a');
-    const cb2 = await cl2.get(`/api/auth/id/callback?code=${a2.code}&state=${a2.state}`);
-    assert.equal(cb2.res.headers.get('location'), '/'); assert.match(cb2.res.headers.get('set-cookie'), /^nx_session=/);
-    assert.equal((await cl2.get('/api/me')).status, 200);
-    assert.equal((await sql(env, 'SELECT COUNT(*) AS n FROM users'))[0].n, 1, 'çift hesap açılmadı');
-  } finally { id.restore(); }
-});
-test('ID ile giriş: aynı doğrulanmış e-postalı eski Nexus hesabına bağlanır; doğrulanmamış ID e-postası reddedilir; sahte kod reddedilir', async () => {
-  const env = idEnv(), id = fakeId({ ...IDU, a: { ...IDU.a, email: 'old@example.com' } });
-  try {
-    const { me } = await register(env, 'old@example.com', 'eski_kul'); const cl = client(env);
-    const a = id.issue((await cl.post('/api/auth/id/start')).data.url, 'a');
-    const cb = await cl.get(`/api/auth/id/callback?code=${a.code}&state=${a.state}`);
-    assert.equal(cb.res.headers.get('location'), '/'); assert.equal((await cl.get('/api/me')).data.user?.username ?? (await cl.get('/api/me')).data.username, 'eski_kul');
-    assert.equal((await sql(env, 'SELECT COUNT(*) AS n FROM users'))[0].n, 1);
-    const cl2 = client(env), b = id.issue((await cl2.post('/api/auth/id/start')).data.url, 'bad');
-    assert.equal((await cl2.get(`/api/auth/id/callback?code=${b.code}&state=${b.state}`)).res.headers.get('location'), '/?id_error=id_unverified');
-    const cl3 = client(env), c = await cl3.post('/api/auth/id/start'), st = new URL(c.data.url).hash.split('state=')[1].split('&')[0];
-    assert.equal((await cl3.get(`/api/auth/id/callback?code=${'z'.repeat(40)}&state=${st}`)).res.headers.get('location'), '/?id_error=id_failed');
-  } finally { id.restore(); }
-});
-test('LEGACY_LOGIN=off: e-posta ile kayıt/giriş/şifre sıfırlama kapanır', async () => {
-  const env = makeEnv({ LEGACY_LOGIN: 'off' }); const cl = client(env);
-  for (const [p, b] of [['/api/auth/register/start', { email: 'a@b.co' }], ['/api/auth/login', { email: 'a@b.co', password: 'x' }], ['/api/auth/forgot', { email: 'a@b.co' }]]) {
-    const r = await cl.post(p, b); assert.equal(r.status, 410); assert.equal(r.data.error.code, 'legacy_login_off');
-  }
 });

@@ -17,7 +17,7 @@ migrations_dir = "migrations"
 
 # R2 (avatar depolama) şimdilik kapalı; etkinleştirince geri eklenir.
 
-# Nexus oyun piyasası fiyatını yenileyen zamanlanmış görev (5 dakikada bir).
+# Kristal fiyatını gerçek altından yenileyen zamanlanmış görev (5 dakikada bir).
 [triggers]
 crons = ["*/5 * * * *"]
 
@@ -32,44 +32,19 @@ REAUTH_THRESHOLD_MINOR = "100000"
 MAX_CARDS = "5"
 SESSION_TTL_DAYS = "14"
 OLD_NAME_RESERVE_DAYS = "30"
-# Kristal borsası (bağımsız oyun içi piyasa simülasyonu; harici emtia fiyatı kullanılmaz)
+# Kristal borsası (kristal = oyunun "altın"ı; fiyatı gerçek altını izler, baz altın fiyatı = 1 FN)
 MARKET_SPREAD_BPS = "50"          # alış/satış, orta fiyattan her yönde %0,50 sapar
 MARKET_MAX_TRADE_MINOR = "1000000" # işlem başına en fazla 10.000 FN değerinde
 MARKET_REFRESH_SEC = "60"
-MARKET_INITIAL_PRICE_MICRO = "25000000" # İlk piyasa fiyatı: 25 FN/KRS
-MARKET_VOLATILITY_BPS = "45"            # Her fiyat güncellemesinde azami ±%0,45 hareket
-MARKET_REVERSION_BPS = "200"            # Başlangıç fiyatından sapmanın güncelleme başına %2'si geri çekilir (0 = serbest yürüyüş)
 MARKET_STALE_SEC = "900"          # fiyat 15 dk güncellenmezse işlem durur
-# Hediye kartı = Mikro-Klima kristal kartları. Gizli anahtar (GIFTCARD_API_SECRET) wrangler secret ile verilir, Mikro-Klima'daki NEXUS_SECRET ile aynı olmalı.
-# FOREVYE ID ile giriş: ID_URL = ID arayüzünün adresi, ID_API_URL = kimlik sunucusu (Mikro-Klima Worker). Mikro-Klima wrangler.toml → ID_REDIRECTS'e
-# "sanal-banka=https://<bu-sitenin-adresi>/api/auth/id/callback" eklenmeli. LEGACY_LOGIN="off" olunca e-posta/şifre kayıt ve girişi kapanır (varsayılan: açık).
-ID_URL = "https://mhaforevye.github.io/forevye-id"   # FOREVYE ID arayüzünün adresi (BOŞSA "FOREVYE ID ile giriş" çalışmaz!). Gerçek adresi yaz.
-ID_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
-LEGACY_LOGIN = "on"
-GIFTCARD_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev/api/ext/giftcard"
-GIFTCARD_MINOR_PER_KRISTAL = "100"   # 1 kristal = 1,00 FN (minor unit 100). Kur kararını sen ver; değiştirmek için bu sayıyı güncelle.
-# E-posta: ORTAK posta servisi (Mikro-Klima Worker, FOREVYE ID ile aynı Brevo hesabı). Nexus'ta BREVO_API_KEY / EMAIL_FROM gerekmez.
-# İmza için GIFTCARD_API_SECRET (= Mikro-Klima'daki NEXUS_SECRET) yeterlidir; hediye kartıyla aynı anahtar.
-# Röle çökerse BREVO_API_KEY (secret) + EMAIL_FROM tanımlıysa doğrudan Brevo'ya düşer (yedek; zorunlu değil).
-EMAIL_PROVIDER = "relay"
-MAIL_RELAY_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
-EMAIL_FROM = ""
-
-
-# Kart editörü = forevye_nexus_bank deposunun yayın adresi (ayrı site). "Kartını tasarla" bu adrese bilet ile yönlendirir.
-# Tasarım orada yapılır, kayıt buraya (/api/editor/card) gelir. Adresin SON hâli buraya; yalnızca kaynağı (https://alanadi) CORS'a izinli olur.
-EDITOR_URL = "https://mhaforevye.github.io/forevye_nexus_bank/"
-# EDITOR_ORIGINS = "https://baska-alan.pages.dev"   # (isteğe bağlı) ek editör kaynakları, virgülle
-
-# Nexus Pass = nexus-pass deposunun yayın adresi (ayrı site). Üyelikler FN ile alınır; Nexus'tan bilet ile açılır, kayıt/ödeme buraya (/api/pass/*) gelir.
-# Adresin SON hâli buraya; yalnızca kaynağı (https://alanadi) CORS'a izinli olur. Diğer sistemler (Hava, Mağaza) yetkiyi POST /api/internal/entitlement ile (INTERNAL_API_KEY) sorar.
-PASS_URL = "https://mhaforevye.github.io/nexus-pass/"
-# PASS_ORIGINS = "https://baska-alan.pages.dev"   # (isteğe bağlı) ek Pass kaynakları, virgülle
-
-# Nexus Market = nexus-market deposunun yayın adresi (ayrı site). Tasarım/fonksiyonel kartlar FN ile alınır; Nexus'tan bilet ile açılır, kayıt/ödeme buraya (/api/shop/*) gelir.
-# Yalnızca kaynağı (https://alanadi) CORS'a izinli olur. Katalog: yönetici API'si /api/admin/shop/products (yazma: süper yönetici).
-SHOP_URL = "https://mhaforevye.github.io/nexus-market/"
-# SHOP_ORIGINS = "https://baska-alan.pages.dev"   # (isteğe bağlı) ek Market kaynakları, virgülle
+# GOLD_BASE_USD = "..."           # İsteğe bağlı: baz altın fiyatını (USD/ons) elle sabitler. Boşsa ilk çekilen fiyat baz olur.
+# GOLD_API_URL = "https://api.gold-api.com/price/XAU"
+# Hediye kartı (kristal kartı) Mikro-Klima Worker'ında; Nexus ona imzalı istek atar.
+# Gizli değer: npx wrangler secret put GIFTCARD_API_SECRET   (Mikro-Klima'daki NEXUS_SECRET ile AYNI olmalı)
+GIFTCARD_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
+GIFTCARD_MINOR_PER_KRISTAL = "100"   # 1 kristal = 100 minor = 1 FN
+EMAIL_PROVIDER = "resend"
+EMAIL_FROM = "FOREVYE NEXUS <no-reply@example.com>"
 
 # Test/staging ortamı: ayrı D1 ve R2 kullanılır, üretim verisiyle karıştırılmaz.
 [env.staging]
