@@ -3,6 +3,7 @@ import { verifyPassword } from '../lib/crypto.js';
 import { rateLimit } from '../lib/rate.js';
 import { transfer, getTransferByKey } from '../lib/ledger.js';
 import { grantAchievement } from './misc.js';
+import { limitsFor } from '../lib/shop.js';
 
 const KINDS = {
   transfer: "type IN ('transfer_in','transfer_out')",
@@ -65,7 +66,7 @@ export const walletRoutes = {
        GROUP BY u.id ORDER BY last_at DESC LIMIT 6`,
     ).bind(user.id, t).all()).results;
     const used = await env.DB.prepare('SELECT total FROM daily_usage WHERE user_id = ? AND day = ?').bind(user.id, dayKey(t)).first();
-    const cap = cfgNum(env, 'DAILY_TRANSFER_LIMIT_MINOR', 1500000);
+    const cap = (await limitsFor(env, user.id)).daily_limit;
     return json({ recipients: rows.map((r) => r.username), daily_used: used?.total || 0, daily_limit: cap, daily_left: Math.max(0, cap - (used?.total || 0)) });
   },
 

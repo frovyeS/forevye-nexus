@@ -1,3 +1,4 @@
+import { limitsFor, skinsOf } from '../lib/shop.js';
 import { HttpError, json, readJson, now, cfgNum, DAY, MIN, HOUR, isSuspended } from '../lib/util.js';
 import { rateLimit } from '../lib/rate.js';
 import { notify } from '../lib/auth.js';
@@ -31,6 +32,8 @@ export async function meSummary(env, user) {
     env.DB.prepare('SELECT id, display_name, card_token, status, design_json, design_version FROM cards WHERE user_id = ? AND is_default = 1').bind(user.id).first(),
     usernameChangeStatus(env, user),
   ]);
+  const lim = await limitsFor(env, user.id);
+  const skins = card ? await skinsOf(env, user.id) : {};
   return {
     user: {
       id: user.id, username: user.username, email: user.email, created_at: user.created_at,
@@ -38,13 +41,14 @@ export async function meSummary(env, user) {
       is_admin: ['admin', 'superadmin'].includes(user.role), // yalnızca bağlantıyı göstermek için; yetki sunucuda denetlenir
     },
     balance, unread: unread.c, announcements: ann.results,
-    default_card: card ? { ...card, design: readStoredDesign(card.design_json, card.display_name, card.design_version), design_json: undefined, design_version: undefined } : null,
+    default_card: card ? { ...card, skin: skins[card.id] || null, design: readStoredDesign(card.design_json, card.display_name, card.design_version), design_json: undefined, design_version: undefined } : null,
     config: {
       currency: env.CURRENCY_CODE || 'FN',
-      max_transfer: cfgNum(env, 'MAX_TRANSFER_MINOR', 500000),
-      daily_limit: cfgNum(env, 'DAILY_TRANSFER_LIMIT_MINOR', 1500000),
+      max_transfer: lim.max_transfer,
+      daily_limit: lim.daily_limit,
       reauth_threshold: cfgNum(env, 'REAUTH_THRESHOLD_MINOR', 100000),
-      max_cards: cfgNum(env, 'MAX_CARDS', 5),
+      max_cards: lim.max_cards,
+      perks: lim.perks,
     },
     username_change: uc,
   };

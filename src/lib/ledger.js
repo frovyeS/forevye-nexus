@@ -2,6 +2,7 @@
 // D1 batch() tek bir işlemdir: herhangi bir ifade hata verirse tümü geri alınır.
 import { HttpError, now, newRef, dayKey, cfgNum, isConstraint, isSuspended } from './util.js';
 import { notifyStmt } from './auth.js';
+import { limitsFor } from './shop.js';
 
 const fmt = (minor) => (minor / 100).toFixed(2);
 export { fmt as fmtMinor };
@@ -34,8 +35,10 @@ export async function getTransferByKey(env, senderId, key) {
 
 export async function transfer(env, sender, recipient, amount, idempotencyKey) {
   const t = now(env);
-  const maxTx = cfgNum(env, 'MAX_TRANSFER_MINOR', 500000);
-  const dailyCap = cfgNum(env, 'DAILY_TRANSFER_LIMIT_MINOR', 1500000);
+  // Fonksiyonel Market kartları (ör. Titanyum) işlem ve günlük limiti artırır; hesap sunucuda yapılır.
+  const lim = await limitsFor(env, sender.id);
+  const maxTx = lim.max_transfer;
+  const dailyCap = lim.daily_limit;
 
   if (sender.id === recipient.id) throw new HttpError(400, 'self_transfer', 'Kendinize transfer yapamazsınız.');
   if (isSuspended(sender, t)) throw new HttpError(403, 'account_suspended', 'Hesabınız askıda; transfer yapılamaz.');

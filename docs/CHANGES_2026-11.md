@@ -32,8 +32,9 @@ Web sayfasındaki bir QR kodu görünmez olamaz; kamera onu optik olarak okuyabi
 - Pass sitesinde `[hidden]` CSS hatası düzeltildi (gizli onay katmanı tıklamaları engelliyordu).
 - Dikkat: Mikro-Klima tarafındaki eski `/api/npass/*` üyelikleri bu sisteme otomatik taşınmaz; eski üyelikler gerekiyorsa elle aktarılmalıdır.
 
-## Card Studio (sözleşme v3)
-- Yatay/dikey kartlar (`orientation`), serbest yerleşen dekoratif katmanlar, her zaman üstte çizilen korumalı sistem öğeleri (`sys`), `qrStyle`.
-- `rules.js`/`card-rules.js` ve `render.js`/`card-render.js` iki depoda BİREBİR aynı olmalıdır (`npm run sync-shared`).
-- v1/v2 tasarımlar okunurken v3'e dönüştürülür; mevcut kartlar bozulmaz.
-- Kartlarım: varsayılan kart rozeti, devre dışı kart görünümü, QR'a tıklayınca büyütme penceresi.
+## Nexus Market (gerçek mağaza)
+- Yeni: `migrations/0007_shop.sql`, `src/routes/shop.js`, `src/lib/shop.js`, `shared/card-skins.js` (+ `public/js/card-skins.js`), `public/js/views-shop.js`, `scripts/gen-shop-migration.mjs`, `test/shop.test.mjs`.
+- Kart çizici (`card-render.js`, bank `render.js` ile birebir) kart yüzeyi (skin) destekler; kart API'leri `skin` döndürür; `/api/cards/:id/skin` ile takılır.
+- Fonksiyonel kart avantajları transfer limiti, borsa farkı ve kart hakkına işler; iade geri alır.
+- Market sitesi (nexus-market) mock'tan çıkarıldı: Nexus API'sine bilet ile bağlanır. Eski `wrangler.toml` ve `data/products.json` silinmelidir.
+- Dikkat: Nexus Market'in eski ödül/etkinlik/tüketilebilir ürün ekranları kaldırıldı (sunucu karşılığı yoktu).

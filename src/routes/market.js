@@ -3,6 +3,7 @@ import { rateLimit } from '../lib/rate.js';
 import { currentPrice, stats24h, history, holdingOf, parseQty, trade, getTradeByKey, ASSET, cfg, QTY_SCALE, PRICE_SCALE } from '../lib/market.js';
 import { balanceOf } from './wallet.js';
 import { grantAchievement } from './misc.js';
+import { perksOf, spreadFor } from '../lib/shop.js';
 
 const publicPrice = (env, p) => ({
   price_micro: p.mid_micro, buy_micro: p.buy_micro, sell_micro: p.sell_micro, spread_bps: p.spread_bps,
@@ -18,7 +19,7 @@ function position(h, p) {
 
 export const marketRoutes = {
   async overview(req, env, url, { user }) {
-    const p = await currentPrice(env);
+    const p = await currentPrice(env, { spreadBps: spreadFor(env, await perksOf(env, user.id)) });
     const c = cfg(env);
     const meta = { asset: ASSET, currency: env.CURRENCY_CODE || 'FN', qty_scale: QTY_SCALE, price_scale: PRICE_SCALE, max_trade_minor: c.maxTradeMinor };
     if (!p) return json({ ...meta, available: false });

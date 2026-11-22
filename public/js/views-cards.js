@@ -2,6 +2,7 @@ import { api } from './api.js';
 import { h, mount, toast, dt, load, field, busy, empty, icon, back } from './ui.js';
 import { state, refreshMe } from './state.js';
 import { renderCard } from './cardview.js';
+import { skinPanel } from './views-shop.js';
 import { validateLabel, LABEL_MAX } from './card-contract.js';
 
 // Kart tasarımı banka kart editöründe (ayrı site) yapılır. Burada: sunucudan tek kullanımlık bilet alınır, tarayıcı editöre gider.
@@ -17,14 +18,10 @@ export function cardsList(screen) {
     h('p', { class: 'virtual', text: 'Bunlar yalnızca oyun içi sanal kartlardır; gerçek ödeme kartı değildir.' }));
   load(holder, () => api.get('/api/cards'), (d) => {
     if (!d.cards.length) return empty('Henüz kartın yok', 'İlk sanal kartını oluştur.');
-    return h('div', { class: 'cards-grid' }, d.cards.map((c) => {
-      const off = c.status === 'disabled', portrait = c.design.orientation === 'portrait';
-      return h('a', { class: `card-tile${off ? ' is-off' : ''}`, href: `#/cards/${c.id}`, 'aria-label': `${c.label || c.display_name}${c.is_default ? ' (varsayılan)' : ''}${off ? ' (devre dışı)' : ''}` },
-        h('div', { class: 'card-frame' }, renderCard(c.design, c)),
-        h('div', { class: 'card-meta' },
-          h('div', { class: 'card-id' }, h('span', { class: 'nm', text: c.label || c.display_name }), h('span', { class: 'code', text: `${c.card_token} · ${portrait ? 'Dikey' : 'Yatay'}` })),
-          h('div', { class: 'card-badges' }, c.is_default ? h('span', { class: 'chip ok', text: '★ Varsayılan' }) : null, off ? h('span', { class: 'chip bad', text: 'Devre dışı' }) : null)));
-    }));
+    return h('div', { class: 'cards-grid' }, d.cards.map((c) => h('a', { class: 'card-tile', href: `#/cards/${c.id}`, style: { textDecoration: 'none', color: 'inherit' } },
+      renderCard(c.design, c),
+      h('div', { class: 'row between', style: { padding: '8px 4px 0' } }, h('span', { class: 'strong', text: c.label || c.display_name }),
+        h('span', {}, c.is_default ? h('span', { class: 'chip ok', text: 'Varsayılan' }) : null, ' ', c.status === 'disabled' ? h('span', { class: 'chip bad', text: 'Devre dışı' }) : null)))));
   });
 }
 
@@ -78,11 +75,10 @@ function buildDetail(card) {
     h('p', { class: 'strong', text: card.card_token }),
     h('p', { class: 'muted small', text: 'Bu kod yalnızca Forevye Nexus oyun içi kart kimliğidir; gerçek banka kartı numarası değildir.' }),
     h('button', { class: 'btn small', type: 'button', onClick: async () => { try { await navigator.clipboard.writeText(`FOREVYE NEXUS • ${card.display_name}\nKart kodu: ${card.card_token}`); toast('Kart bilgileri kopyalandı', 'ok'); } catch { toast('Kopyalama izni verilemedi', 'error'); } } }, icon('copy', 18), 'Kart bilgilerini kopyala'));
-  return h('div', {}, h('h1', { text: card.label || card.display_name }),
-    h('div', { class: 'card-frame detail' }, renderCard(card.design, card, { qrOpen: true })),
-    h('div', { class: 'row wrap card-flags' }, card.is_default ? h('span', { class: 'chip ok', text: '★ Varsayılan kart' }) : null, card.status === 'disabled' ? h('span', { class: 'chip bad', text: 'Devre dışı' }) : null, card.design.qrStyle === 'icon' ? h('span', { class: 'muted small', text: 'QR simgesine dokunarak büyütebilirsin.' }) : h('span', { class: 'muted small', text: 'QR’a dokunarak büyütebilirsin.' })),
+  return h('div', {}, h('h1', { text: card.label || card.display_name }), renderCard(card.design, card),
     cardCode,
     h('div', { style: { margin: '14px 0' } }, designBtn),
+    skinPanel(card),
     h('div', { class: 'panel' }, h('form', { onSubmit: (e) => { e.preventDefault(); busy(lbtn, async () => {
       lerr.textContent = '';
       const v = validateLabel(labelIn.value); if (!v.ok) { lerr.textContent = v.error; return; }

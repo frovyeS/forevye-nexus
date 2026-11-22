@@ -3,6 +3,7 @@
 import { HttpError, now, newRef, cfgNum, isConstraint, MIN } from './util.js';
 import { notifyStmt } from './auth.js';
 import { entryStmts, guardActiveStmt, fmtMinor } from './ledger.js';
+import { perksOf, spreadFor } from './shop.js';
 
 export const QTY_SCALE = 10000;        // 1 kristal = 10.000 birim (4 ondalık)
 export const PRICE_SCALE = 1000000;    // 1 FN = 1.000.000 mikro
@@ -70,7 +71,7 @@ async function readLast(env) {
 }
 
 // Güncel fiyat: önbellek tazeyse onu, değilse yeni simülasyon adımını üretir. Yenileme altyapısı hata verirse son fiyat korunur.
-export async function currentPrice(env, { refresh = true } = {}) {
+export async function currentPrice(env, { refresh = true, spreadBps } = {}) {
   const c = cfg(env);
   const t = now(env);
   let last = await readLast(env);
@@ -79,7 +80,7 @@ export async function currentPrice(env, { refresh = true } = {}) {
   }
   if (!last) return null;
   const mid = last.price_micro;
-  const half = c.spreadBps;
+  const half = spreadBps ?? c.spreadBps;
   const buy = Math.ceil((mid * (10000 + half)) / 10000);
   const sell = Math.max(1, Math.floor((mid * (10000 - half)) / 10000));
   return { ...last, mid_micro: mid, buy_micro: buy, sell_micro: sell, spread_bps: half, stale: t - last.ts > c.staleMs, age_ms: t - last.ts };
@@ -149,7 +150,7 @@ export async function getTradeByKey(env, userId, key) {
 export async function trade(env, user, { side, qty: qtyIn, amountMinor, key, expectedMicro }) {
   const c = cfg(env);
   const t = now(env);
-  const p = await currentPrice(env);
+  const p = await currentPrice(env, { spreadBps: spreadFor(env, await perksOf(env, user.id)) });   // Platin/Black kartı: daha dar alış-satış farkı
   if (!p) throw new HttpError(503, 'market_unavailable', 'Borsa şu an kullanılamıyor.');
   if (p.stale) throw new HttpError(503, 'market_stale', 'Fiyat verisi güncel değil; işlemler geçici olarak durduruldu.');
   const price = side === 'buy' ? p.buy_micro : p.sell_micro;

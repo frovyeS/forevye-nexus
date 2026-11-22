@@ -2,6 +2,7 @@ import { HttpError, json, readJson, now, cfgNum, MIN } from '../lib/util.js';
 import { rateLimit } from '../lib/rate.js';
 import { notifyStmt } from '../lib/auth.js';
 import { randomBase32 } from '../lib/util.js';
+import { limitsFor, skinsOf } from '../lib/shop.js';
 import { validateDesign, validateDisplayName, validateLabel, defaultDesign, readStoredDesign } from '../../shared/card-contract.js';
 
 // Veritabanındaki tasarım (eski sürüm 1 dahil) her zaman sürüm 2 olarak sunulur.
@@ -27,7 +28,7 @@ const stamp = (design, { cardId, userId, version }) => ({ ...design, designId: c
 const canon = (d) => JSON.stringify({ ...d, designId: '', ownerId: '', version: 0 });
 
 export async function createCard(env, user, { label = '', design, displayName }) {
-  const max = cfgNum(env, 'MAX_CARDS', 5);
+  const max = (await limitsFor(env, user.id)).max_cards;
   const count = (await env.DB.prepare('SELECT COUNT(*) AS c FROM cards WHERE user_id = ?').bind(user.id).first()).c;
   if (count >= max) throw new HttpError(400, 'card_limit', `En fazla ${max} sanal kart oluşturabilirsiniz.`);
   const lb = validateLabel(label);
@@ -79,11 +80,13 @@ export async function updateCard(env, user, card, { label, display_name, design 
 export const cardRoutes = {
   async list(req, env, ctx, { user }) {
     const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY is_default DESC, created_at ASC').bind(user.id).all()).results;
-    return json({ cards: rows.map(shape), max_cards: cfgNum(env, 'MAX_CARDS', 5) });
+    const skins = await skinsOf(env, user.id);
+    return json({ cards: rows.map((c) => ({ ...shape(c), skin: skins[c.id] || null })), max_cards: (await limitsFor(env, user.id)).max_cards });
   },
 
   async get(req, env, ctx, { user }, params) {
-    return json(shape(await ownCard(env, user.id, params.id)));
+    const c = await ownCard(env, user.id, params.id);
+    return json({ ...shape(c), skin: (await skinsOf(env, user.id))[c.id] || null });
   },
 
   async resolve(req, env, url, { user }) {
