@@ -11,7 +11,7 @@
 // Kristal -> FN dönüşümü GIFTCARD_MINOR_PER_KRISTAL ile yapılır (varsayılan 100 = 1 kristal 1 FN).
 // Bakiye yükleme (defter kaydı) bu uygulamada reference ile tekrar-güvenli yapılır.
 import { hmacHex } from '../lib/crypto.js';
-import { HttpError, now, cfgNum } from '../lib/util.js';
+import { HttpError, now } from '../lib/util.js';
 
 const baseUrl = (env) => String(env.GIFTCARD_API_URL || '').trim().replace(/\/+$/, '');
 
@@ -46,7 +46,7 @@ export async function redeemViaExistingModule(env, { userId, code, idempotencyKe
   }
   const data = await res.json().catch(() => ({}));
   if (res.ok && data.ok && Number.isSafeInteger(data.amount) && data.amount > 0 && typeof data.reference === 'string') {
-    const perKristal = cfgNum(env, 'GIFTCARD_MINOR_PER_KRISTAL', 100);
+    const perKristal = Number(env.GIFTCARD_MINOR_PER_KRISTAL) > 0 ? Number(env.GIFTCARD_MINOR_PER_KRISTAL) : 100;
     const amount = data.unit === 'kristal' ? data.amount * perKristal : data.amount;
     if (!Number.isSafeInteger(amount) || amount <= 0) throw new HttpError(503, 'giftcard_unavailable', 'Hediye kartı hizmeti şu an kullanılamıyor.');
     return { amount, reference: data.reference };
