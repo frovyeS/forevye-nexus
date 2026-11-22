@@ -8,7 +8,7 @@
 //
 // Jeton yalnızca /api/pass/* uçlarında geçerlidir; transfer, profil, kart gibi hiçbir ucu açmaz. İş sonuçları (yetersiz bakiye vb.) 200 + { ok:false, code } döner.
 import { HttpError, json, readJson, now, MIN, HOUR, clientIp, isConstraint, newRef, parseAmount, str } from '../lib/util.js';
-import { randomToken, sha256hex } from '../lib/crypto.js';
+import { randomToken, sha256hex, safeEqual } from '../lib/crypto.js';
 import { rateLimit } from '../lib/rate.js';
 import { entryStmts, guardActiveStmt, fmtMinor } from '../lib/ledger.js';
 import { notifyStmt } from '../lib/auth.js';
@@ -247,5 +247,30 @@ export const passAdminRoutes = {
     ]);
     const row = await env.DB.prepare('SELECT * FROM nxp_products WHERE id = ?').bind(id).first();
     return json({ ok: true, product: shapeProduct(row) });
+  },
+};
+
+// worker.js yönetici ucu `save` adıyla bağlar; işleyici `upsert`.
+passAdminRoutes.save = passAdminRoutes.upsert;
+
+// ---------- Sunucudan sunucuya: üyelik sorgusu (INTERNAL_API_KEY şart) ----------
+// POST /api/internal/entitlement { user_id | id_user_id, app?, product_id? } -> { active, entitlements }
+export const passInternalRoutes = {
+  async entitlement(req, env) {
+    const h = req.headers.get('authorization') || '';
+    if (!env.INTERNAL_API_KEY || !h.startsWith('Bearer ') || !safeEqual(h.slice(7), env.INTERNAL_API_KEY)) throw new HttpError(401, 'unauthorized', 'Yetkisiz.');
+    await ensurePassSchema(env);
+    const b = await readJson(req);
+    let userId = typeof b.user_id === 'string' ? b.user_id.trim().slice(0, 100) : '';
+    if (!userId && typeof b.id_user_id === 'string' && b.id_user_id.trim()) {
+      const link = await env.DB.prepare('SELECT user_id FROM id_links WHERE id_user_id = ?').bind(b.id_user_id.trim().slice(0, 100)).first();
+      userId = link ? link.user_id : '\u0000';
+    }
+    if (!userId) throw new HttpError(400, 'invalid', 'user_id veya id_user_id gerekli.');
+    const opts = {};
+    if (typeof b.app === 'string' && b.app) opts.app = b.app;
+    if (typeof b.product_id === 'string' && b.product_id) opts.productId = b.product_id;
+    const entitlements = await activeEntitlements(env, userId, opts);
+    return json({ active: entitlements.length > 0, entitlements });
   },
 };
