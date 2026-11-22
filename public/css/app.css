@@ -145,9 +145,27 @@ a.item>.ic:last-child{color:var(--muted)}
 
 /* ---------- Kart görseli ---------- */
 .card-svg{width:100%;height:auto;display:block;border-radius:16px;box-shadow:0 0 0 1px rgba(255,255,255,.08),0 14px 30px rgba(0,0,0,.5)}
-.card-svg.disabled{filter:grayscale(.7)}
-.cards-grid{display:grid;gap:16px}
-.card-tile{background:none;border:0;padding:0;text-align:left;cursor:pointer;width:100%;min-width:0;display:block;transition:transform var(--t-fast)}
+.card-svg[data-o=portrait]{width:auto;max-width:100%;height:clamp(300px,50vh,400px);aspect-ratio:540/856;margin:0 auto;border-radius:18px}
+/* Devre dışı kart: siyah katman yok; tasarım ayrıntıları seçilebilir kalır, yalnızca doygunluk düşer. */
+.card-svg.disabled{filter:saturate(.35) brightness(.88);box-shadow:0 0 0 1px rgba(255,255,255,.06),0 8px 18px rgba(0,0,0,.4)}
+.cards-grid{display:grid;gap:26px 20px}
+.card-tile{background:none;border:0;padding:0;text-align:left;cursor:pointer;width:100%;min-width:0;display:block;transition:transform var(--t-fast);text-decoration:none;color:inherit}
+.card-frame{display:flex;justify-content:center;align-items:center;min-width:0}
+.card-frame.detail{margin-bottom:10px}
+.card-tile .card-svg{transition:transform var(--t-fast),box-shadow var(--t-fast)}
+.card-tile:hover .card-svg:not(.disabled){transform:translateY(-2px);box-shadow:0 0 0 1px rgba(255,255,255,.12),0 20px 36px rgba(0,0,0,.55)}
+.card-tile:focus-visible{outline:2px solid var(--silver);outline-offset:6px;border-radius:14px}
+.card-meta{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:12px 4px 0}
+.card-id{display:flex;flex-direction:column;gap:2px;min-width:0}
+.card-id .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-id .code{font-size:.72rem;letter-spacing:.12em;color:var(--muted);font-variant-numeric:tabular-nums}
+.card-badges{display:flex;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end}
+.card-tile.is-off .nm{color:var(--muted)}
+.card-flags{align-items:center;margin:6px 0 14px}
+.qr-back{position:fixed;inset:0;background:rgba(4,5,9,.8);display:grid;place-items:center;z-index:100;padding:18px;backdrop-filter:blur(4px)}
+.qr-box{background:var(--surface);border:1px solid var(--line-2);border-radius:18px;padding:22px;max-width:340px;width:100%;text-align:center;display:grid;gap:8px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.qr-box svg{width:min(72vw,270px);height:auto;display:block;margin:0 auto 4px;border-radius:12px;box-shadow:none}
+.qr-box p{margin:0}.qr-code{font-size:1rem;letter-spacing:.14em;font-variant-numeric:tabular-nums}
 .card-tile:active{transform:translateY(1px)}
 .card-link{display:block;margin-bottom:14px;transition:transform var(--t-fast)}
 .card-link:active{transform:translateY(1px)}

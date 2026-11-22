@@ -31,3 +31,9 @@ Web sayfasındaki bir QR kodu görünmez olamaz; kamera onu optik olarak okuyabi
 - Nexus arayüzü: İşlemler → Nexus Pass (üyeliklerim + Pass'i aç).
 - Pass sitesinde `[hidden]` CSS hatası düzeltildi (gizli onay katmanı tıklamaları engelliyordu).
 - Dikkat: Mikro-Klima tarafındaki eski `/api/npass/*` üyelikleri bu sisteme otomatik taşınmaz; eski üyelikler gerekiyorsa elle aktarılmalıdır.
+
+## Card Studio (sözleşme v3)
+- Yatay/dikey kartlar (`orientation`), serbest yerleşen dekoratif katmanlar, her zaman üstte çizilen korumalı sistem öğeleri (`sys`), `qrStyle`.
+- `rules.js`/`card-rules.js` ve `render.js`/`card-render.js` iki depoda BİREBİR aynı olmalıdır (`npm run sync-shared`).
+- v1/v2 tasarımlar okunurken v3'e dönüştürülür; mevcut kartlar bozulmaz.
+- Kartlarım: varsayılan kart rozeti, devre dışı kart görünümü, QR'a tıklayınca büyütme penceresi.

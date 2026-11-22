@@ -221,15 +221,15 @@ test('kartlar: oluşturma, korunan alanlar, sahiplik, limit, geri dönüş', asy
   for (const f of [{ card_token: 'NXC-HACK-HACK' }, { status: 'disabled' }, { user_id: 'x' }, { is_default: true }]) {
     assert.equal((await a.cl.patch(`/api/cards/${main.id}`, f)).data.error.code, 'protected_field');
   }
-  // Korunan bölge (çip) üzerine nesne bindirilemez (sunucu, editörle aynı kural dosyasını çalıştırır)
+  // v3: dekoratif nesne çipin üstüne konabilir (serbest yerleşim); sistem öğeleri çizimde yine en üsttedir (sunucu, editörle aynı kural dosyasını çalıştırır)
   const blob = (x, y) => ({ id: 'x1', type: 'shape', name: 'Daire', locked: false, visible: true, zIndex: 0, properties: { kind: 'circle', x, y, width: 60, height: 60, rotation: 0, opacity: 1, fill: '#FF0000', stroke: 'none', strokeWidth: 0, flipX: false, flipY: false, lockRatio: false, effects: [] } });
   const d = defaultDesign('Test Kişi');
   d.layers.push(blob(60, 190));
-  assert.equal((await a.cl.patch(`/api/cards/${main.id}`, { design: d })).data.error.code, 'invalid_design');
+  assert.equal((await a.cl.patch(`/api/cards/${main.id}`, { design: d })).status, 200, 'çip üstüne dekoratif nesne serbest');
   d.layers[d.layers.length - 1] = blob(620, 250);
   const ok = await a.cl.patch(`/api/cards/${main.id}`, { design: d, display_name: 'Ada L.' });
   assert.equal(ok.status, 200);
-  assert.equal(ok.data.version, 2);
+  assert.equal(ok.data.version, 3);
   assert.equal(ok.data.display_name, 'Ada L.');
   assert.equal(ok.data.design.userDisplayName, 'Ada L.', 'kart adı tasarımla senkron');
   assert.equal((await a.cl.patch(`/api/cards/${main.id}`, { display_name: '<script>' })).status, 400);
@@ -244,7 +244,7 @@ test('kartlar: oluşturma, korunan alanlar, sahiplik, limit, geri dönüş', asy
   // Geri dön
   const rv = await a.cl.post(`/api/cards/${main.id}/revert`, { version: 1 });
   assert.equal(rv.data.display_name, 'Test Kişi');
-  assert.equal(rv.data.version, 3);
+  assert.equal(rv.data.version, 4);
 
   // Limit, devre dışı bırakma, varsayılan kart
   assert.equal((await a.cl.post('/api/cards', { display_name: 'İkinci' })).status, 201);

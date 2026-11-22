@@ -1,4 +1,4 @@
-// Kart tasarımı ortak veri sözleşmesi — SÜRÜM 2 (banka kart editörünün modeli: 856x540, katmanlar).
+// Kart tasarımı ortak veri sözleşmesi — SÜRÜM 3 (yatay 856x540 / dikey 540x856; sistem düzeni `sys`). v1/v2 kartlar okunurken geriye dönük uyumlu çevrilir.
 // Kurallar ve doğrulama `card-rules.js` dosyasındadır (forevye_nexus_bank/js/rules.js ile BİREBİR aynı dosya).
 // Sunucu (Worker) ve tarayıcı bu dosyayı kullanır; asıl güvenlik kontrolü sunucuda yapılır.
 // Marka, çip ve kart bilgisi veri modelinde YOKTUR: çizimde sistemden eklenir, kullanıcı silemez/taşıyamaz.
@@ -59,7 +59,17 @@ export function defaultDesign(displayName = 'NEXUS') {
     shape('c4', 'Nexus', 'nexus', 505, 205, 300, 227, { fill: '#9097A6', opacity: 0.55, lockRatio: true }),
   ];
   layers.forEach((l, i) => { l.zIndex = i * 10; });
-  return { designId: 'design_local', ownerId: 'local', template: 'classic', canvas: { width: CARD_W, height: CARD_H }, layers, userDisplayName: displayName, nameStyle: { color: 'auto' }, chipStyle: 'gold', version: 1 };
+  return { designId: 'design_local', ownerId: 'local', template: 'classic', orientation: 'landscape', canvas: { width: CARD_W, height: CARD_H }, sys: R.sysDefaults('landscape'), qrStyle: 'tint', layers, userDisplayName: displayName, nameStyle: { color: 'auto' }, chipStyle: 'gold', version: 1 };
+}
+
+// Dikey kart için başlangıç tasarımı (editördeki Classic şablonunun dikey kompozisyonu özeti).
+export function defaultPortraitDesign(displayName = 'NEXUS') {
+  const d = defaultDesign(displayName);
+  const L = (kind, name, x, y, w, h, p) => shape(`p_${kind}_${x}`, name, kind, x, y, w, h, p);
+  d.orientation = 'portrait'; d.canvas = { width: 540, height: 856 }; d.sys = R.sysDefaults('portrait');
+  d.layers = [d.layers[0], L('line', 'Işık bandı', -80, 420, 900, 20, { rotation: -52, stroke: '#FFFFFF', strokeWidth: 44, opacity: 0.28 }), L('nexus', 'Nexus', 190, 300, 320, 242, { fill: '#9097A6', opacity: 0.45, lockRatio: true })];
+  d.layers.forEach((l, i) => { l.zIndex = i * 10; });
+  return d;
 }
 
 // Kullanıcı adından kart adı önerisi (2-18 karakter, izinli karakterler).
@@ -88,7 +98,7 @@ export function convertV1(old, displayName) {
     const kind = DECOR_KIND[o.id]; if (!kind) return;
     const w = Math.round(o.size * K * (kind === 'stars' ? 2 : 1));
     const l = shape(`cv_d${i + 1}`, 'Süs', kind, Math.round(o.x * K - w / 2), Math.round(o.y * K - w / 2), w, w, R.STROKE_ONLY.has(kind) ? { stroke: accent, strokeWidth: 4, opacity: 0.85 } : { fill: accent, opacity: 0.85 });
-    if (R.pushOut(l)) layers.push(l);         // yeni korumalı bölgelerle çakışan süs kaydırılır; kaydırılamazsa atılır
+    layers.push(l);                           // v3: dekoratif katmanlar serbest; sistem öğeleri çizimde her zaman üsttedir
   });
   const name = R.sanitizeName(displayName || 'NEXUS') || 'NEXUS';
   const res = R.validateDesign({ template: 'classic', canvas: { width: CARD_W, height: CARD_H }, layers, userDisplayName: name, nameStyle: { color: ink }, chipStyle: 'gold', version: 1 });

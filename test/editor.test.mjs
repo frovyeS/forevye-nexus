@@ -53,13 +53,13 @@ test('editör: bilet → jeton → kayıt; tasarım Nexus kartına işlenir, sü
   assert.equal(again.data.card.version, 2);
 });
 
-test('editör: sunucu kuralları — çip bölgesi, sistem katmanı, korunan alan, kimlik sahteciliği', async () => {
+test('editör: sunucu kuralları — serbest yerleşim, sistem katmanı, korunan alan, kimlik sahteciliği', async () => {
   const { env, u, card } = await setup();
   const ex = await asEditor(env, 'POST', '/api/editor/exchange', { body: { ticket: ticketOf((await u.cl.post('/api/editor/ticket', { card_id: card.id })).data.url) } });
   const tok = ex.data.token, base = ex.data.card.design;
   const put = (design, extra = {}) => asEditor(env, 'PUT', '/api/editor/card', { token: tok, body: { design, ...extra } });
   const onChip = JSON.parse(JSON.stringify(base)); onChip.layers.push(circle(60, 190));
-  assert.equal((await put(onChip)).data.error.code, 'invalid_design');
+  assert.equal((await put(onChip)).status, 200, 'dekoratif nesne çipin üstüne konabilir (v3 serbest yerleşim)');
   const sys = JSON.parse(JSON.stringify(base)); sys.layers.push({ id: 's1', type: 'system_chip', properties: {} });
   assert.equal((await put(sys)).status, 400);
   assert.equal((await put(base, { card_token: 'NXC-HACK-HACK' })).data.error.code, 'protected_field');
@@ -177,4 +177,76 @@ test('editör: 0004 migration canlı DB\'ye uygulanmamış olsa da bilet üretil
   assert.equal(t.status, 200, JSON.stringify(t.data));
   const ex = await asEditor(env, 'POST', '/api/editor/exchange', { body: { ticket: ticketOf(t.data.url) } });
   assert.equal(ex.status, 200);
+});
+
+// ---- Sözleşme sürüm 3: yön, sistem düzeni, katman önceliği, geriye dönük uyum ----
+import { readStoredDesign, defaultPortraitDesign } from '../shared/card-contract.js';
+const R = globalThis.FNXRules;
+
+test('v3: yatay ve dikey tuval; dikey kart geçerli, sistem düzeni dikey varsayılanlara yerleşir', () => {
+  const p = defaultPortraitDesign('Ada Lovelace');
+  const v = validateDesign(p);
+  assert.equal(v.ok, true, JSON.stringify(v.errors));
+  assert.deepEqual(v.design.canvas, { width: 540, height: 856 });
+  assert.equal(v.design.orientation, 'portrait');
+  assert.deepEqual(v.design.sys, R.sysDefaults('portrait'));
+  const bad = { ...p, canvas: { width: 856, height: 540 } };
+  assert.equal(validateDesign(bad).ok, false, 'yön ile tuval boyutu uyuşmalı');
+  assert.equal(validateDesign({ ...p, orientation: 'diagonal' }).ok, false);
+});
+
+test('v3: dekoratif katmanlar serbest (üst üste, kart dışına taşan); sistem öğeleri katman olarak gönderilemez', () => {
+  const d = defaultDesign('Test');
+  const big = (id, x, y) => ({ id, type: 'shape', name: 'Büyük', locked: false, visible: true, zIndex: 0, properties: { kind: 'circle', x, y, width: 900, height: 900, rotation: 0, opacity: 1, fill: '#FFD700', stroke: 'none', strokeWidth: 0, flipX: false, flipY: false, lockRatio: false, effects: [] } });
+  d.layers.push(big('a1', -300, -300), big('a2', 100, 100), big('a3', 2000, 2000));   // logo/çip/QR üstünde, birbirinin üstünde, kart dışında
+  const v = validateDesign(d);
+  assert.equal(v.ok, true, JSON.stringify(v.errors));
+  for (const t of ['system_chip', 'system_brand', 'system_qr', 'user_name']) {
+    const x = defaultDesign('Test'); x.layers.push({ id: 'zz', type: t, properties: {} });
+    assert.equal(validateDesign(x).ok, false, t + ' reddedilir');
+  }
+});
+
+test('v3: sistem öğeleri kart sınırına kırpılır, birbirini kapatamaz; sistem rengi kontrastı denetlenir', () => {
+  const d = defaultDesign('Test');
+  d.sys = { chip: { x: -500, y: 9999, scale: 5 }, qr: { x: 100, y: 100, scale: 1 } };
+  const v = validateDesign(d);
+  const c = v.design.sys.chip, cvs = R.canvasOf('landscape');
+  assert.ok(c.x >= R.MARGIN && c.y + 78 * c.scale <= cvs.height - R.MARGIN + 0.5 && c.scale <= 1.6, 'çip kart içine kırpıldı');
+  const d2 = defaultDesign('Test'); d2.sys = { name: { x: 48, y: 322, scale: 1 } };       // adı kod alanının üstüne taşı
+  const v2 = validateDesign(d2);
+  assert.equal(v2.ok, false); assert.match(v2.errors.join(' '), /birbirini kapatıyor/);
+  assert.deepEqual(R.sysConflicts(v2.design.sys, v2.design.qrStyle), [], 'doğrulanan tasarımda çakışma kalmaz');
+  const d3 = defaultDesign('Test'); d3.layers[0].properties.colors = ['#101010', '#202020']; d3.sysStyle = { color: '#181818' };
+  assert.equal(validateDesign(d3).ok, false, 'okunmayan sistem yazı rengi reddedilir');
+});
+
+test('v3: v2 (yönsüz, sys\'siz, effects:[shadow]) tasarım geriye dönük uyumlu okunur ve kaydedilebilir', () => {
+  const v2 = defaultDesign('Eski Kart'); delete v2.orientation; delete v2.sys; delete v2.qrStyle;
+  v2.layers.push({ id: 'o1', type: 'shape', name: 'Eski', locked: false, visible: true, zIndex: 0, properties: { kind: 'roundrect', x: 600, y: 200, width: 100, height: 80, rotation: 0, opacity: 1, fill: '#336699', stroke: 'none', strokeWidth: 0, flipX: false, flipY: false, lockRatio: false, effects: ['shadow', 'frost'] } });
+  const out = readStoredDesign(JSON.stringify(v2), 'Eski Kart', 7);
+  assert.equal(out.orientation, 'landscape'); assert.equal(out.version, 7); assert.equal(out.userDisplayName, 'Eski Kart');
+  assert.deepEqual(out.sys, R.sysDefaults('landscape'));
+  const l = out.layers.find((x) => x.id === 'o1').properties;
+  assert.ok(l.shadow > 0 && !l.effects.includes('shadow') && l.effects.includes('frost'), 'gölge sayısal alana taşındı');
+  assert.equal(l.radius, 44, 'yumuşak blok varsayılan yarıçapı korunur');
+  assert.equal(validateDesign(out).ok, true);
+});
+
+test('v3: yeni tasarımlar (dikey, sys, QR simgesi, yeni şekiller) editör jetonuyla kaydedilir ve Nexus’ta aynen okunur', async () => {
+  const { env, u, card } = await setup();
+  const ex = await asEditor(env, 'POST', '/api/editor/exchange', { body: { ticket: ticketOf((await u.cl.post('/api/editor/ticket', { card_id: card.id })).data.url) } });
+  const p = defaultPortraitDesign('Ada L.');
+  p.qrStyle = 'icon'; p.chipStyle = 'titanium'; p.sys.chip = { x: 60, y: 300, scale: 1.2 };
+  p.layers.push({ id: 'g1', type: 'light', name: 'Işık', locked: false, visible: true, zIndex: 0, properties: { kind: 'glow', x: 100, y: 100, width: 400, height: 400, rotation: 0, opacity: 0.8, fill: '#9EDBFF', stroke: 'none', strokeWidth: 0, glow: 12, glowColor: '#FFFFFF', shadow: 8, flipX: false, flipY: false, lockRatio: false, effects: [] } });
+  const sv = await asEditor(env, 'PUT', '/api/editor/card', { token: ex.data.token, body: { design: p } });
+  assert.equal(sv.status, 200, JSON.stringify(sv.data));
+  const got = (await u.cl.get(`/api/cards/${card.id}`)).data.design;
+  assert.equal(got.orientation, 'portrait'); assert.equal(got.qrStyle, 'icon'); assert.equal(got.chipStyle, 'titanium');
+  assert.deepEqual(got.sys.chip, { x: 60, y: 300, scale: 1.2 });
+  const g = got.layers.find((l) => l.id === 'g1'); assert.equal(g.type, 'light'); assert.equal(g.properties.glow, 12);
+  // çakışan sistem düzeni sunucuda reddedilir
+  const bad = JSON.parse(JSON.stringify(got)); bad.sys.name = { x: 40, y: 652, scale: 1 };
+  const r = await asEditor(env, 'PUT', '/api/editor/card', { token: ex.data.token, body: { design: bad } });
+  assert.equal(r.status, 400); assert.equal(r.data.error.code, 'invalid_design');
 });
