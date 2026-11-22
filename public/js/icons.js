@@ -39,6 +39,8 @@ export const ICONS = {
   up: 'M6 15l6-6 6 6',
   down: 'M6 9l6 6 6-6',
   external: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
+  copy: 'M8 8h12v13H8zM4 16H3V3h13v2',
+  qrcode: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM19 14h2v2h-2zM19 19h2v2h-2zM14 19h3v2h-3z',
 };
 
 export function icon(name, size = 20, cls = '') {

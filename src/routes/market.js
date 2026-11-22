@@ -6,7 +6,7 @@ import { grantAchievement } from './misc.js';
 
 const publicPrice = (env, p) => ({
   price_micro: p.mid_micro, buy_micro: p.buy_micro, sell_micro: p.sell_micro, spread_bps: p.spread_bps,
-  gold_usd: p.gold_usd, base_usd: p.base_usd, updated_at: p.ts, stale: p.stale, source: p.source,
+  updated_at: p.ts, stale: p.stale, source: p.source, move_bps: p.move_bps,
 });
 
 function position(h, p) {

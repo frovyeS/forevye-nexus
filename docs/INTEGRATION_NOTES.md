@@ -38,10 +38,10 @@ Kart tasarımı artık yalnızca banka editöründe (ayrı site) yapılır; Nexu
 `public/assets/logo.svg` YER TUTUCUDUR. Resmî logoyu aynı dosya adıyla koyun. Kart üzerindeki logo `wordmark.png` ile çizilir.
 
 ## 4. Kristal borsası
-Altın fiyat kaynağı ve parametreler için README'deki "Para birimi ve Kristal Borsası" bölümüne bakın. Oyun içi mağaza kristalle ödeme isterse `POST /api/internal/purchase` FN düşer; kristal→FN dönüşümü kullanıcı tarafından borsadan yapılır.
+Kristal artık bağımsız oyun içi piyasa simülasyonuyla fiyatlanır; ayarlar README içindeki "Para birimi ve Kristal Borsası" bölümündedir. Oyun içi mağaza kristalle ödeme isterse `POST /api/internal/purchase` FN düşer; kristal→FN dönüşümü kullanıcı tarafından borsadan yapılır.
 
 ## 5. Ortak e-posta (Brevo) ve yük aktarımı — Mikro-Klima Worker
 Mikro-Klima, FOREVYE ID ve Nexus için ortak hizmetleri üstlenir; Nexus Worker'ı bu işlerle yorulmaz:
 - **Posta:** `POST {MAIL_RELAY_URL}/api/ext/mail` (imza: hediye kartıyla aynı HMAC). FOREVYE ID de aynı `worker/mail.js` modülünü kullanır → tek Brevo hesabı, tek gönderen adresi. Nexus'ta `EMAIL_PROVIDER="relay"`; `BREVO_API_KEY`/`EMAIL_FROM` yalnızca Mikro-Klima'da gerekir (Nexus'ta isteğe bağlı yedek). Alıcı başına 10 dk'da 5, toplam 10 dk'da 80 posta sınırı vardır.
-- **Altın fiyatı:** `GET /api/ext/gold` Mikro-Klima'da 60 sn önbelleklenir; Nexus `GOLD_API_URL` ile oradan okur (çökerse doğrudan yedek kaynağa düşer).
+- **Kristal fiyatı:** Nexus içindeki piyasa simülasyonu tarafından üretilir; Mikro-Klima'nın altın fiyat servisine bağımlılık kaldırılmıştır.
 - Gizli anahtar: `GIFTCARD_API_SECRET` (Nexus) = `NEXUS_SECRET` (Mikro-Klima), aynı değer.

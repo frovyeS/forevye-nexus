@@ -17,7 +17,7 @@ migrations_dir = "migrations"
 
 # R2 (avatar depolama) şimdilik kapalı; etkinleştirince geri eklenir.
 
-# Kristal fiyatını gerçek altından yenileyen zamanlanmış görev (5 dakikada bir).
+# Nexus oyun piyasası fiyatını yenileyen zamanlanmış görev (5 dakikada bir).
 [triggers]
 crons = ["*/5 * * * *"]
 
@@ -32,13 +32,14 @@ REAUTH_THRESHOLD_MINOR = "100000"
 MAX_CARDS = "5"
 SESSION_TTL_DAYS = "14"
 OLD_NAME_RESERVE_DAYS = "30"
-# Kristal borsası (kristal = oyunun "altın"ı; fiyatı gerçek altını izler, baz altın fiyatı = 1 FN)
+# Kristal borsası (bağımsız oyun içi piyasa simülasyonu; harici emtia fiyatı kullanılmaz)
 MARKET_SPREAD_BPS = "50"          # alış/satış, orta fiyattan her yönde %0,50 sapar
 MARKET_MAX_TRADE_MINOR = "1000000" # işlem başına en fazla 10.000 FN değerinde
 MARKET_REFRESH_SEC = "60"
+MARKET_INITIAL_PRICE_MICRO = "25000000" # İlk piyasa fiyatı: 25 FN/KRS
+MARKET_VOLATILITY_BPS = "45"            # Her fiyat güncellemesinde azami ±%0,45 hareket
+MARKET_REVERSION_BPS = "200"            # Başlangıç fiyatından sapmanın güncelleme başına %2'si geri çekilir (0 = serbest yürüyüş)
 MARKET_STALE_SEC = "900"          # fiyat 15 dk güncellenmezse işlem durur
-# GOLD_BASE_USD = "..."           # İsteğe bağlı: baz altın fiyatını (USD/ons) elle sabitler. Boşsa ilk çekilen fiyat baz olur.
-# GOLD_API_URL_2 = "..."          # Yedek kaynak (varsayılan: Yahoo GC=F). Birincil kaynak yukarıda Mikro-Klima aktarımıdır.
 # Hediye kartı = Mikro-Klima kristal kartları. Gizli anahtar (GIFTCARD_API_SECRET) wrangler secret ile verilir, Mikro-Klima'daki NEXUS_SECRET ile aynı olmalı.
 # FOREVYE ID ile giriş: ID_URL = ID arayüzünün adresi, ID_API_URL = kimlik sunucusu (Mikro-Klima Worker). Mikro-Klima wrangler.toml → ID_REDIRECTS'e
 # "sanal-banka=https://<bu-sitenin-adresi>/api/auth/id/callback" eklenmeli. LEGACY_LOGIN="off" olunca e-posta/şifre kayıt ve girişi kapanır (varsayılan: açık).
@@ -54,8 +55,6 @@ EMAIL_PROVIDER = "relay"
 MAIL_RELAY_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
 EMAIL_FROM = ""
 
-# Kristal fiyatı: dış altın kaynağına yalnızca Mikro-Klima gider (60 sn önbellek); Nexus oradan okur. Çökerse doğrudan gold-api/Yahoo'ya düşer.
-GOLD_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev/api/ext/gold"
 
 # Kart editörü = forevye_nexus_bank deposunun yayın adresi (ayrı site). "Kartını tasarla" bu adrese bilet ile yönlendirir.
 # Tasarım orada yapılır, kayıt buraya (/api/editor/card) gelir. Adresin SON hâli buraya; yalnızca kaynağı (https://alanadi) CORS'a izinli olur.

@@ -13,7 +13,7 @@ export async function openEditor(cardId, label) {
 
 export function cardsList(screen) {
   const holder = h('div');
-  mount(screen, h('div', { class: 'topbar' }, h('h1', { text: 'Kartlarım' }), h('a', { class: 'btn small primary', href: '#/cards/new' }, icon('plus', 18), 'Yeni kart')), holder,
+  mount(screen, h('div', { class: 'topbar' }, h('h1', { text: 'Kartlarım' }), h('div', { class: 'row wrap' }, h('a', { class: 'btn small', href: '#/scan' }, icon('qrcode', 18), 'QR okut'), h('a', { class: 'btn small primary', href: '#/cards/new' }, icon('plus', 18), 'Yeni kart'))), holder,
     h('p', { class: 'virtual', text: 'Bunlar yalnızca oyun içi sanal kartlardır; gerçek ödeme kartı değildir.' }));
   load(holder, () => api.get('/api/cards'), (d) => {
     if (!d.cards.length) return empty('Henüz kartın yok', 'İlk sanal kartını oluştur.');
@@ -70,7 +70,12 @@ function buildDetail(card) {
     h('div', { class: 'grow' }, h('div', { class: 't', text: `Sürüm ${v.version}` }), h('div', { class: 'muted small', text: dt(v.created_at) })),
     v.version === card.version ? h('span', { class: 'chip', text: 'Güncel' }) : h('button', { class: 'btn small', type: 'button', text: 'Geri dön', onClick: async (e) => busy(e.currentTarget, async () => { try { await api.post(`/api/cards/${card.id}/revert`, { version: v.version }); toast('Önceki tasarıma dönüldü', 'ok'); location.reload(); } catch (er) { toast(er.message, 'error'); } }) })))));
 
+  const cardCode = h('div', { class: 'panel' }, h('h3', { text: 'Sanal kart kodu' }),
+    h('p', { class: 'strong', text: card.card_token }),
+    h('p', { class: 'muted small', text: 'Bu kod yalnızca Forevye Nexus oyun içi kart kimliğidir; gerçek banka kartı numarası değildir.' }),
+    h('button', { class: 'btn small', type: 'button', onClick: async () => { try { await navigator.clipboard.writeText(`FOREVYE NEXUS • ${card.display_name}\nKart kodu: ${card.card_token}`); toast('Kart bilgileri kopyalandı', 'ok'); } catch { toast('Kopyalama izni verilemedi', 'error'); } } }, icon('copy', 18), 'Kart bilgilerini kopyala'));
   return h('div', {}, h('h1', { text: card.label || card.display_name }), renderCard(card.design, card),
+    cardCode,
     h('div', { style: { margin: '14px 0' } }, designBtn),
     h('div', { class: 'panel' }, h('form', { onSubmit: (e) => { e.preventDefault(); busy(lbtn, async () => {
       lerr.textContent = '';
@@ -80,6 +85,73 @@ function buildDetail(card) {
     h('p', { class: 'muted small', text: `Kartta görünen isim: ${card.display_name}. Tasarımı ve kart üstündeki ismi kart editöründe değiştirirsin.` })),
     manage, hist,
     h('p', { class: 'virtual', text: 'Çip, marka ve kart kimliği sistem tarafından çizilir; tasarımda silinemez veya taşınamaz.' }));
+}
+
+
+export function scanView(screen) {
+  const video = h('video', { class: 'qr-video', autoplay: true, playsinline: true, muted: true });
+  video.muted = true;
+  const status = h('p', { class: 'muted small', text: 'Kamerayı açıp bir Forevye Nexus kart QR kodunu kadraja getir.' });
+  const result = h('div');
+  const token = h('input', { type: 'text', placeholder: 'NXC-XXXX-XXXX', autocomplete: 'off', autocapitalize: 'characters', maxlength: '13' });
+  const manualErr = h('p', { class: 'err-text', role: 'alert' });
+  const cameraBtn = h('button', { class: 'btn primary', type: 'button', text: 'Kamerayı aç' });
+  let stream = null, frame = 0, detector = null, busyScan = false;
+  const stop = () => {
+    if (frame) cancelAnimationFrame(frame);
+    frame = 0;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null; busyScan = false; video.srcObject = null; cameraBtn.disabled = false; cameraBtn.textContent = 'Kamerayı aç';
+  };
+  const showCard = async (raw) => {
+    const match = /^FNX1\|(NXC-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4})$/i.exec(String(raw || '').trim());
+    const code = match ? match[1].toUpperCase() : String(raw || '').trim().toUpperCase();
+    if (!/^NXC-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/.test(code)) { manualErr.textContent = 'Geçerli bir Forevye Nexus QR kodu veya kart kodu okutun.'; return false; }
+    stop(); manualErr.textContent = ''; status.textContent = 'Kart bilgileri doğrulanıyor…';
+    try {
+      const d = await api.get(`/api/cards/resolve?token=${encodeURIComponent(code)}`);
+      const copyText = `FOREVYE NEXUS • SANAL KART\nKart sahibi: @${d.username}\nKartta görünen isim: ${d.display_name}\nKart kodu: ${d.card_token}`;
+      mount(result, h('div', { class: 'panel' }, h('h3', { text: 'Kart bulundu' }),
+        h('p', { class: 'strong', text: d.display_name }), h('p', { class: 'muted', text: `@${d.username}` }),
+        h('p', { class: 'strong', text: d.card_token }),
+        h('button', { class: 'btn primary block', type: 'button', onClick: async () => { try { await navigator.clipboard.writeText(copyText); toast('Kart bilgileri kopyalandı', 'ok'); } catch { toast('Kopyalama izni verilemedi', 'error'); } } }, icon('copy', 18), 'Kart bilgilerini kopyala')));
+      status.textContent = 'Kart bilgileri hazır. Kopyalayabilir veya başka bir QR okutabilirsin.';
+    } catch (e) { status.textContent = e.message; }
+    return true;
+  };
+  const scanFrame = async () => {
+    if (!stream || busyScan) return;
+    if (video.readyState >= 2) {
+      busyScan = true;
+      try {
+        const codes = await detector.detect(video);
+        if (codes.length && await showCard(codes[0].rawValue)) return;
+      } catch { /* sonraki karede tekrar dene */ }
+      busyScan = false;
+    }
+    frame = requestAnimationFrame(scanFrame);
+  };
+  cameraBtn.addEventListener('click', async () => {
+    manualErr.textContent = '';
+    if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
+      status.textContent = 'Bu tarayıcı QR kamerayı desteklemiyor. Aşağıya kart kodunu elle girerek devam edebilirsin.';
+      return;
+    }
+    try {
+      detector = new BarcodeDetector({ formats: ['qr_code'] });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      video.srcObject = stream; await video.play();
+      cameraBtn.disabled = true; cameraBtn.textContent = 'Kamera açık';
+      status.textContent = 'QR kod aranıyor…'; scanFrame();
+    } catch (e) { stop(); status.textContent = 'Kamera açılamadı. Tarayıcı kamera iznini kontrol et veya kart kodunu elle gir.'; }
+  });
+  const manualBtn = h('button', { class: 'btn', type: 'button', text: 'Kart kodunu doğrula', onClick: () => showCard(token.value) });
+  mount(screen, back('#/cards', 'Kartlarım'), h('h1', { text: 'Kart QR okuyucu' }),
+    h('div', { class: 'panel' }, video, cameraBtn, status, h('button', { class: 'btn small', type: 'button', text: 'Kamerayı durdur', onClick: stop })),
+    h('div', { class: 'panel' }, h('h3', { text: 'Elle kart kodu gir' }), field('Kart kodu', token), manualErr, manualBtn), result,
+    h('p', { class: 'virtual', text: 'QR yalnızca sanal kart kimliğini taşır. Gerçek banka kartı, ödeme veya gizli güvenlik bilgisi içermez.' }));
+  window.addEventListener('pagehide', stop, { once: true });
+  window.addEventListener('hashchange', stop, { once: true });
 }
 
 export function vaultView(screen) {

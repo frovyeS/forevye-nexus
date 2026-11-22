@@ -57,6 +57,7 @@ add('GET', '/api/market/trades', marketRoutes.trades);
 add('POST', '/api/market/trade', marketRoutes.trade);
 
 add('GET', '/api/cards', cardRoutes.list);
+add('GET', '/api/cards/resolve', cardRoutes.resolve);
 add('POST', '/api/cards', cardRoutes.create);
 add('GET', '/api/card-templates', cardRoutes.templates);
 add('POST', '/api/editor/ticket', editorRoutes.ticket);
@@ -159,7 +160,7 @@ export default {
       return json({ error: { code: 'server_error', message: 'Beklenmeyen bir hata oluştu.' } }, 500, H);
     }
   },
-  // Cloudflare Cron Trigger (wrangler.toml [triggers]): kristal fiyatını gerçek altından yeniler.
+  // Cloudflare Cron Trigger (wrangler.toml [triggers]): Nexus oyun piyasasının fiyatını günceller.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(cronTick(env));
   },

@@ -32,7 +32,7 @@ export function opsMenu(screen) {
     h('div', { class: 'avatar' }, icon(ico, 22)), h('div', { class: 'grow' }, h('div', { class: 't', text: title }), h('div', { class: 'muted small', text: sub })), icon('chevron', 18));
   mount(screen, h('h1', { text: 'İşlemler' }), h('div', { class: 'panel' }, h('ul', { class: 'list' },
     link('#/ops/send', 'send', 'Para gönder', 'Başka bir kullanıcıya sanal bakiye gönder'),
-    link('#/market', 'market', 'Kristal Borsası', 'Kristal al/sat; fiyat gerçek altını izler'),
+    link('#/market', 'market', 'Kristal Borsası', 'Kristal al/sat; bağımsız oyun piyasası'),
     link('#/ops/history', 'history', 'İşlem geçmişi', 'Transfer, borsa, alışveriş, iade'),
     link('#/ops/gift', 'gift', 'Hediye kartı kullan', 'Kodunu gir, bakiyene yükle'),
     link('#/ops/moves', 'list', 'Bakiye hareketleri', 'Giriş/çıkışları filtrele'))),

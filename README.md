@@ -21,14 +21,17 @@ Test için ayrı ortam: `wrangler.toml` içindeki `[env.staging]` (ayrı D1/R2).
     npm test        # Node 22+; gerçek şemayı node:sqlite üzerinde çalıştırır (44 test)
 
 ## Para birimi ve Kristal Borsası (v1.1)
-- **FN** kesin para birimidir (1 FN = 100 minor; eski "geçici" notu kalktı).
-- **Kristal**, oyun dünyasının "altın"ıdır. Fiyatı **gerçek altını (XAU/USD) izler**; baz altın fiyatı = **1 FN**:
-  `kristal_fiyatı = güncel_altın_USD / baz_altın_USD`. Baz, ilk başarılı fiyat çekiminde kalıcı yazılır (`GOLD_BASE_USD` ile elle sabitlenebilir). Altın %10 artarsa kristal 1,10 FN olur.
-- Kaynak: `api.gold-api.com` (anahtarsız), yedek `GC=F` (Yahoo). `GOLD_API_URL` / `GOLD_API_URL_2` ile değiştirilebilir. Fiyat 60 sn önbelleklenir, cron (5 dk) ve ziyaretçiler yeniler; geçmiş grafiği için en çok 5 dk'da bir satır saklanır.
+- **FN** kesin para birimidir (1 FN = 100 minor; eski "geçici" notu kalktı). Yeni hesap cüzdanı kayıt sırasında 0 FN ile açılır; mevcut hesap bakiyeleri otomatik sıfırlanmaz.
+- **Kristal (KRS)** bağımsız oyun içi varlıktır; gerçek altın, döviz veya emtia fiyatı takip etmez.
+- Başlangıç fiyatı `MARKET_INITIAL_PRICE_MICRO` ile belirlenir (varsayılan 25 FN/KRS); her 60 saniyelik yenilemede `MARKET_VOLATILITY_BPS` sınırları içinde simüle edilmiş fiyat hareketi oluşur. `MARKET_REVERSION_BPS` (varsayılan 200) fiyatı başlangıç değerine doğru hafifçe çeker; fiyat başlangıcın 1/10'u ile 10 katı arasında kalır.
+- Cron 5 dakikada bir, ayrıca piyasa isteği geldiğinde yenileme yapılır; grafik geçmişi D1 snapshot kayıtlarından üretilir. `0005_independent_market.sql` eski altın bazlı fiyat geçmişini temizler, cüzdanları ve kullanıcı varlıklarını korur.
 - Alım/satım: yön + miktar (kristal) **ya da** tutar (FN) gönderilir; **fiyatı sunucu belirler** (istemci fiyat dayatamaz). Alış/satış orta fiyattan %0,50 sapar (`MARKET_SPREAD_BPS`). Cüzdan, defter, kristal envanteri ve işlem kaydı tek atomik D1 batch'tedir; çift gönderim `idempotency_key` ile engellenir; ekranda görülen fiyat %1'den fazla değiştiyse işlem reddedilir (`price_moved`).
-- Güvenlik ağları: fiyat 15 dk güncellenmezse işlem durur (`market_stale`); tek adımda %25'ten büyük sıçrama bozuk veri sayılıp yok sayılır; borsa işlemleri ters kayıtla düzeltilemez (envanteri bozar); askıdaki hesap işlem yapamaz.
+- Güvenlik ağları: fiyat verisi 15 dk'dan eski kalırsa işlem durur (`market_stale`); borsa işlemleri ters kayıtla düzeltilemez (envanteri bozar); askıdaki hesap işlem yapamaz.
 - Uçlar: `GET /api/market`, `GET /api/market/history?range=1d|7d|30d`, `GET /api/market/trades`, `POST /api/market/trade`, `GET /api/transfers/recent`.
-- Dağıtımda: `npm run db:migrate:remote` (0002 yeni migration; `ledger_entries` yeniden kurulur, veri korunur), `wrangler.toml`'daki `[triggers]` cron'u deploy ile açılır.
+- Dağıtımda: `npm run db:migrate:remote` (0005 dahil bekleyen migration'ları uygular; 0005 eski piyasa fiyat geçmişini temizler, kullanıcı cüzdanlarını/varlıklarını korur), `wrangler.toml`'daki `[triggers]` cron'u deploy ile açılır.
+
+## Kart QR ve sanal kart kodu
+Kart ön yüzünde tam NXC kart kodu ve sağ altta çevrimdışı üretilen QR yer alır. Kartlarım → QR okut ekranında kamera ile (BarcodeDetector destekli tarayıcı) tarama veya elle kart kodu girişi yapılabilir. Sunucu aktif kartı doğrular ve kart sahibinin kullanıcı adı, kartta görünen adı ve sanal kart kodunu tek tıkla kopyalatır. QR gerçek banka kartı/ödeme bilgisi içermez; fiziksel NFC çipi yerine geçmez.
 
 ## Şartnameden uygulananlar
 Kayıt (e-posta kodu doğrulama), giriş, şifre sıfırlama, oturum yönetimi; Ana Sayfa / İşlemler / Kartlarım / Profil;
@@ -41,7 +44,7 @@ yönetici paneli (kullanıcı ara, askı, duyuru, şablon, rol, ters kayıt/düz
 - Limitler `wrangler.toml` [vars] içinde ayarlanabilir (varsayılan: işlem 5.000, günlük 15.000, şifre eşiği 1.000 FN; borsa işlemi 10.000 FN).
 - **Hediye kartı ZIP'i incelenmedi**; bağdaştırıcı önerilen sözleşmeyle yazıldı (bkz. docs/INTEGRATION_NOTES.md).
 - Resmî logo (ikon + yazı logosu) eklendi: `public/assets/logo.svg`, kartlarda `wordmark.png` maskesiyle çizilir. Yalnızca Türkçe arayüz.
-- Altın fiyat kaynağının canlı yanıt biçimi bu ortamda doğrulanamadı (ayrıştırıcı `price/priceUsd/rate` alanlarını tolere eder); ilk dağıtımda `/api/market` ile duman testi yapın. Kaynak bozulursa fiyat bayatlar ve işlem durur.
+- Piyasa modelinin ilk dağıtımında `/api/market` ve `/api/market/history?range=1d` uçlarını test edin; yeni fiyat modeli harici emtia API'sine bağlı değildir.
 - Gerçek Cloudflare D1/R2/Resend üzerinde test edilmedi; testler D1'i node:sqlite ile taklit eder, arayüz yerel sunucuda Chromium ile denendi.
 - Tarayıcı içi çevrimdışı kuyruk yok (yalnızca çevrimdışı uyarısı); push bildirimi yok (uygulama içi bildirim var).
 - Profil fotoğrafı: PNG/JPEG/WebP, ≤512 KB, dosya imzası sunucuda doğrulanır; yeniden boyutlandırma yok.

@@ -48,7 +48,7 @@ export function marketView(screen) {
         h('div', { class: 'stats' },
           h('div', {}, 'Alış', h('b', { text: fnPrice(m.buy_micro) })), h('div', {}, 'Satış', h('b', { text: fnPrice(m.sell_micro) })),
           h('div', {}, '24s aralık', h('b', { text: `${(m.low_micro / 1e6).toFixed(3)}–${(m.high_micro / 1e6).toFixed(3)}` }))),
-        h('p', { class: 'muted small', style: { margin: '10px 0 0' }, text: `Kristal, gerçek altının hareketini izler; baz altın fiyatı = 1 FN. Güncel altın: ${m.gold_usd.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} $/ons • ${upd < 1 ? 'az önce' : `${upd} dk önce`} güncellendi.` })),
+        h('p', { class: 'muted small', style: { margin: '10px 0 0' }, text: `Nexus oyun piyasası • fiyatlar sistemin piyasa simülasyonuyla düzenli güncellenir • ${upd < 1 ? 'az önce' : `${upd} dk önce`} güncellendi.` })),
       h('div', { class: 'panel' }, h('h3', { text: 'Varlığın' }),
         h('dl', { class: 'kv', style: { marginTop: '8px' } },
           h('dt', { text: 'Kristal' }), h('dd', { class: 'strong', text: `${qtyFmt(you.qty)} KRS` }),
@@ -58,7 +58,7 @@ export function marketView(screen) {
           h('dt', { text: 'FN bakiyen' }), h('dd', { text: money(m.balance, cur()) }))),
       tradePanel(m, draw),
       tradesPanel(),
-      h('p', { class: 'virtual', text: 'Kristal borsası oyun içi bir simülasyondur; gerçek altın veya para alım satımı değildir. Fiyatlar yalnızca gerçek altın fiyatını örnek alır.' }));
+      h('p', { class: 'virtual', text: 'Kristal, Forevye Nexus oyun ekonomisine ait sanal bir varlıktır. Fiyatı bağımsız oyun piyasası simülasyonuyla oluşur; gerçek para veya finansal varlık değildir.' }));
   }
 
   draw();

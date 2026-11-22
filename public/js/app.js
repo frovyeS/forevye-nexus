@@ -3,7 +3,7 @@ import { h, mount, toast, money, dt, load, field, pwField, busy, empty, icon, ba
 import { state, refreshMe, setHide, cur, initial } from './state.js';
 import { renderCard } from './cardview.js';
 import { opsMenu, txList, txRow, sendFlow, giftFlow } from './views-ops.js';
-import { cardsList, cardNew, cardDetail, editorLaunch, vaultView } from './views-cards.js';
+import { cardsList, cardNew, cardDetail, editorLaunch, vaultView, scanView } from './views-cards.js';
 import { marketView, marketMini } from './views-market.js';
 
 const root = document.getElementById('app');
@@ -226,7 +226,7 @@ async function route() {
   const hash = location.hash || '#/home';
   const parts = hash.slice(2).split('/');
   const top = parts[0];
-  const active = { home: '#/home', ops: '#/ops', market: '#/market', cards: '#/cards', 'editor-launch': '#/cards', profile: '#/profile', notifications: '#/profile', vault: '#/profile', settings: '#/profile' }[top] || '#/home';
+  const active = { scan: '#/cards', home: '#/home', ops: '#/ops', market: '#/market', cards: '#/cards', 'editor-launch': '#/cards', profile: '#/profile', notifications: '#/profile', vault: '#/profile', settings: '#/profile' }[top] || '#/home';
   const screen = shell(active);
   scrollTo(0, 0);
   if (top === 'ops') {
@@ -238,6 +238,7 @@ async function route() {
   }
   if (top === 'market') return marketView(screen);
   if (top === 'cards') return parts[1] === 'new' ? cardNew(screen) : parts[1] ? cardDetail(screen, parts[1]) : cardsList(screen);
+  if (top === 'scan') return scanView(screen);
   if (top === 'editor-launch') return editorLaunch(screen, parts[1]);
   if (top === 'profile') return parts[1] === 'security' ? securityView(screen) : profileView(screen);
   if (top === 'notifications') return notificationsView(screen);

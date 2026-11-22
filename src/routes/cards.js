@@ -86,6 +86,19 @@ export const cardRoutes = {
     return json(shape(await ownCard(env, user.id, params.id)));
   },
 
+  async resolve(req, env, url, { user }) {
+    const token = (url.searchParams.get('token') || '').trim().toUpperCase();
+    if (!/^NXC-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/.test(token)) throw new HttpError(400, 'invalid_card_code', 'QR kodundaki kart kodu geçersiz.');
+    await rateLimit(env, `cardscan:${user.id}`, 30, 10 * MIN);
+    const card = await env.DB.prepare(
+      `SELECT c.card_token, c.display_name, c.label, c.status, u.username
+       FROM cards c JOIN users u ON u.id = c.user_id
+       WHERE c.card_token = ? AND c.status = 'active'`,
+    ).bind(token).first();
+    if (!card) throw new HttpError(404, 'card_not_found', 'Aktif sanal kart bulunamadı.');
+    return json({ card_token: card.card_token, display_name: card.display_name, label: card.label, username: card.username, status: card.status });
+  },
+
   async create(req, env, ctx, { user }) {
     const b = await readJson(req, 96 * 1024);
     await rateLimit(env, `cardnew:${user.id}`, 20, 60 * MIN);

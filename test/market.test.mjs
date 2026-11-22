@@ -8,50 +8,43 @@ async function consistent(env) {
   for (const r of rows) assert.equal(r.balance, r.s, 'defter ile bakiye uyuşmuyor');
 }
 const setup = async (extra = {}) => {
-  const env = makeEnv({ __GOLD: 4000, ...extra });
+  const env = makeEnv({ __GOLD: 4000, MARKET_VOLATILITY_BPS: '0', ...extra });
   const u = await register(env, 'm@example.com', 'miner_one');
   await fund(env, u.me.user.id, 500000); // 5.000 FN
   return { env, u };
 };
 
-test('fiyat: ilk altın fiyatı baz = 1 FN; altın %10 artınca kristal 1,10 FN', async () => {
+test('fiyat: Kristal bağımsız oyun piyasasında 25 FN başlangıç fiyatıyla açılır', async () => {
   const { env, u } = await setup();
-  let r = await u.cl.get('/api/market');
+  const r = await u.cl.get('/api/market');
   assert.equal(r.status, 200);
-  assert.equal(r.data.price_micro, 1000000);
-  assert.equal(r.data.base_usd, 4000);
-  assert.equal(r.data.buy_micro, 1005000);   // %0,50 spread
-  assert.equal(r.data.sell_micro, 995000);
+  assert.equal(r.data.price_micro, 25000000);
+  assert.equal(r.data.base_usd, undefined);
+  assert.equal(r.data.gold_usd, undefined);
+  assert.equal(r.data.buy_micro, 25125000);
+  assert.equal(r.data.sell_micro, 24875000);
   assert.equal(r.data.tradable, true);
-
-  env.__NOW += 2 * 60 * 1000; env.__GOLD = 4400; // önbellek süresi doldu
-  r = await u.cl.get('/api/market');
-  assert.equal(r.data.price_micro, 1100000);
-  assert.equal(r.data.base_usd, 4000, 'baz sabit kalır');
-  // Kullanıcı kendi fiyatını dayatamaz: istek gövdesindeki fiyat yok sayılır/reddedilir
-  const bad = await u.cl.post('/api/market/trade', { side: 'buy', qty: '1', price_micro: 1, idempotency_key: key() });
-  assert.equal(bad.status, 201);
-  assert.equal(bad.data.price_micro, 1105500);
+  assert.equal(r.data.source, 'Nexus oyun piyasası');
 });
 
 test('al/sat: atomik, defter tutarlı, spread uygulanır, ortalama maliyet', async () => {
   const { env, u } = await setup();
   const buy = await u.cl.post('/api/market/trade', { side: 'buy', qty: '100', idempotency_key: key() });
   assert.equal(buy.status, 201);
-  assert.equal(buy.data.total, 10050);               // 100 * 1,005 = 100,50 FN
-  assert.equal(buy.data.balance, 500000 - 10050);
+  assert.equal(buy.data.total, 251250);              // 100 * 25,125 = 2.512,50 FN
+  assert.equal(buy.data.balance, 500000 - 251250);
   let m = (await u.cl.get('/api/market')).data;
   assert.equal(m.you.qty, 1000000);
-  assert.equal(m.you.cost_minor, 10050);
-  assert.equal(m.you.value_minor, 9950);              // 100 * 0,995
-  assert.equal(m.you.pnl_minor, -100);                // yalnızca spread kaybı
+  assert.equal(m.you.cost_minor, 251250);
+  assert.equal(m.you.value_minor, 248750);            // 100 * 24,875
+  assert.equal(m.you.pnl_minor, -2500);               // yalnızca spread kaybı
 
   const sell = await u.cl.post('/api/market/trade', { side: 'sell', qty: '40', idempotency_key: key() });
   assert.equal(sell.status, 201);
-  assert.equal(sell.data.total, 3980);
+  assert.equal(sell.data.total, 99500);
   m = (await u.cl.get('/api/market')).data;
   assert.equal(m.you.qty, 600000);
-  assert.equal(m.you.cost_minor, 6030);               // maliyetin 40%'ı düştü
+  assert.equal(m.you.cost_minor, 150750);             // maliyetin 40%'ı düştü
   await consistent(env);
   const types = (await sql(env, `SELECT type FROM ledger_entries WHERE type LIKE 'market_%' ORDER BY created_at`)).map((x) => x.type);
   assert.deepEqual(types, ['market_buy', 'market_sell']);
@@ -75,7 +68,7 @@ test('yetersiz bakiye ve kristal', async () => {
   await u.cl.post('/api/market/trade', { side: 'buy', qty: '10', idempotency_key: key() });
   const over = await u.cl.post('/api/market/trade', { side: 'sell', qty: '10.0001', idempotency_key: key() });
   assert.equal(over.data.error.code, 'insufficient_crystal');
-  assert.equal((await u.cl.get('/api/wallet')).data.balance, 500000 - 1005, 'başarısız satış bakiyeyi değiştirmez');
+  assert.equal((await u.cl.get('/api/wallet')).data.balance, 500000 - 25125, 'başarısız satış bakiyeyi değiştirmez');
   await consistent(env);
 });
 
@@ -92,41 +85,44 @@ test('tekrar isteği ve geçersiz girişler', async () => {
   await consistent(env);
 });
 
-test('fiyat kayması: ekranda görülen fiyat değiştiyse işlem reddedilir', async () => {
-  const { env, u } = await setup();
-  const seen = (await u.cl.get('/api/market')).data.buy_micro;
-  env.__NOW += 2 * 60 * 1000; env.__GOLD = 4200; // +%5
-  const r = await u.cl.post('/api/market/trade', { side: 'buy', qty: '1', expected_price_micro: seen, idempotency_key: key() });
-  assert.equal(r.status, 409); assert.equal(r.data.error.code, 'price_moved');
-  assert.equal(r.data.error.price_micro, 1050000 * 1.005);
+test('fiyat hareketi: piyasa volatilitesi güncellemeyle uygulanır ve eski altın verisi okunmaz', async () => {
+  const { env, u } = await setup({ MARKET_VOLATILITY_BPS: '500' });
+  const first = (await u.cl.get('/api/market')).data.price_micro;
+  assert.equal(first, 25000000);
+  const original = crypto.getRandomValues;
+  try {
+    crypto.getRandomValues = (arr) => { arr[0] = 1000; return arr; }; // 1000 mod 1001 = +500 bps
+    env.__NOW += 2 * 60 * 1000;
+    const next = (await u.cl.get('/api/market')).data;
+    assert.equal(next.price_micro, 26250000);
+    assert.equal(next.source, 'Nexus oyun piyasası');
+    assert.equal(next.gold_usd, undefined);
+  } finally {
+    crypto.getRandomValues = original;
+  }
 });
 
-test('kaynak çökerse son fiyat bayatlar; 15 dk sonra işlem durur', async () => {
-  const { env, u } = await setup();
+test('fiyat başlangıç değerine doğru hafif geri çekilir ve sınırlar içinde kalır', async () => {
+  const { env, u } = await setup({ MARKET_VOLATILITY_BPS: '500' });
   await u.cl.get('/api/market');
-  env.__GOLD = () => { throw new Error('ağ hatası'); };
-  env.__NOW += 5 * 60 * 1000;
-  let m = (await u.cl.get('/api/market')).data;
-  assert.equal(m.tradable, true);
-  env.__NOW += 11 * 60 * 1000;
-  m = (await u.cl.get('/api/market')).data;
-  assert.equal(m.tradable, false);
-  const r = await u.cl.post('/api/market/trade', { side: 'buy', qty: '1', idempotency_key: key() });
-  assert.equal(r.status, 503); assert.equal(r.data.error.code, 'market_stale');
-});
-
-test('anomali: tek adımda %25+ sıçrama reddedilir (bozuk veri koruması)', async () => {
-  const { env, u } = await setup();
-  await u.cl.get('/api/market');
-  env.__NOW += 2 * 60 * 1000; env.__GOLD = 9000;
-  const m = (await u.cl.get('/api/market')).data;
-  assert.equal(m.price_micro, 1000000, 'anormal fiyat yok sayıldı');
-});
-
-test('GOLD_BASE_USD baz fiyatı sabitler', async () => {
-  const { env, u } = await setup({ GOLD_BASE_USD: '2000' });
-  // 4000 / 2000 = 2 FN; ancak ilk çekim anomali koruması olmadığı için kabul edilir
-  assert.equal((await u.cl.get('/api/market')).data.price_micro, 2000000);
+  const put = (price) => env.DB.prepare('INSERT OR REPLACE INTO market_state (key, value, updated_at) VALUES (?,?,?)')
+    .bind('last_price', JSON.stringify({ model: 'nexus-market-v2', ts: env.__NOW, price_micro: price, source: 'Nexus oyun piyasası', move_bps: 0 }), env.__NOW).run();
+  const original = crypto.getRandomValues;
+  try {
+    crypto.getRandomValues = (arr) => { arr[0] = 500; return arr; }; // rastgele hareket = 0 bps
+    await put(50000000); // başlangıcın 2 katı: gap -5000 bps, %2 geri çekim = -100 bps
+    env.__NOW += 2 * 60 * 1000;
+    assert.equal((await u.cl.get('/api/market')).data.price_micro, 49500000);
+    await put(10000000); // başlangıcın altında: yukarı çekilir
+    env.__NOW += 2 * 60 * 1000;
+    assert.ok((await u.cl.get('/api/market')).data.price_micro > 10000000);
+    crypto.getRandomValues = (arr) => { arr[0] = 1000; return arr; }; // +500 bps
+    await put(250000000); // üst sınır = başlangıç x 10
+    env.__NOW += 2 * 60 * 1000;
+    assert.ok((await u.cl.get('/api/market')).data.price_micro <= 250000000);
+  } finally {
+    crypto.getRandomValues = original;
+  }
 });
 
 test('askıdaki hesap işlem yapamaz; borsa işlemleri ters kayıtla düzeltilemez', async () => {
@@ -159,6 +155,24 @@ test('ilk kristal rozeti ve borsa geçmişi', async () => {
   const h = await u.cl.get('/api/market/history?range=1d');
   assert.equal(h.status, 200); assert.ok(h.data.points.length >= 1);
   assert.equal((await u.cl.get('/api/market/history?range=zz')).status, 400);
+});
+
+
+test('kart QR çözümleme: yalnızca aktif sanal kart kodu oturumlu kullanıcıya döner', async () => {
+  const { env, u } = await setup();
+  const created = await u.cl.post('/api/cards', { display_name: 'QR Test Kartı' });
+  assert.equal(created.status, 201);
+  const token = created.data.card_token;
+  const resolved = await u.cl.get(`/api/cards/resolve?token=${encodeURIComponent(token)}`);
+  assert.equal(resolved.status, 200);
+  assert.equal(resolved.data.card_token, token);
+  assert.equal(resolved.data.display_name, 'QR Test Kartı');
+  assert.equal(resolved.data.username, 'miner_one');
+  const bad = await u.cl.get('/api/cards/resolve?token=NXC-INVALID');
+  assert.equal(bad.status, 400);
+  await u.cl.post(`/api/cards/${created.data.id}/status`, { status: 'disabled' });
+  const disabled = await u.cl.get(`/api/cards/resolve?token=${encodeURIComponent(token)}`);
+  assert.equal(disabled.status, 404);
 });
 
 test('kart sözleşmesi: zeminle kontrastı düşük ad rengi reddedilir (marka okunabilirliği)', async () => {

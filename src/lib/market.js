@@ -1,7 +1,5 @@
-// Kristal borsası. Kristal, oyun dünyasının "altın"ıdır; fiyatı şimdilik GERÇEK ALTIN (XAU/USD) takip eder.
-// Baz: ilk başarılı fiyat çekiminde (veya GOLD_BASE_USD ile sabitlenen) altın fiyatı = 1 FN.
-//   kristal_fiyatı(FN) = güncel_altın_USD / baz_altın_USD
-// Gerçek para yoktur; bu bir oyun içi ekonomi simülasyonudur.
+// Kristal borsası: bağımsız oyun içi piyasa simülasyonu. Harici emtia/altın fiyatı kullanılmaz.
+// Fiyat her piyasa güncellemesinde sınırlı volatiliteyle değişir; geçmiş D1 snapshot'larından çizilir.
 import { HttpError, now, newRef, cfgNum, isConstraint, MIN } from './util.js';
 import { notifyStmt } from './auth.js';
 import { entryStmts, guardActiveStmt, fmtMinor } from './ledger.js';
@@ -18,35 +16,17 @@ export const cfg = (env) => ({
   spreadBps: cfgNum(env, 'MARKET_SPREAD_BPS', 50),            // her iki yön için orta fiyattan sapma
   maxTradeMinor: cfgNum(env, 'MARKET_MAX_TRADE_MINOR', 1000000),
   slipBps: cfgNum(env, 'MARKET_SLIPPAGE_BPS', 100),           // istemcinin gördüğü fiyattan en fazla %1 sapma
-  maxJumpPct: cfgNum(env, 'MARKET_MAX_JUMP_PCT', 25),         // tek adımda bundan büyük sıçrama anomali sayılır
+  volatilityBps: cfgNum(env, 'MARKET_VOLATILITY_BPS', 45),   // güncelleme başına azami ±%0,45
+  initialPriceMicro: cfgNum(env, 'MARKET_INITIAL_PRICE_MICRO', 25000000), // başlangıç: 25,0000 FN/KRS
+  reversionBps: cfgNum(env, 'MARKET_REVERSION_BPS', 200),    // başlangıç fiyatından sapmanın güncelleme başına %2'si geri çekilir (fiyat sonsuza kaçmaz)
   retentionDays: cfgNum(env, 'MARKET_RETENTION_DAYS', 35),
 });
 
-// ---------- Fiyat kaynağı ----------
-function pickNumber(j) {
-  const cands = [j?.price, j?.priceUsd, j?.rate, j?.ask, j?.chart?.result?.[0]?.meta?.regularMarketPrice];
-  for (const c of cands) { const n = Number(c); if (Number.isFinite(n)) return n; }
-  return NaN;
-}
-
-async function fetchGold(env) {
-  if (env.ENVIRONMENT === 'test') {
-    if (env.__GOLD === undefined) throw new Error('test: altın fiyatı yok');
-    const v = typeof env.__GOLD === 'function' ? await env.__GOLD() : env.__GOLD;
-    return { usd: Number(v), source: 'test' };
-  }
-  const urls = [env.GOLD_API_URL || 'https://api.gold-api.com/price/XAU', env.GOLD_API_URL_2 || 'https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=1d&interval=5m'];
-  let lastErr;
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'forevye-nexus/1.1' }, signal: AbortSignal.timeout(4000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const usd = pickNumber(await res.json());
-      if (!Number.isFinite(usd) || usd < 100 || usd > 100000) throw new Error('geçersiz fiyat');
-      return { usd, source: new URL(url).hostname };
-    } catch (e) { lastErr = e; }
-  }
-  throw lastErr || new Error('altın fiyatı alınamadı');
+// ---------- Oyun içi fiyat modeli ----------
+function randomInt(max) {
+  const bytes = new Uint32Array(1);
+  crypto.getRandomValues(bytes);
+  return bytes[0] % (max + 1);
 }
 
 const stateGet = async (env, key) => (await env.DB.prepare('SELECT value FROM market_state WHERE key = ?').bind(key).first())?.value ?? null;
@@ -54,19 +34,34 @@ const stateSet = (env, key, value, t) => env.DB.prepare(
   'INSERT INTO market_state (key, value, updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
 ).bind(key, String(value), t).run();
 
-// Baz fiyat: sabitlenmişse onu, değilse ilk görülen fiyatı kalıcı yazar (yarış durumunda ilk yazan kazanır).
-export async function getBase(env, spotUsd) {
-  const pinned = Number(env.GOLD_BASE_USD);
-  if (Number.isFinite(pinned) && pinned > 0) return pinned;
-  let v = await stateGet(env, 'gold_base_usd');
-  if (v === null && spotUsd) {
-    await env.DB.prepare('INSERT OR IGNORE INTO market_state (key, value, updated_at) VALUES (?,?,?)').bind('gold_base_usd', String(spotUsd), now(env)).run();
-    v = await stateGet(env, 'gold_base_usd');
+// Her güncellemede önceki fiyata küçük ve sınırlı bir piyasa hareketi uygulanır.
+// İlk fiyat sabit ve açıkça tanımlıdır; 1 FN varsayımı veya dış fiyat referansı yoktur.
+export async function refreshPrice(env) {
+  const c = cfg(env);
+  const t = now(env);
+  const prev = await readLast(env);
+  const validPrev = prev && prev.model === 'nexus-market-v2' && Number.isSafeInteger(prev.price_micro) && prev.price_micro > 0;
+  const previous = validPrev ? prev.price_micro : c.initialPriceMicro;
+  const maxBps = Math.max(1, Math.min(500, c.volatilityBps));
+  const base = Math.max(10000, c.initialPriceMicro);
+  // Rastgele adım + başlangıç fiyatına doğru hafif geri çekim: fiyat serbestçe dolaşır ama sonsuza kaçmaz.
+  let moveBps = validPrev ? randomInt(maxBps * 2) - maxBps : 0;
+  if (validPrev) {
+    const gapBps = ((base - previous) / previous) * 10000;
+    moveBps += Math.max(-maxBps, Math.min(maxBps, Math.round((gapBps * Math.max(0, c.reversionBps)) / 10000)));
   }
-  return v === null ? null : Number(v);
+  // Sürekli aynı değere takılmaması için sıfır hareket nadiren küçük bir adımla değiştirilir.
+  if (validPrev && moveBps === 0) moveBps = randomInt(1) ? 1 : -1;
+  const floor = Math.max(10000, Math.round(base / 10)), ceil = Math.min(1000000000000, base * 10);
+  const price_micro = Math.max(floor, Math.min(ceil, Math.round(previous * (10000 + moveBps) / 10000)));
+  const last = { model: 'nexus-market-v2', ts: t, price_micro, source: 'Nexus oyun piyasası', move_bps: moveBps };
+  await stateSet(env, 'last_price', JSON.stringify(last), t);
+  const lastSnap = await env.DB.prepare('SELECT ts FROM market_prices ORDER BY ts DESC LIMIT 1').first();
+  if (!lastSnap || t - lastSnap.ts >= c.snapshotMs) {
+    await env.DB.prepare('INSERT INTO market_prices (ts, gold_usd, price_micro, source) VALUES (?,?,?,?)').bind(t, 0, price_micro, 'Nexus oyun piyasası').run();
+  }
+  return last;
 }
-
-const toMicro = (spot, base) => Math.max(1, Math.round((spot / base) * PRICE_SCALE));
 
 async function readLast(env) {
   const raw = await stateGet(env, 'last_price');
@@ -74,27 +69,7 @@ async function readLast(env) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-// Yeni fiyat çeker, önbelleği günceller, gerekirse geçmişe satır ekler. Hata olursa eski fiyatı korur.
-export async function refreshPrice(env) {
-  const c = cfg(env);
-  const t = now(env);
-  const prev = await readLast(env);
-  const { usd, source } = await fetchGold(env);
-  if (!Number.isFinite(usd) || usd <= 0) throw new Error('geçersiz fiyat');
-  if (prev && Math.abs(usd - prev.gold_usd) / prev.gold_usd * 100 > c.maxJumpPct) {
-    throw new Error(`anomali: ${prev.gold_usd} -> ${usd}`); // yanlış birim/bozuk veri koruması
-  }
-  const base = await getBase(env, usd);
-  const last = { ts: t, gold_usd: usd, price_micro: toMicro(usd, base), source };
-  await stateSet(env, 'last_price', JSON.stringify(last), t);
-  const lastSnap = await env.DB.prepare('SELECT ts FROM market_prices ORDER BY ts DESC LIMIT 1').first();
-  if (!lastSnap || t - lastSnap.ts >= c.snapshotMs) {
-    await env.DB.prepare('INSERT INTO market_prices (ts, gold_usd, price_micro, source) VALUES (?,?,?,?)').bind(t, usd, last.price_micro, source).run();
-  }
-  return last;
-}
-
-// Güncel fiyat: önbellek tazeyse onu, değilse yenisini döndürür. Kaynak çökerse son bilinen fiyat "bayat" işaretiyle döner.
+// Güncel fiyat: önbellek tazeyse onu, değilse yeni simülasyon adımını üretir. Yenileme altyapısı hata verirse son fiyat korunur.
 export async function currentPrice(env, { refresh = true } = {}) {
   const c = cfg(env);
   const t = now(env);
@@ -103,12 +78,11 @@ export async function currentPrice(env, { refresh = true } = {}) {
     try { last = await refreshPrice(env); } catch (e) { console.error('market refresh failed', e && e.message); }
   }
   if (!last) return null;
-  const base = await getBase(env, null);
   const mid = last.price_micro;
   const half = c.spreadBps;
   const buy = Math.ceil((mid * (10000 + half)) / 10000);
   const sell = Math.max(1, Math.floor((mid * (10000 - half)) / 10000));
-  return { ...last, base_usd: base, mid_micro: mid, buy_micro: buy, sell_micro: sell, spread_bps: half, stale: t - last.ts > c.staleMs, age_ms: t - last.ts };
+  return { ...last, mid_micro: mid, buy_micro: buy, sell_micro: sell, spread_bps: half, stale: t - last.ts > c.staleMs, age_ms: t - last.ts };
 }
 
 export async function pruneOld(env) {

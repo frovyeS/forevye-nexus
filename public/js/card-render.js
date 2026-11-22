@@ -152,6 +152,22 @@
     return '';
   }
 
+
+  function qrMarkup(cardToken, P) {
+    if (!cardToken || !root.FNXQRCode) return '';
+    try {
+      var qr = new root.FNXQRCode(0, (root.FNXQRErrorCorrectLevel || {}).M || 0);
+      qr.addData('FNX1|' + String(cardToken));
+      qr.make();
+      var n = qr.getModuleCount(), size = 104, quiet = 3, unit = size / (n + quiet * 2), x = 718, y = 354;
+      var out = '<g data-sys="card-qr" aria-label="Kart QR kodu"><rect x="' + x + '" y="' + y + '" width="' + size + '" height="' + size + '" rx="5" fill="#fff"/>';
+      for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) {
+        if (qr.isDark(r, c)) out += '<rect x="' + (x + (c + quiet) * unit).toFixed(2) + '" y="' + (y + (r + quiet) * unit).toFixed(2) + '" width="' + (unit + 0.08).toFixed(2) + '" height="' + (unit + 0.08).toFixed(2) + '" fill="#101116"/>';
+      }
+      return out + '</g>';
+    } catch (e) { return ''; }
+  }
+
   function renderCard(d, sys, o) {
     o = o || {};
     var P = o.prefix || 'c', t = tone(d), bg = bgLayer(d), bp = bg.properties;
@@ -193,14 +209,16 @@
       '<rect x="' + wx + '" y="' + wy + '" width="' + ww + '" height="' + wh + '" fill="' + t.brand + '" mask="url(#' + P + 'wm)"/></g>';
     // Nexus'ta kart kimliği NXC-XXXX-XXXX biçimindedir (harf içerir): sys.last4 verilirse olduğu gibi gösterilir, yoksa kart numarasının son 4 hanesi.
     var last4 = sys && sys.last4 ? String(sys.last4).replace(/[^A-Za-z0-9•]/g, '').slice(-4) : String((sys && sys.cardNumber) || '0000').replace(/\D/g, '').slice(-4);
+    var cardToken = sys && sys.cardToken ? String(sys.cardToken) : '';
     var info = '<g data-sys="info"><path d="M748 62H800" stroke="' + t.brand + '" stroke-width="3.5" stroke-linecap="round" opacity=".9"/>' +
+      (cardToken ? '<text x="205" y="405" font-family="' + FONT + '" font-size="13" letter-spacing="2" fill="' + t.brand + '" opacity=".7">NEXUS KART KODU</text><text x="205" y="438" font-family="' + FONT + '" font-size="23" letter-spacing="1.5" font-weight="600" fill="' + t.brand + '">' + esc(cardToken) + '</text>' : '') +
       '<text x="830" y="498" text-anchor="end" font-family="' + FONT + '" font-size="22" letter-spacing="3" fill="' + t.brand + '" opacity=".85">•••• ' + esc(last4) + '</text></g>';
     // Hiçbir renk logoya yeterli kontrast veremiyorsa (ör. çok renkli/orta tonlu zemin) sistem, markanın arkasına kendi yarı saydam zeminini koyar.
     if (t.plate) {
       var bz = R.ZONES.filter(function (z) { return z.id === 'brand'; })[0];
       body += '<rect data-sys="brand-plate" x="' + bz.x + '" y="' + (bz.y + 6) + '" width="' + (bz.w - 20) + '" height="' + (bz.h - 12) + '" rx="22" fill="' + (t.dark ? 'rgba(0,0,0,.5)' : 'rgba(255,255,255,.6)') + '"/>';
     }
-    body += brand + chipMarkup(d.chipStyle || 'gold', 52, 176, 112, 88, P) + info;
+    body += brand + chipMarkup(d.chipStyle || 'gold', 52, 176, 112, 88, P) + info + qrMarkup(cardToken, P);
 
     // Kullanıcı adı (Grup E): yerleşimi sabit, boyutu otomatik sığdırılır.
     var nm = String(d.userDisplayName || '').toLocaleUpperCase('tr-TR');
