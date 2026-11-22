@@ -1,11 +1,11 @@
 # 22.11.2026 — Nexus Pass arka ucu ve giriş düzeltmeleri
 
 ## Sorun
-`nexus-pass` arayüzü `/api/pass/*`, `0006_pass.sql`, `PASS_URL` ve Nexus'taki "Nexus Pass" düğmesini bekliyordu; bunların hiçbiri Nexus deposunda yoktu.
+`nexus-pass` arayüzü `/api/pass/*`, `0007_nexus_pass.sql`, `PASS_URL` ve Nexus'taki "Nexus Pass" düğmesini bekliyordu; bunların hiçbiri Nexus deposunda yoktu.
 Sonuç: Pass'te her istek 404 → "Bağlantı kurulamadı"; Pass'teki "Nexus'u aç" (`#/pass`) Nexus'ta karşılıksızdı; giriş (FOREVYE ID) sonrası hedef kayboluyordu.
 
 ## Nexus
-- `src/routes/pass.js` (yeni), `migrations/0006_pass.sql` (yeni; tablolar yoksa kendiliğinden de kurulur), `scripts/add-pass-product.sql` (yeni).
+- `src/routes/pass.js` (yeni), `migrations/0007_nexus_pass.sql` (yeni; tablolar yoksa kendiliğinden de kurulur), `scripts/add-pass-product.sql` (yeni).
 - `src/worker.js`: pass uçları, `pass` erişim türü (CSRF çerezi yok, Bearer), CORS yalnızca `PASS_URL` kaynağına.
 - `src/routes/internal.js`: `/api/internal/entitlement`.
 - `wrangler.toml`: `PASS_URL`.

@@ -31,7 +31,7 @@ Test için ayrı ortam: `wrangler.toml` içindeki `[env.staging]` (ayrı D1/R2).
 - Dağıtımda: `npm run db:migrate:remote` (0005 dahil bekleyen migration'ları uygular; 0005 eski piyasa fiyat geçmişini temizler, kullanıcı cüzdanlarını/varlıklarını korur), `wrangler.toml`'daki `[triggers]` cron'u deploy ile açılır.
 
 ## Nexus Pass (süreli üyelik)
-Arayüz ayrı sitedir (`nexus-pass` deposu); fiyat, süre, bakiye düşümü, idempotency ve çift üyelik denetimi bu Worker'dadır (`src/routes/pass.js`, `migrations/0006_pass.sql`).
+Arayüz ayrı sitedir (`nexus-pass` deposu); fiyat, süre, bakiye düşümü, idempotency ve çift üyelik denetimi bu Worker'dadır (`src/routes/pass.js`, `migrations/0007_nexus_pass.sql`).
 - Giriş: İşlemler → **Nexus Pass** (`#/pass`) → `POST /api/pass/ticket` (5 dk, tek kullanım) → Pass sitesi `#t=<bilet>` ile açılır → `POST /api/pass/exchange` jeton (30 dk kayan, en çok 8 saat; yalnızca `/api/pass/*`).
 - Uçlar (Bearer jeton): `GET /api/pass/products|product?id=|me|purchases`, `POST /api/pass/purchase { pid, idem }`. İş sonuçları 200 + `{ ok:false, code: insufficient|unavailable|already_active }` döner.
 - Başka sistemler: `POST /api/internal/entitlement` (`INTERNAL_API_KEY`) → `{ active, entitlements[] }`. Üyeliğin satın alma kaydı iade/düzeltmeyle (ters kayıt) geri alınırsa üyelik hemen kapanır.

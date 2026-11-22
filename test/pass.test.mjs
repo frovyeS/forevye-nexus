@@ -22,7 +22,7 @@ async function setup(extra = {}) {
   const u = await register(env, 'p@example.com', 'pass_one');
   const uid = (await one(env, 'SELECT id FROM users WHERE username = ?', 'pass_one')).id;
   const t = env.__NOW;
-  await env.DB.prepare(`INSERT INTO pass_products (id, app, name, description, features_json, price, duration_sec, status, sort, created_at, updated_at) VALUES ('weather-premium-30','Mikro-Klima Hava','Premium · 30 gün','Hava premium','["Reklamsız","Gelişmiş tahmin"]',5000,${30 * 86400},'on',0,${t},${t})`).run();
+  await env.DB.prepare(`INSERT INTO nxp_products (id, app, name, description, features_json, price, duration_sec, status, sort, created_at, updated_at) VALUES ('weather-premium-30','Mikro-Klima Hava','Premium · 30 gün','Hava premium','["Reklamsız","Gelişmiş tahmin"]',5000,${30 * 86400},'on',0,${t},${t})`).run();
   return { env, u, uid };
 }
 async function login(env, u) {
@@ -114,7 +114,7 @@ test('pass: aynı idem anahtarı tekrar gönderilince ikinci kez düşmez; başk
   assert.equal(b.data.purchase.id, a.data.purchase.id);
   assert.equal((await sql(env, "SELECT COUNT(*) AS c FROM ledger_entries WHERE type = 'purchase'"))[0].c, 1);
   const t = env.__NOW;
-  await env.DB.prepare(`INSERT INTO pass_products (id, app, name, price, duration_sec, created_at, updated_at) VALUES ('other-pack','Diğer','Paket',100,86400,${t},${t})`).run();
+  await env.DB.prepare(`INSERT INTO nxp_products (id, app, name, price, duration_sec, created_at, updated_at) VALUES ('other-pack','Diğer','Paket',100,86400,${t},${t})`).run();
   assert.equal((await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'other-pack', idem: 'idem_replay0001' } })).status, 409);
 });
 
@@ -141,8 +141,8 @@ test('pass: yetersiz bakiye → ok:false/insufficient, bakiye değişmez; kapal�
   const r = await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'idem_poor00001' } });
   assert.equal(r.status, 200); assert.equal(r.data.ok, false); assert.equal(r.data.code, 'insufficient');
   assert.equal(r.data.balance, 1200); assert.equal(r.data.missing, 3800);
-  assert.equal((await sql(env, 'SELECT COUNT(*) AS c FROM pass_purchases'))[0].c, 0);
-  await env.DB.prepare("UPDATE pass_products SET status = 'off'").run();
+  assert.equal((await sql(env, 'SELECT COUNT(*) AS c FROM nxp_purchases'))[0].c, 0);
+  await env.DB.prepare("UPDATE nxp_products SET status = 'off'").run();
   const off = await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'idem_off000001' } });
   assert.equal(off.data.code, 'unavailable');
   assert.equal((await asPass(env, 'GET', '/api/pass/products', { token: tok })).data.products.length, 0);
@@ -225,7 +225,7 @@ test('pass yönetici: katalog yalnızca süper yönetici tarafından değiştiri
 
 test('pass: migration uygulanmamış D1\'de tablolar kendiliğinden kurulur (500 vermez)', async () => {
   const { env, u } = await setup();
-  for (const t of ['pass_tokens', 'pass_tickets', 'pass_purchases', 'pass_products']) env.DB.raw.exec(`DROP TABLE ${t}`);
+  for (const t of ['nxp_tokens', 'nxp_tickets', 'nxp_purchases', 'nxp_products']) env.DB.raw.exec(`DROP TABLE ${t}`);
   const tk = await u.cl.post('/api/pass/ticket');
   assert.equal(tk.status, 200);
   const ex = await asPass(env, 'POST', '/api/pass/exchange', { body: { ticket: ticketOf(tk.data.url) } });

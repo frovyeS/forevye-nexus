@@ -18,19 +18,19 @@ import { auditStmt } from './admin.js';
 
 const TICKET_TTL = 5 * MIN, TOKEN_SLIDE = 30 * MIN, TOKEN_MAX = 8 * HOUR;
 
-// 0006_pass.sql canlı D1'e uygulanmadıysa "no such table" → 500 olurdu. Tablolar eksikse (IF NOT EXISTS, migration'la aynı şema) kendiliğinden kurulur.
+// 0007_nexus_pass.sql canlı D1'e uygulanmadıysa "no such table" → 500 olurdu. Tablolar eksikse (IF NOT EXISTS, migration'la aynı şema) kendiliğinden kurulur.
 const SCHEMA_OK = new WeakSet();
 async function ensurePassSchema(env) {
   if (!env.DB || SCHEMA_OK.has(env.DB)) return;
   await env.DB.batch([
-    env.DB.prepare(`CREATE TABLE IF NOT EXISTS pass_products (id TEXT PRIMARY KEY, app TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', features_json TEXT NOT NULL DEFAULT '[]', price INTEGER NOT NULL CHECK (price > 0), duration_sec INTEGER NOT NULL CHECK (duration_sec >= 3600), status TEXT NOT NULL DEFAULT 'on' CHECK (status IN ('on','off')), sort INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`),
-    env.DB.prepare(`CREATE TABLE IF NOT EXISTS pass_purchases (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), product_id TEXT NOT NULL, app TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL, duration_sec INTEGER NOT NULL, idem TEXT NOT NULL, starts_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, CONSTRAINT pass_idem UNIQUE (user_id, idem))`),
-    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_pass_purch_user ON pass_purchases(user_id, created_at DESC)'),
-    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_pass_purch_prod ON pass_purchases(user_id, product_id, expires_at)'),
-    env.DB.prepare('CREATE TABLE IF NOT EXISTS pass_tickets (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires_at INTEGER NOT NULL, consumed_at INTEGER)'),
-    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_pass_tickets_exp ON pass_tickets(expires_at)'),
-    env.DB.prepare('CREATE TABLE IF NOT EXISTS pass_tokens (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)'),
-    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_pass_tokens_exp ON pass_tokens(expires_at)'),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS nxp_products (id TEXT PRIMARY KEY, app TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', features_json TEXT NOT NULL DEFAULT '[]', price INTEGER NOT NULL CHECK (price > 0), duration_sec INTEGER NOT NULL CHECK (duration_sec >= 3600), status TEXT NOT NULL DEFAULT 'on' CHECK (status IN ('on','off')), sort INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS nxp_purchases (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), product_id TEXT NOT NULL, app TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL, duration_sec INTEGER NOT NULL, idem TEXT NOT NULL, starts_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, CONSTRAINT nxp_idem UNIQUE (user_id, idem))`),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_nxp_purch_user ON nxp_purchases(user_id, created_at DESC)'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_nxp_purch_prod ON nxp_purchases(user_id, product_id, expires_at)'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS nxp_tickets (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires_at INTEGER NOT NULL, consumed_at INTEGER)'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_nxp_tickets_exp ON nxp_tickets(expires_at)'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS nxp_tokens (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_nxp_tokens_exp ON nxp_tokens(expires_at)'),
   ]);
   SCHEMA_OK.add(env.DB);
 }
@@ -60,7 +60,7 @@ export async function activeEntitlements(env, userId, { app, productId } = {}) {
   const where = ['p.user_id = ?', 'p.expires_at > ?', NOT_REVERSED], binds = [userId, t];
   if (app) { where.push('p.app = ?'); binds.push(app); }
   if (productId) { where.push('p.product_id = ?'); binds.push(productId); }
-  const rows = (await env.DB.prepare(`SELECT p.* FROM pass_purchases p WHERE ${where.join(' AND ')} ORDER BY p.expires_at DESC`).bind(...binds).all()).results;
+  const rows = (await env.DB.prepare(`SELECT p.* FROM nxp_purchases p WHERE ${where.join(' AND ')} ORDER BY p.expires_at DESC`).bind(...binds).all()).results;
   return rows.map((r) => ({ product_id: r.product_id, app: r.app, name: r.name, starts_at: r.starts_at, expires_at: r.expires_at }));
 }
 
@@ -71,12 +71,12 @@ async function useToken(env, req) {
   if (!m) throw bad();
   await ensurePassSchema(env);
   const t = now(env), th = await sha256hex(m[1]);
-  const tok = await env.DB.prepare('SELECT * FROM pass_tokens WHERE token_hash = ? AND expires_at > ?').bind(th, t).first();
+  const tok = await env.DB.prepare('SELECT * FROM nxp_tokens WHERE token_hash = ? AND expires_at > ?').bind(th, t).first();
   if (!tok) throw bad();
   const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(tok.user_id).first();
   if (!user) throw bad();
   const exp = Math.min(t + TOKEN_SLIDE, tok.created_at + TOKEN_MAX);
-  if (exp > tok.expires_at + MIN) await env.DB.prepare('UPDATE pass_tokens SET expires_at = ? WHERE token_hash = ?').bind(exp, th).run();
+  if (exp > tok.expires_at + MIN) await env.DB.prepare('UPDATE nxp_tokens SET expires_at = ? WHERE token_hash = ?').bind(exp, th).run();
   await rateLimit(env, `passapi:${user.id}`, 300, 10 * MIN);
   return { user };
 }
@@ -96,9 +96,9 @@ export const passRoutes = {
     await rateLimit(env, `passticket:${user.id}`, 30, 10 * MIN);
     const t = now(env), ticket = randomToken(32);
     await env.DB.batch([
-      env.DB.prepare('DELETE FROM pass_tickets WHERE expires_at < ?').bind(t - HOUR),
-      env.DB.prepare('DELETE FROM pass_tokens WHERE expires_at < ?').bind(t - HOUR),
-      env.DB.prepare('INSERT INTO pass_tickets (token_hash, user_id, expires_at) VALUES (?,?,?)').bind(await sha256hex(ticket), user.id, t + TICKET_TTL),
+      env.DB.prepare('DELETE FROM nxp_tickets WHERE expires_at < ?').bind(t - HOUR),
+      env.DB.prepare('DELETE FROM nxp_tokens WHERE expires_at < ?').bind(t - HOUR),
+      env.DB.prepare('INSERT INTO nxp_tickets (token_hash, user_id, expires_at) VALUES (?,?,?)').bind(await sha256hex(ticket), user.id, t + TICKET_TTL),
     ]);
     return json({ url: `${url}${url.includes('#') ? '' : '#'}t=${ticket}`, expires_in: TICKET_TTL / 1000 });
   },
@@ -110,18 +110,18 @@ export const passRoutes = {
     const bad = () => new HttpError(400, 'invalid_ticket', 'Bilet geçersiz veya süresi dolmuş. Nexus’tan Nexus Pass’i yeniden açın.');
     if (typeof b.ticket !== 'string' || !/^[A-Za-z0-9_-]{20,80}$/.test(b.ticket)) throw bad();
     const t = now(env), th = await sha256hex(b.ticket);
-    const row = await env.DB.prepare('UPDATE pass_tickets SET consumed_at = ? WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ? RETURNING user_id').bind(t, th, t).first();
+    const row = await env.DB.prepare('UPDATE nxp_tickets SET consumed_at = ? WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ? RETURNING user_id').bind(t, th, t).first();
     if (!row) throw bad();
     const user = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(row.user_id).first();
     if (!user) throw bad();
     const token = randomToken(32);
-    await env.DB.prepare('INSERT INTO pass_tokens (token_hash, user_id, created_at, expires_at) VALUES (?,?,?,?)').bind(await sha256hex(token), user.id, t, t + TOKEN_SLIDE).run();
+    await env.DB.prepare('INSERT INTO nxp_tokens (token_hash, user_id, created_at, expires_at) VALUES (?,?,?,?)').bind(await sha256hex(token), user.id, t, t + TOKEN_SLIDE).run();
     return json({ token, expires_at: t + TOKEN_SLIDE });
   },
 
   async products(req, env) {
     await useToken(env, req);
-    const rows = (await env.DB.prepare("SELECT * FROM pass_products WHERE status = 'on' ORDER BY app, sort, price, id").all()).results;
+    const rows = (await env.DB.prepare("SELECT * FROM nxp_products WHERE status = 'on' ORDER BY app, sort, price, id").all()).results;
     return json({ products: rows.map(shapeProduct) });
   },
 
@@ -129,14 +129,14 @@ export const passRoutes = {
   async product(req, env, url) {
     await useToken(env, req);
     const id = url.searchParams.get('id') || '';
-    const row = /^[a-z0-9][a-z0-9-]{1,63}$/.test(id) ? await env.DB.prepare('SELECT * FROM pass_products WHERE id = ?').bind(id).first() : null;
+    const row = /^[a-z0-9][a-z0-9-]{1,63}$/.test(id) ? await env.DB.prepare('SELECT * FROM nxp_products WHERE id = ?').bind(id).first() : null;
     return json({ product: row ? shapeProduct(row) : null });
   },
 
   async me(req, env) {
     const { user } = await useToken(env, req);
     const t = now(env);
-    const rows = (await env.DB.prepare(`SELECT ${ENT_COLS} FROM pass_purchases p WHERE p.user_id = ? ORDER BY p.created_at DESC, p.id DESC LIMIT 100`).bind(user.id).all()).results;
+    const rows = (await env.DB.prepare(`SELECT ${ENT_COLS} FROM nxp_purchases p WHERE p.user_id = ? ORDER BY p.created_at DESC, p.id DESC LIMIT 100`).bind(user.id).all()).results;
     return json({ balance: await balanceOf(env, user.id), username: user.username, entitlements: rows.map((r) => shapeEnt(r, t)) });
   },
 
@@ -144,7 +144,7 @@ export const passRoutes = {
     const { user } = await useToken(env, req);
     const page = Math.min(Math.max(parseInt(url.searchParams.get('page') || '0', 10) || 0, 0), 1000);
     const size = Math.min(Math.max(parseInt(url.searchParams.get('size') || '5', 10) || 5, 1), 20);
-    const rows = (await env.DB.prepare(`SELECT ${ENT_COLS} FROM pass_purchases p WHERE p.user_id = ? ORDER BY p.created_at DESC, p.id DESC LIMIT ? OFFSET ?`).bind(user.id, size + 1, page * size).all()).results;
+    const rows = (await env.DB.prepare(`SELECT ${ENT_COLS} FROM nxp_purchases p WHERE p.user_id = ? ORDER BY p.created_at DESC, p.id DESC LIMIT ? OFFSET ?`).bind(user.id, size + 1, page * size).all()).results;
     return json({
       items: rows.slice(0, size).map((r) => ({ id: r.id, app: r.app, name: r.name, status: r.reversed ? 'cancelled' : 'success', at: r.created_at, price: r.price, dur: r.duration_sec })),
       more: rows.length > size,
@@ -161,44 +161,44 @@ export const passRoutes = {
     const fail = async (code, extra = {}) => json({ ok: false, code, balance: await balanceOf(env, user.id), ...extra });
 
     // Tekrar isteği: aynı anahtar aynı sonucu döner, ikinci kez düşmez.
-    const prior = await env.DB.prepare('SELECT * FROM pass_purchases WHERE user_id = ? AND idem = ?').bind(user.id, b.idem).first();
+    const prior = await env.DB.prepare('SELECT * FROM nxp_purchases WHERE user_id = ? AND idem = ?').bind(user.id, b.idem).first();
     if (prior) {
       if (prior.product_id !== b.pid) throw new HttpError(409, 'key_reuse', 'Bu işlem anahtarı farklı bir istek için kullanılmış.');
       return json(replayResult(prior, await balanceOf(env, user.id)));
     }
 
-    const p = await env.DB.prepare('SELECT * FROM pass_products WHERE id = ?').bind(b.pid).first();
+    const p = await env.DB.prepare('SELECT * FROM nxp_products WHERE id = ?').bind(b.pid).first();
     if (!p || p.status !== 'on') return fail('unavailable');
     if (user.status === 'suspended' && !(user.suspended_until && t >= user.suspended_until)) throw new HttpError(403, 'account_suspended', 'Hesabınız askıda; satın alma yapılamaz.');
-    const owned = async () => env.DB.prepare(`SELECT 1 AS x FROM pass_purchases p WHERE p.user_id = ? AND p.product_id = ? AND p.expires_at > ? AND ${NOT_REVERSED} LIMIT 1`).bind(user.id, p.id, t).first();
+    const owned = async () => env.DB.prepare(`SELECT 1 AS x FROM nxp_purchases p WHERE p.user_id = ? AND p.product_id = ? AND p.expires_at > ? AND ${NOT_REVERSED} LIMIT 1`).bind(user.id, p.id, t).first();
     if (await owned()) return fail('already_active');
     const balance = await balanceOf(env, user.id);
     if (balance < p.price) return fail('insufficient', { missing: p.price - balance });
 
     const ref = newRef('NXP'), starts = t, expires = t + p.duration_sec * 1000;
     // Son savunma: hesap aktif, paket hâlâ aynı fiyat/süreyle satışta, aktif üyelik yok. Biri bozulursa tüm işlem geri alınır ("malformed JSON").
-    const guard = env.DB.prepare(`SELECT json_extract(CASE WHEN EXISTS (SELECT 1 FROM pass_products WHERE id = ? AND status = 'on' AND price = ? AND duration_sec = ?)
-      AND NOT EXISTS (SELECT 1 FROM pass_purchases p WHERE p.user_id = ? AND p.product_id = ? AND p.expires_at > ? AND ${NOT_REVERSED}) THEN '{}' ELSE 'x' END, '$')`)
+    const guard = env.DB.prepare(`SELECT json_extract(CASE WHEN EXISTS (SELECT 1 FROM nxp_products WHERE id = ? AND status = 'on' AND price = ? AND duration_sec = ?)
+      AND NOT EXISTS (SELECT 1 FROM nxp_purchases p WHERE p.user_id = ? AND p.product_id = ? AND p.expires_at > ? AND ${NOT_REVERSED}) THEN '{}' ELSE 'x' END, '$')`)
       .bind(p.id, p.price, p.duration_sec, user.id, p.id, t);
     try {
       await env.DB.batch([
         guardActiveStmt(env, user.id),
         guard,
-        env.DB.prepare('INSERT INTO pass_purchases (id, user_id, product_id, app, name, price, duration_sec, idem, starts_at, expires_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+        env.DB.prepare('INSERT INTO nxp_purchases (id, user_id, product_id, app, name, price, duration_sec, idem, starts_at, expires_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
           .bind(ref, user.id, p.id, p.app, p.name, p.price, p.duration_sec, b.idem, starts, expires, t),
         ...entryStmts(env, { ref, userId: user.id, type: 'purchase', amount: -p.price, desc: `Nexus Pass · ${p.app} · ${p.name}`.slice(0, 80) }),
         notifyStmt(env, user.id, 'purchase', 'Nexus Pass etkinleştirildi', `${p.app} · ${p.name} (${fmtMinor(p.price)} FN). Ref: ${ref}`),
       ]);
     } catch (err) {
       if (isConstraint(err, 'wallet_nonneg')) { const bal = await balanceOf(env, user.id); return fail('insufficient', { missing: Math.max(0, p.price - bal) }); }
-      if (isConstraint(err, 'pass_idem')) {
-        const again = await env.DB.prepare('SELECT * FROM pass_purchases WHERE user_id = ? AND idem = ?').bind(user.id, b.idem).first();
+      if (isConstraint(err, 'nxp_purchases.idem')) {
+        const again = await env.DB.prepare('SELECT * FROM nxp_purchases WHERE user_id = ? AND idem = ?').bind(user.id, b.idem).first();
         if (again && again.product_id === p.id) return json(replayResult(again, await balanceOf(env, user.id)));
       }
       if (String(err.message || err).includes('malformed JSON')) {
         const fresh = await env.DB.prepare('SELECT status, suspended_until FROM users WHERE id = ?').bind(user.id).first();
         if (fresh && fresh.status === 'suspended' && !(fresh.suspended_until && now(env) >= fresh.suspended_until)) throw new HttpError(403, 'account_suspended', 'Hesabınız askıda; satın alma yapılamaz.');
-        const pp = await env.DB.prepare('SELECT status, price, duration_sec FROM pass_products WHERE id = ?').bind(p.id).first();
+        const pp = await env.DB.prepare('SELECT status, price, duration_sec FROM nxp_products WHERE id = ?').bind(p.id).first();
         if (!pp || pp.status !== 'on' || pp.price !== p.price || pp.duration_sec !== p.duration_sec) return fail('unavailable');
         return fail('already_active');
       }
@@ -217,7 +217,7 @@ export const passRoutes = {
 export const passAdminRoutes = {
   async list(req, env) {
     await ensurePassSchema(env);
-    const rows = (await env.DB.prepare('SELECT * FROM pass_products ORDER BY app, sort, price, id').all()).results;
+    const rows = (await env.DB.prepare('SELECT * FROM nxp_products ORDER BY app, sort, price, id').all()).results;
     return json({ products: rows.map(shapeProduct) });
   },
 
@@ -239,13 +239,13 @@ export const passAdminRoutes = {
     const reason = str(b.reason, { min: 3, max: 300, name: 'Gerekçe' });
     const t = now(env);
     await env.DB.batch([
-      env.DB.prepare(`INSERT INTO pass_products (id, app, name, description, features_json, price, duration_sec, status, sort, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      env.DB.prepare(`INSERT INTO nxp_products (id, app, name, description, features_json, price, duration_sec, status, sort, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET app = excluded.app, name = excluded.name, description = excluded.description, features_json = excluded.features_json,
           price = excluded.price, duration_sec = excluded.duration_sec, status = excluded.status, sort = excluded.sort, updated_at = excluded.updated_at`)
         .bind(id, app, name, description, JSON.stringify(features), price, hours * 3600, status, sort, t, t),
       auditStmt(env, user.id, 'pass.product.upsert', id, reason, 'success', `price=${price};dur_h=${hours};status=${status}`),
     ]);
-    const row = await env.DB.prepare('SELECT * FROM pass_products WHERE id = ?').bind(id).first();
+    const row = await env.DB.prepare('SELECT * FROM nxp_products WHERE id = ?').bind(id).first();
     return json({ ok: true, product: shapeProduct(row) });
   },
 };

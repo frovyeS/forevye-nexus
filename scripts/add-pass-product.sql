@@ -1,6 +1,6 @@
 -- Nexus Pass kataloğuna paket ekler / günceller. Fiyat minor unit'tir (1 FN = 100): 5000 = 50,00 FN. Süre saniyedir: 30 gün = 2592000.
 -- Çalıştır: npx wrangler d1 execute forevye-nexus --remote --file=scripts/add-pass-product.sql
-INSERT INTO pass_products (id, app, name, description, features_json, price, duration_sec, status, sort, created_at, updated_at)
+INSERT INTO nxp_products (id, app, name, description, features_json, price, duration_sec, status, sort, created_at, updated_at)
 VALUES ('weather-premium-30', 'Mikro-Klima Hava', 'Premium · 30 gün', 'Gelişmiş hava özellikleri 30 gün açık.',
         '["Reklamsız deneyim","Gelişmiş tahmin ekranları"]', 5000, 2592000, 'on', 0,
         CAST(strftime('%s','now') AS INTEGER) * 1000, CAST(strftime('%s','now') AS INTEGER) * 1000)
