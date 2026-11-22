@@ -5,7 +5,7 @@ import { purchase, reverseRef, runBatch } from '../lib/ledger.js';
 import { grantAchievement } from './misc.js';
 import { balanceOf } from './wallet.js';
 import { auditStmt } from './admin.js';
-import { passRevokeStmts } from '../lib/pass.js';
+import { activeEntitlements } from './pass.js';
 
 function requireKey(req, env) {
   const h = req.headers.get('authorization') || '';
@@ -33,7 +33,25 @@ export const internalRoutes = {
     const orig = await env.DB.prepare('SELECT type, user_id FROM ledger_entries WHERE tx_ref = ?').bind(ref).first();
     if (!orig || orig.type !== 'purchase') throw new HttpError(400, 'not_refundable', 'Yalnızca alışveriş kayıtları iade edilebilir.');
     const { ref: rref, stmts } = await reverseRef(env, { originalRef: ref, type: 'refund', actor: 'internal-api' });
-    await runBatch(env, [...stmts, ...(await passRevokeStmts(env, ref)), auditStmt(env, 'internal-api', 'purchase.refund', ref, 'oyun içi iade', 'success', `refund=${rref}`)]);
+    await runBatch(env, [...stmts, auditStmt(env, 'internal-api', 'purchase.refund', ref, 'oyun içi iade', 'success', `refund=${rref}`)]);
     return json({ ok: true, ref: rref, balance: await balanceOf(env, orig.user_id) }, 201);
+  },
+
+  // Başka sistemler (Hava, Mağaza…) bir kullanıcının Nexus Pass üyeliği aktif mi diye sorar. Kullanıcı: Nexus user_id veya FOREVYE ID kimliği (id_user_id).
+  async entitlement(req, env) {
+    requireKey(req, env);
+    const b = await readJson(req);
+    let userId = null;
+    if (b.user_id != null) {
+      const u = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(str(b.user_id, { min: 8, max: 64, name: 'user_id' })).first();
+      userId = u ? u.id : null;
+    } else if (b.id_user_id != null) {
+      const l = await env.DB.prepare('SELECT user_id FROM id_links WHERE id_user_id = ?').bind(str(b.id_user_id, { min: 1, max: 100, name: 'id_user_id' })).first().catch(() => null);
+      userId = l ? l.user_id : null;
+    } else throw new HttpError(400, 'invalid', 'user_id veya id_user_id gerekli.');
+    const app = b.app == null ? undefined : str(b.app, { min: 1, max: 60, name: 'app' });
+    const productId = b.product_id == null ? undefined : str(b.product_id, { min: 1, max: 64, name: 'product_id' });
+    const entitlements = userId ? await activeEntitlements(env, userId, { app, productId }) : [];
+    return json({ active: entitlements.length > 0, entitlements });
   },
 };

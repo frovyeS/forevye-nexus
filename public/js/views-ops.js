@@ -27,13 +27,25 @@ export function txRow(t) {
     h('div', { class: `strong ${t.amount > 0 ? 'pos' : 'neg'}`, text: `${sign}${money(Math.abs(t.amount), cur())}` }));
 }
 
+// Nexus Pass (ayrı site): tek kullanımlık bilet alınır, tarayıcı Pass sitesine gider. Pass'in "Nexus'u aç" düğmesi de #/pass adresine gelir.
+// Geri tuşuyla dönen kullanıcı yeniden yönlendirilmesin diye adres önce #/ops yapılır.
+export async function passLaunch(screen) {
+  const box = h('div', { class: 'panel center' }, h('p', { class: 'muted', text: 'Nexus Pass açılıyor…' }));
+  mount(screen, box);
+  try {
+    const r = await api.post('/api/pass/ticket');
+    history.replaceState(null, '', `${location.pathname}${location.search}#/ops`);
+    location.href = r.url;
+  } catch (e) { mount(box, h('p', { class: 'err-text', role: 'alert', text: e.message }), h('a', { class: 'btn', href: '#/ops', text: 'İşlemlere dön' })); }
+}
+
 export function opsMenu(screen) {
   const link = (href, ico, title, sub) => h('a', { class: 'item', href },
     h('div', { class: 'avatar' }, icon(ico, 22)), h('div', { class: 'grow' }, h('div', { class: 't', text: title }), h('div', { class: 'muted small', text: sub })), icon('chevron', 18));
   mount(screen, h('h1', { text: 'İşlemler' }), h('div', { class: 'panel' }, h('ul', { class: 'list' },
     link('#/ops/send', 'send', 'Para gönder', 'Başka bir kullanıcıya sanal bakiye gönder'),
+    link('#/pass', 'star', 'Nexus Pass', 'Süreli Premium üyelikler (FN ile)'),
     link('#/market', 'market', 'Kristal Borsası', 'Kristal al/sat; bağımsız oyun piyasası'),
-    link('#/pass', 'star', 'Nexus Pass', 'Süreli üyelikler; FN ile al, uygulamalarda kullan'),
     link('#/ops/history', 'history', 'İşlem geçmişi', 'Transfer, borsa, alışveriş, iade'),
     link('#/ops/gift', 'gift', 'Hediye kartı kullan', 'Kodunu gir, bakiyene yükle'),
     link('#/ops/moves', 'list', 'Bakiye hareketleri', 'Giriş/çıkışları filtrele'))),

@@ -6,145 +6,229 @@ import { makeEnv, register, fund, sql, one, D } from './helpers.mjs';
 const PASS = 'https://pass.example/nexus-pass/';
 const ORIGIN = 'https://pass.example';
 const NEXUS = 'https://nexus.test';
-const KEY = { authorization: 'Bearer internal-test-key', 'content-type': 'application/json' };
+const ticketOf = (url) => new URL(url).hash.replace(/^#t=/, '');
 
-// Pass sitesi gibi davranır: çerez yok, Origin var, Bearer jeton.
-async function asPass(env, method, path, { body, token, origin = ORIGIN, headers = {} } = {}) {
-  const h = { 'content-type': 'application/json', origin, 'cf-connecting-ip': '6.6.6.6', ...headers };
-  if (token) h.authorization = `Bearer ${token}`;
-  const res = await worker.fetch(new Request(NEXUS + path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) }), env, {});
+// Pass sitesi gibi davranır: çerez yok, Origin başlığı var, Bearer jeton.
+async function asPass(env, method, path, { body, token, origin = ORIGIN } = {}) {
+  const headers = { 'content-type': 'application/json', origin, 'cf-connecting-ip': '7.7.7.7' };
+  if (token) headers.authorization = `Bearer ${token}`;
+  const res = await worker.fetch(new Request(NEXUS + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }), env, {});
   let data = null; try { data = await res.clone().json(); } catch { /* json değil */ }
   return { status: res.status, data, res };
 }
-const ticketOf = (url) => new URL(url).hash.replace(/^#t=/, '');
 
 async function setup(extra = {}) {
   const env = makeEnv({ PASS_URL: PASS, ...extra });
   const u = await register(env, 'p@example.com', 'pass_one');
-  const t = await u.cl.post('/api/pass/ticket');
-  const ex = await asPass(env, 'POST', '/api/pass/exchange', { body: { ticket: ticketOf(t.data.url) } });
-  return { env, u, token: ex.data.token, uid: u.me.user.id, ex, t };
+  const uid = (await one(env, 'SELECT id FROM users WHERE username = ?', 'pass_one')).id;
+  const t = env.__NOW;
+  await env.DB.prepare(`INSERT INTO pass_products (id, app, name, description, features_json, price, duration_sec, status, sort, created_at, updated_at) VALUES ('weather-premium-30','Mikro-Klima Hava','Premium · 30 gün','Hava premium','["Reklamsız","Gelişmiş tahmin"]',5000,${30 * 86400},'on',0,${t},${t})`).run();
+  return { env, u, uid };
 }
-let n = 0;
-const buy = (env, token, pid, idem) => asPass(env, 'POST', '/api/pass/purchase', { token, body: { pid, idem: idem || `idem-test-${++n}-abcdefgh` } });
+async function login(env, u) {
+  const tk = await u.cl.post('/api/pass/ticket');
+  assert.equal(tk.status, 200);
+  const ex = await asPass(env, 'POST', '/api/pass/exchange', { body: { ticket: ticketOf(tk.data.url) } });
+  assert.equal(ex.status, 200);
+  return ex.data.token;
+}
 
-test('pass: bilet tek kullanımlık, jeton yalnızca pass uçlarında geçerli, CORS yalnızca PASS_URL kaynağı', async () => {
-  const { env, u, token, ex, t } = await setup();
-  assert.equal(ex.status, 200); assert.equal(ex.data.user.username, 'pass_one');
-  assert.ok(t.data.url.startsWith(PASS + '#t='));
-  assert.equal((await asPass(env, 'POST', '/api/pass/exchange', { body: { ticket: ticketOf(t.data.url) } })).status, 400, 'bilet tek kullanımlık');
-  assert.equal((await asPass(env, 'GET', '/api/pass/me')).status, 401);
-  assert.equal((await asPass(env, 'GET', '/api/wallet', { token })).status, 401, 'jeton cüzdan ucunu açmaz');
-  assert.equal((await asPass(env, 'GET', '/api/pass/me', { token })).status, 200);
-  const bad = await asPass(env, 'GET', '/api/pass/me', { token, origin: 'https://evil.example' });
-  assert.equal(bad.res.headers.get('access-control-allow-origin'), null);
-  const ok = await asPass(env, 'GET', '/api/pass/me', { token });
-  assert.equal(ok.res.headers.get('access-control-allow-origin'), ORIGIN);
-  const pre = await asPass(env, 'OPTIONS', '/api/pass/purchase');
-  assert.equal(pre.status, 204);
-  assert.equal((await asPass(env, 'OPTIONS', '/api/pass/purchase', { origin: 'https://evil.example' })).status, 403);
-  assert.equal(u.cl.hasSession(), true);
-});
-
-test('pass: PASS_URL yoksa bilet 503', async () => {
-  const env = makeEnv();
-  const u = await register(env, 'q@example.com', 'pass_two');
-  assert.equal((await u.cl.post('/api/pass/ticket')).status, 503);
-});
-
-test('pass: satın alma FN düşer, süre sunucuda, idempotent, çift aktif üyelik engellenir, süre bitince yenilenir', async () => {
-  const { env, token, uid } = await setup();
-  const prods = (await asPass(env, 'GET', '/api/pass/products', { token })).data.products;
-  const p = prods.find((x) => x.id === 'weather-premium-30');
-  assert.equal(p.price, 500); assert.equal(p.dur, 30 * 86400);
-
-  const poor = (await buy(env, token, p.id)).data;
-  assert.equal(poor.ok, false); assert.equal(poor.code, 'insufficient'); assert.equal(poor.missing, 500);
-
-  await fund(env, uid, 2000);
-  const key = 'idem-stable-key-1';
-  const r1 = await buy(env, token, p.id, key);
-  assert.equal(r1.status, 201); assert.equal(r1.data.ok, true);
-  assert.equal(r1.data.balance, 1500);
-  assert.equal(r1.data.entitlement.status, 'active');
-  assert.equal(r1.data.entitlement.expires - r1.data.entitlement.starts, 30 * 86400 * 1000);
-  const led = await one(env, `SELECT type, amount FROM ledger_entries WHERE tx_ref = ?`, r1.data.purchase.id);
-  assert.equal(led.type, 'purchase'); assert.equal(led.amount, -500);
-
-  const r2 = await buy(env, token, p.id, key);          // aynı anahtar: tekrar düşmez
-  assert.equal(r2.data.replayed, true); assert.equal(r2.data.balance, 1500);
-  const dup = (await buy(env, token, p.id)).data;       // yeni anahtar, hâlâ aktif
-  assert.equal(dup.code, 'already_active');
-  assert.equal((await one(env, 'SELECT balance FROM wallets WHERE user_id = ?', uid)).balance, 1500);
-
-  const me = (await asPass(env, 'GET', '/api/pass/me', { token })).data;
-  assert.equal(me.entitlements.length, 1); assert.equal(me.entitlements[0].status, 'active');
-  const hist = (await asPass(env, 'GET', '/api/pass/purchases', { token })).data;
-  assert.equal(hist.items.length, 1); assert.equal(hist.more, false);
-
-});
-
-test('pass: süresi dolan üyelik aynı kayıt üzerinden yeniden alınabilir; katalogda kapalı ürün satılmaz', async () => {
-  const { env, u, uid } = await setup();
-  await fund(env, uid, 5000);
-  const fresh = async () => { const t = await u.cl.post('/api/pass/ticket'); return (await asPass(env, 'POST', '/api/pass/exchange', { body: { ticket: ticketOf(t.data.url) } })).data.token; };
-  let token = await fresh();
-  const a = await buy(env, token, 'store-plus-30'); assert.equal(a.data.ok, true);
-  const entId = a.data.entitlement.id;
-  env.__NOW += 31 * D; token = await fresh();
-  const me = (await asPass(env, 'GET', '/api/pass/me', { token })).data;
-  assert.equal(me.entitlements[0].status, 'expired');
-  const b = await buy(env, token, 'store-plus-30'); assert.equal(b.data.ok, true);
-  assert.equal(b.data.entitlement.id, entId); assert.equal(b.data.entitlement.status, 'active');
-  assert.equal((await sql(env, 'SELECT * FROM pass_entitlements WHERE user_id = ?', uid)).length, 1);
-  await env.DB.prepare(`UPDATE pass_products SET status = 'off' WHERE id = 'weather-premium-30'`).run();
-  assert.equal((await buy(env, token, 'weather-premium-30')).data.code, 'unavailable');
-  assert.equal((await asPass(env, 'GET', '/api/pass/products', { token })).data.products.some((x) => x.id === 'weather-premium-30'), false);
-});
-
-test('pass: askıdaki hesap üyelik alamaz', async () => {
-  const { env, token, uid } = await setup();
-  await fund(env, uid, 2000);
-  await env.DB.prepare(`UPDATE users SET status = 'suspended', suspended_until = NULL WHERE id = ?`).bind(uid).run();
-  const r = await buy(env, token, 'store-plus-30');
-  assert.equal(r.status, 409);
-  assert.equal((await one(env, 'SELECT balance FROM wallets WHERE user_id = ?', uid)).balance, 2000);
-});
-
-test('entitlement: diğer sistemler INTERNAL_API_KEY ile user_id veya FOREVYE ID kimliğiyle sorar; iade üyeliği kapatır', async () => {
-  const { env, token, uid } = await setup();
-  await fund(env, uid, 2000);
-  const post = (path, body, headers = KEY) => worker.fetch(new Request(NEXUS + path, { method: 'POST', headers, body: JSON.stringify(body) }), env, {}).then(async (r) => ({ status: r.status, data: await r.json() }));
-  assert.equal((await post('/api/internal/entitlement', { user_id: uid }, { 'content-type': 'application/json' })).status, 401);
-  assert.equal((await post('/api/internal/entitlement', { user_id: uid })).data.active, false);
-
-  const bought = (await buy(env, token, 'weather-premium-30')).data;
-  const byUser = (await post('/api/internal/entitlement', { user_id: uid, app: 'Mikro-Klima Hava' })).data;
-  assert.equal(byUser.active, true); assert.equal(byUser.entitlements[0].product_id, 'weather-premium-30');
-  assert.equal((await post('/api/internal/entitlement', { user_id: uid, app: 'Nexus Mağaza' })).data.active, false);
-
-  await env.DB.prepare('INSERT INTO id_links (user_id, id_user_id, linked_at) VALUES (?,?,?)').bind(uid, 'idu-12345', env.__NOW).run();
-  assert.equal((await post('/api/internal/entitlement', { id_user_id: 'idu-12345', product_id: 'weather-premium-30' })).data.active, true);
-  assert.equal((await post('/api/internal/entitlement', { id_user_id: 'yok-yok' })).status, 404);
-
-  const refund = await post('/api/internal/refund', { ref: bought.purchase.id });
-  assert.equal(refund.status, 201);
-  assert.equal((await post('/api/internal/entitlement', { user_id: uid })).data.active, false, 'iade üyeliği kapatır');
-  assert.equal((await one(env, 'SELECT status FROM pass_purchases WHERE id = ?', bought.purchase.id)).status, 'refunded');
-  assert.equal((await one(env, 'SELECT balance FROM wallets WHERE user_id = ?', uid)).balance, 2000);
-  assert.equal((await buy(env, token, 'weather-premium-30')).data.ok, true, 'iade sonrası yeniden alınabilir');
-});
-
-test('pass yönetimi: katalog yazma yalnızca süper yönetici; fiyat/süre doğrulanır', async () => {
+test('pass: bilet → jeton; bilet tek kullanımlık, adres PASS_URL#t=…', async () => {
   const { env, u } = await setup();
-  const body = { id: 'x-pro-7', app: 'Deneme', name: 'Pro · 7 gün', price: '2.50', duration_days: 7, features: ['a'], reason: 'test' };
+  const tk = await u.cl.post('/api/pass/ticket');
+  assert.ok(tk.data.url.startsWith(PASS + '#t='));
+  const t = ticketOf(tk.data.url);
+  const a = await asPass(env, 'POST', '/api/pass/exchange', { body: { ticket: t } });
+  assert.equal(a.status, 200); assert.ok(a.data.token);
+  assert.equal(a.res.headers.get('access-control-allow-origin'), ORIGIN);
+  const b = await asPass(env, 'POST', '/api/pass/exchange', { body: { ticket: t } });
+  assert.equal(b.status, 400);
+  assert.equal((await asPass(env, 'POST', '/api/pass/exchange', { body: { ticket: 'x'.repeat(30) } })).status, 400);
+});
+
+test('pass: oturumsuz bilet alınamaz; PASS_URL yoksa 503', async () => {
+  const { env, u } = await setup();
+  const anon = await asPass(env, 'POST', '/api/pass/ticket', {});
+  assert.equal(anon.status, 403);   // CSRF başlığı yok
+  const { env: e2, u: u2 } = await setup({ PASS_URL: '' });
+  assert.equal((await u2.cl.post('/api/pass/ticket')).status, 503);
+  void env; void u;
+});
+
+test('pass: CORS yalnızca PASS_URL kaynağına açık; preflight çalışır', async () => {
+  const { env } = await setup();
+  const ok = await worker.fetch(new Request(NEXUS + '/api/pass/purchase', { method: 'OPTIONS', headers: { origin: ORIGIN, 'access-control-request-method': 'POST', 'access-control-request-headers': 'authorization,content-type' } }), env, {});
+  assert.equal(ok.status, 204);
+  assert.equal(ok.headers.get('access-control-allow-origin'), ORIGIN);
+  const bad = await worker.fetch(new Request(NEXUS + '/api/pass/purchase', { method: 'OPTIONS', headers: { origin: 'https://evil.example' } }), env, {});
+  assert.equal(bad.status, 403);
+  const r = await asPass(env, 'GET', '/api/pass/products', { origin: 'https://evil.example', token: 'a'.repeat(43) });
+  assert.equal(r.res.headers.get('access-control-allow-origin'), null);
+});
+
+test('pass: jeton yalnızca /api/pass/* için geçerli (para, profil, kart açılmaz); jetonsuz 401', async () => {
+  const { env, u } = await setup();
+  const tok = await login(env, u);
+  assert.equal((await asPass(env, 'GET', '/api/pass/products')).status, 401);
+  assert.equal((await asPass(env, 'GET', '/api/pass/products', { token: 'b'.repeat(43) })).status, 401);
+  for (const p of ['/api/wallet', '/api/profile', '/api/cards', '/api/me']) assert.equal((await asPass(env, 'GET', p, { token: tok })).status, 401, p);
+  assert.equal((await asPass(env, 'POST', '/api/transfers', { token: tok, body: {} })).status, 403);
+});
+
+test('pass: katalog, satın alma → bakiye düşer, üyelik açılır, defter ve geçmiş doğru', async () => {
+  const { env, u, uid } = await setup();
+  await fund(env, uid, 20000);
+  const tok = await login(env, u);
+  const list = await asPass(env, 'GET', '/api/pass/products', { token: tok });
+  assert.equal(list.data.products.length, 1);
+  assert.deepEqual(list.data.products[0], { id: 'weather-premium-30', app: 'Mikro-Klima Hava', name: 'Premium · 30 gün', price: 5000, dur: 30 * 86400, desc: 'Hava premium', features: ['Reklamsız', 'Gelişmiş tahmin'], status: 'on' });
+  assert.equal((await asPass(env, 'GET', '/api/pass/product?id=weather-premium-30', { token: tok })).data.product.id, 'weather-premium-30');
+  assert.equal((await asPass(env, 'GET', '/api/pass/product?id=yok-boyle-paket', { token: tok })).data.product, null);
+
+  const r = await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'idem_abcdefgh1234' } });
+  assert.equal(r.status, 201);
+  assert.equal(r.data.ok, true);
+  assert.equal(r.data.balance, 15000);
+  assert.equal(r.data.entitlement.expires - r.data.entitlement.starts, 30 * 86400 * 1000);
+  const led = await sql(env, "SELECT type, amount, tx_ref FROM ledger_entries WHERE user_id = ? AND type = 'purchase'", uid);
+  assert.equal(led.length, 1); assert.equal(led[0].amount, -5000); assert.equal(led[0].tx_ref, r.data.purchase.id);
+
+  const me = await asPass(env, 'GET', '/api/pass/me', { token: tok });
+  assert.equal(me.data.balance, 15000);
+  assert.equal(me.data.entitlements.length, 1);
+  assert.equal(me.data.entitlements[0].status, 'active');
+  assert.equal(me.data.entitlements[0].pid, 'weather-premium-30');
+  assert.equal(me.data.entitlements[0].snap.price, 5000);
+  const h = await asPass(env, 'GET', '/api/pass/purchases?page=0&size=5', { token: tok });
+  assert.equal(h.data.items.length, 1); assert.equal(h.data.items[0].status, 'success'); assert.equal(h.data.more, false);
+});
+
+test('pass: aynı idem anahtarı tekrar gönderilince ikinci kez düşmez; başka pakete anahtar yeniden kullanılamaz', async () => {
+  const { env, u, uid } = await setup();
+  await fund(env, uid, 20000);
+  const tok = await login(env, u);
+  const body = { pid: 'weather-premium-30', idem: 'idem_replay0001' };
+  const a = await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body });
+  const b = await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body });
+  assert.equal(b.status, 200); assert.equal(b.data.ok, true); assert.equal(b.data.replayed, true);
+  assert.equal(b.data.purchase.id, a.data.purchase.id);
+  assert.equal((await sql(env, "SELECT COUNT(*) AS c FROM ledger_entries WHERE type = 'purchase'"))[0].c, 1);
+  const t = env.__NOW;
+  await env.DB.prepare(`INSERT INTO pass_products (id, app, name, price, duration_sec, created_at, updated_at) VALUES ('other-pack','Diğer','Paket',100,86400,${t},${t})`).run();
+  assert.equal((await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'other-pack', idem: 'idem_replay0001' } })).status, 409);
+});
+
+test('pass: çift üyelik engellenir (already_active); süre dolunca yeniden alınabilir', async () => {
+  const { env, u, uid } = await setup();
+  await fund(env, uid, 30000);
+  const tok = await login(env, u);
+  assert.equal((await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'idem_first00001' } })).data.ok, true);
+  const dup = await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'idem_second0002' } });
+  assert.equal(dup.status, 200); assert.equal(dup.data.ok, false); assert.equal(dup.data.code, 'already_active');
+  assert.equal((await sql(env, "SELECT COUNT(*) AS c FROM ledger_entries WHERE type = 'purchase'"))[0].c, 1);
+  env.__NOW += 31 * D;
+  const tok2 = await login(env, u);
+  const again = await asPass(env, 'POST', '/api/pass/purchase', { token: tok2, body: { pid: 'weather-premium-30', idem: 'idem_third00003' } });
+  assert.equal(again.data.ok, true);
+  const me = await asPass(env, 'GET', '/api/pass/me', { token: tok2 });
+  assert.deepEqual(me.data.entitlements.map((e) => e.status).sort(), ['active', 'expired']);
+});
+
+test('pass: yetersiz bakiye → ok:false/insufficient, bakiye değişmez; kapalı paket → unavailable', async () => {
+  const { env, u, uid } = await setup();
+  await fund(env, uid, 1200);
+  const tok = await login(env, u);
+  const r = await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'idem_poor00001' } });
+  assert.equal(r.status, 200); assert.equal(r.data.ok, false); assert.equal(r.data.code, 'insufficient');
+  assert.equal(r.data.balance, 1200); assert.equal(r.data.missing, 3800);
+  assert.equal((await sql(env, 'SELECT COUNT(*) AS c FROM pass_purchases'))[0].c, 0);
+  await env.DB.prepare("UPDATE pass_products SET status = 'off'").run();
+  const off = await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'idem_off000001' } });
+  assert.equal(off.data.code, 'unavailable');
+  assert.equal((await asPass(env, 'GET', '/api/pass/products', { token: tok })).data.products.length, 0);
+});
+
+test('pass: istemci fiyat/süre dayatamaz; geçersiz anahtar ve paket kimliği reddedilir', async () => {
+  const { env, u, uid } = await setup();
+  await fund(env, uid, 20000);
+  const tok = await login(env, u);
+  const r = await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'idem_cheat0001', price: 1, dur: 99999999 } });
+  assert.equal(r.data.balance, 15000);
+  assert.equal(r.data.purchase.dur, 30 * 86400);
+  assert.equal((await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'kisa' } })).status, 400);
+  assert.equal((await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: "x'; DROP TABLE users;--", idem: 'idem_inject001' } })).status, 400);
+});
+
+test('pass: askıdaki hesap satın alamaz', async () => {
+  const { env, u, uid } = await setup();
+  await fund(env, uid, 20000);
+  const tok = await login(env, u);
+  await env.DB.prepare("UPDATE users SET status = 'suspended' WHERE id = ?").bind(uid).run();
+  const r = await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'idem_susp00001' } });
+  assert.equal(r.status, 403);
+  assert.equal((await sql(env, "SELECT COUNT(*) AS c FROM ledger_entries WHERE type = 'purchase'"))[0].c, 0);
+});
+
+test('pass: jeton süresi kayar ve 8 saatte kesin biter', async () => {
+  const { env, u } = await setup();
+  const tok = await login(env, u);
+  env.__NOW += 20 * 60 * 1000;
+  assert.equal((await asPass(env, 'GET', '/api/pass/me', { token: tok })).status, 200);
+  env.__NOW += 20 * 60 * 1000;   // son kullanımdan 20 dk: kaydığı için hâlâ geçerli
+  assert.equal((await asPass(env, 'GET', '/api/pass/me', { token: tok })).status, 200);
+  env.__NOW += 9 * 3600 * 1000;
+  assert.equal((await asPass(env, 'GET', '/api/pass/me', { token: tok })).status, 401);
+});
+
+test('pass: internal/entitlement — anahtar şart; user_id ve id_user_id ile sorgulanır; iade üyeliği kapatır', async () => {
+  const { env, u, uid } = await setup();
+  await fund(env, uid, 20000);
+  const tok = await login(env, u);
+  const buy = await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'idem_ent000001' } });
+  const call = (body, key = 'internal-test-key') => asPass(env, 'POST', '/api/internal/entitlement', { body, token: key });
+  assert.equal((await call({ user_id: uid }, 'yanlis-anahtar-yanlis')).status, 401);
+  const q = await call({ user_id: uid });
+  assert.equal(q.data.active, true);
+  assert.equal(q.data.entitlements[0].product_id, 'weather-premium-30');
+  assert.equal((await call({ user_id: uid, app: 'Mikro-Klima Hava', product_id: 'weather-premium-30' })).data.active, true);
+  assert.equal((await call({ user_id: uid, app: 'Başka Uygulama' })).data.active, false);
+  await env.DB.prepare("INSERT INTO id_links (user_id, id_user_id, linked_at) VALUES (?, 'id-user-42', 1)").bind(uid).run();
+  assert.equal((await call({ id_user_id: 'id-user-42' })).data.active, true);
+  assert.equal((await call({ user_id: 'bilinmeyen-kullanici-id' })).data.active, false);
+  assert.equal((await call({})).status, 400);
+
+  // İade (yönetici ters kaydı / internal refund) üyeliği hemen kapatır.
+  const rf = await asPass(env, 'POST', '/api/internal/refund', { body: { ref: buy.data.purchase.id }, token: 'internal-test-key' });
+  assert.equal(rf.status, 201);
+  assert.equal((await call({ user_id: uid })).data.active, false);
+  const me = await asPass(env, 'GET', '/api/pass/me', { token: tok });
+  assert.equal(me.data.entitlements[0].status, 'cancelled');
+  assert.equal(me.data.balance, 20000);
+  assert.equal((await asPass(env, 'GET', '/api/pass/purchases', { token: tok })).data.items[0].status, 'cancelled');
+  // iadeden sonra yeniden alınabilir
+  assert.equal((await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'idem_ent000002' } })).data.ok, true);
+});
+
+test('pass yönetici: katalog yalnızca süper yönetici tarafından değiştirilir; denetim kaydı düşer', async () => {
+  const { env, u, uid } = await setup();
+  const body = { id: 'store-premium-7', app: 'Mağaza', name: 'Premium · 7 gün', price: '12.50', duration_days: 7, features: ['Öncelikli destek'], reason: 'yeni paket' };
   assert.equal((await u.cl.post('/api/admin/pass/products', body)).status, 403);
-  await env.DB.prepare(`UPDATE users SET role = 'superadmin' WHERE username = 'pass_one'`).run();
-  const bad = await u.cl.post('/api/admin/pass/products', { ...body, price: '-1' });
-  assert.equal(bad.status, 400);
-  const ok = await u.cl.post('/api/admin/pass/products', body);
-  assert.equal(ok.status, 200, JSON.stringify(ok.data));
-  const row = await one(env, 'SELECT price, duration_s FROM pass_products WHERE id = ?', 'x-pro-7');
-  assert.equal(row.price, 250); assert.equal(row.duration_s, 7 * 86400);
-  assert.ok((await u.cl.get('/api/admin/pass/products')).data.products.some((p) => p.id === 'x-pro-7'));
+  await env.DB.prepare("UPDATE users SET role = 'superadmin' WHERE id = ?").bind(uid).run();
+  const r = await u.cl.post('/api/admin/pass/products', body);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.product.price, 1250); assert.equal(r.data.product.dur, 7 * 86400);
+  assert.equal((await u.cl.post('/api/admin/pass/products', { ...body, price: '-1' })).status, 400);
+  assert.equal((await u.cl.post('/api/admin/pass/products', { ...body, id: 'Kötü Kimlik' })).status, 400);
+  assert.equal((await u.cl.get('/api/admin/pass/products')).data.products.length, 2);
+  assert.equal((await sql(env, "SELECT COUNT(*) AS c FROM admin_audit WHERE action = 'pass.product.upsert'"))[0].c, 1);
+});
+
+test('pass: migration uygulanmamış D1\'de tablolar kendiliğinden kurulur (500 vermez)', async () => {
+  const { env, u } = await setup();
+  for (const t of ['pass_tokens', 'pass_tickets', 'pass_purchases', 'pass_products']) env.DB.raw.exec(`DROP TABLE ${t}`);
+  const tk = await u.cl.post('/api/pass/ticket');
+  assert.equal(tk.status, 200);
+  const ex = await asPass(env, 'POST', '/api/pass/exchange', { body: { ticket: ticketOf(tk.data.url) } });
+  assert.equal(ex.status, 200);
+  assert.equal((await asPass(env, 'GET', '/api/pass/products', { token: ex.data.token })).status, 200);
 });

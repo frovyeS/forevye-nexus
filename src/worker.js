@@ -9,12 +9,12 @@ import { adminRoutes } from './routes/admin.js';
 import { internalRoutes } from './routes/internal.js';
 import { marketRoutes } from './routes/market.js';
 import { editorRoutes, editorOrigins } from './routes/editor.js';
-import { passRoutes, passInternalRoutes, passAdminRoutes, passOrigins } from './routes/pass.js';
+import { passRoutes, passAdminRoutes, passOrigins } from './routes/pass.js';
 import { cronTick } from './lib/market.js';
 
 // [yöntem, yol, işleyici, erişim]  erişim: 'public' | 'user' | 'admin' | 'super' | 'internal' | 'editor'
-// 'pass': Nexus Pass sitesi (ayrı site) Bearer jetonla gelir, CORS yalnızca PASS_URL kaynağına açıktır.
 // 'editor': çerez yok; kart editörü (ayrı site) biletle/Bearer jetonla gelir, CORS yalnızca EDITOR_URL kaynağına açıktır.
+// 'pass': aynı mantık; Nexus Pass sitesi (ayrı site) Bearer jetonla gelir, CORS yalnızca PASS_URL kaynağına açıktır.
 const R = [];
 const add = (m, path, h, access = 'user') => R.push({ m, re: new RegExp(`^${path.replace(/:(\w+)/g, '(?<$1>[^/]+)')}$`), h, access });
 
@@ -66,6 +66,13 @@ add('POST', '/api/editor/ticket', editorRoutes.ticket);
 add('POST', '/api/editor/exchange', editorRoutes.exchange, 'editor');
 add('GET', '/api/editor/card', editorRoutes.card, 'editor');
 add('PUT', '/api/editor/card', editorRoutes.save, 'editor');
+add('POST', '/api/pass/ticket', passRoutes.ticket);
+add('POST', '/api/pass/exchange', passRoutes.exchange, 'pass');
+add('GET', '/api/pass/products', passRoutes.products, 'pass');
+add('GET', '/api/pass/product', passRoutes.product, 'pass');
+add('GET', '/api/pass/me', passRoutes.me, 'pass');
+add('GET', '/api/pass/purchases', passRoutes.purchases, 'pass');
+add('POST', '/api/pass/purchase', passRoutes.purchase, 'pass');
 add('GET', '/api/cards/:id', cardRoutes.get);
 add('PATCH', '/api/cards/:id', cardRoutes.update);
 add('POST', '/api/cards/:id/default', cardRoutes.setDefault);
@@ -73,17 +80,9 @@ add('POST', '/api/cards/:id/status', cardRoutes.setStatus);
 add('GET', '/api/cards/:id/history', cardRoutes.history);
 add('POST', '/api/cards/:id/revert', cardRoutes.revert);
 
-add('POST', '/api/pass/ticket', passRoutes.ticket);
-add('GET', '/api/pass/mine', passRoutes.mine);
-add('POST', '/api/pass/exchange', passRoutes.exchange, 'pass');
-add('GET', '/api/pass/me', passRoutes.me, 'pass');
-add('GET', '/api/pass/products', passRoutes.products, 'pass');
-add('GET', '/api/pass/product', passRoutes.product, 'pass');
-add('GET', '/api/pass/purchases', passRoutes.purchases, 'pass');
-add('POST', '/api/pass/purchase', passRoutes.purchase, 'pass');
-add('POST', '/api/internal/entitlement', passInternalRoutes.entitlement, 'internal');
 add('POST', '/api/internal/purchase', internalRoutes.purchase, 'internal');
 add('POST', '/api/internal/refund', internalRoutes.refund, 'internal');
+add('POST', '/api/internal/entitlement', internalRoutes.entitlement, 'internal');
 
 add('GET', '/api/admin/me', adminRoutes.me, 'admin');
 add('GET', '/api/admin/users', adminRoutes.searchUsers, 'admin');
@@ -99,9 +98,9 @@ add('POST', '/api/admin/announcements/:id/deactivate', adminRoutes.deactivateAnn
 add('GET', '/api/admin/templates', adminRoutes.listTemplates, 'admin');
 add('POST', '/api/admin/templates', adminRoutes.createTemplate, 'admin');
 add('POST', '/api/admin/templates/:id/active', adminRoutes.setTemplateActive, 'admin');
-add('GET', '/api/admin/pass/products', passAdminRoutes.list, 'admin');
-add('POST', '/api/admin/pass/products', passAdminRoutes.save, 'super');
 add('GET', '/api/admin/audit', adminRoutes.audit, 'admin');
+add('GET', '/api/admin/pass/products', passAdminRoutes.list, 'admin');
+add('POST', '/api/admin/pass/products', passAdminRoutes.upsert, 'super');
 add('GET', '/api/admin/giftcard', adminRoutes.giftcard, 'admin');
 add('GET', '/api/admin/admins', adminRoutes.listAdmins, 'super');
 add('POST', '/api/admin/roles', adminRoutes.setRole, 'super');
@@ -140,15 +139,15 @@ async function handleApi(req, env) {
   return route.h(req, env, url, auth, params);
 }
 
-// Ayrı siteler (kart editörü, Nexus Pass) için CORS: yalnızca EDITOR_URL / PASS_URL (+ *_ORIGINS) kaynağına izin verilir. Çerez gönderilmez; kimlik bilet/Bearer jetondadır.
+// Ayrı siteler (kart editörü, Nexus Pass) için CORS: yalnızca kendi kaynaklarına izin verilir. Çerez gönderilmez; kimlik bilet/Bearer jetondadır.
 const EDITOR_PATHS = new Set(['/api/editor/exchange', '/api/editor/card']);
-const PASS_PATHS = new Set(['/api/pass/exchange', '/api/pass/me', '/api/pass/products', '/api/pass/product', '/api/pass/purchases', '/api/pass/purchase']);
-const CORS_PATHS = new Set([...EDITOR_PATHS, ...PASS_PATHS]);
+const PASS_PATHS = new Set(['/api/pass/exchange', '/api/pass/products', '/api/pass/product', '/api/pass/me', '/api/pass/purchases', '/api/pass/purchase']);
+const isCorsPath = (p) => EDITOR_PATHS.has(p) || PASS_PATHS.has(p);
 function siteCors(req, env, url) {
-  if (!CORS_PATHS.has(url.pathname)) return null;
-  const allowed = PASS_PATHS.has(url.pathname) ? passOrigins(env) : editorOrigins(env);
+  const origins = EDITOR_PATHS.has(url.pathname) ? editorOrigins(env) : PASS_PATHS.has(url.pathname) ? passOrigins(env) : null;
+  if (!origins) return null;
   const o = req.headers.get('origin') || '';
-  if (!o || !allowed.includes(o)) return null;
+  if (!o || !origins.includes(o)) return null;
   return { 'access-control-allow-origin': o, 'access-control-allow-methods': 'GET, POST, PUT, OPTIONS', 'access-control-allow-headers': 'content-type, authorization', 'access-control-max-age': '86400', vary: 'Origin', 'cross-origin-resource-policy': 'cross-origin' };
 }
 
@@ -159,7 +158,7 @@ export default {
       return env.ASSETS ? env.ASSETS.fetch(req) : new Response('Not found', { status: 404 });
     }
     const cors = siteCors(req, env, url);
-    if (req.method === 'OPTIONS' && CORS_PATHS.has(url.pathname)) return new Response(null, { status: cors ? 204 : 403, headers: cors || {} });
+    if (req.method === 'OPTIONS' && isCorsPath(url.pathname)) return new Response(null, { status: cors ? 204 : 403, headers: cors || {} });
     try {
       const res = await handleApi(req, env);
       const out = new Response(res.body, res);
