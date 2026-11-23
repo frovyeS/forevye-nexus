@@ -119,6 +119,14 @@ export const passRoutes = {
     return json({ token, expires_at: t + TOKEN_SLIDE });
   },
 
+  // Nexus (banka) içindeki Üyelikler ekranı: Nexus OTURUMU ile okunur (Pass jetonu gerekmez). Durum yalnızca sunucuda üretilir.
+  async mine(req, env, ctx, { user }) {
+    await ensurePassSchema(env);
+    const t = now(env);
+    const rows = (await env.DB.prepare(`SELECT ${ENT_COLS} FROM nxp_purchases p WHERE p.user_id = ? ORDER BY p.created_at DESC, p.id DESC LIMIT 100`).bind(user.id).all()).results;
+    return json({ entitlements: rows.map((r) => shapeEnt(r, t)) });
+  },
+
   async products(req, env) {
     await useToken(env, req);
     const rows = (await env.DB.prepare("SELECT * FROM nxp_products WHERE status = 'on' ORDER BY app, sort, price, id").all()).results;

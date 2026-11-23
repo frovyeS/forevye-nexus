@@ -20,11 +20,11 @@ async function init() {
     if (e.status === 401) return loginGate();
     return mount(root, h('div', { class: 'auth' }, h('div', { class: 'notice bad', role: 'alert', text: 'Bu sayfaya erişim yetkiniz yok.' }), h('a', { class: 'btn block', href: '/', text: 'Uygulamaya dön' })));
   }
-  const tabs = [['users', 'Kullanıcılar'], ['announce', 'Duyurular'], ['templates', 'Kart şablonları'], ['audit', 'Denetim kaydı'], ['gift', 'Entegrasyon']];
+  const tabs = [['users', 'Kullanıcılar'], ['announce', 'Duyurular'], ['templates', 'Kart şablonları'], ['audit', 'Denetim kaydı'], ['gift', 'Entegrasyon'], ['pass', 'Nexus Pass']];
   if (isSuper()) tabs.push(['roles', 'Yetkililer']);
   const body = h('div'); let current = 'users';
   const bar = h('div', { class: 'seg' });
-  const show = (k) => { current = k; for (const b of bar.children) b.setAttribute('aria-pressed', String(b.dataset.k === k)); ({ users: usersTab, announce: announceTab, templates: templatesTab, audit: auditTab, gift: giftTab, roles: rolesTab })[k](body); };
+  const show = (k) => { current = k; for (const b of bar.children) b.setAttribute('aria-pressed', String(b.dataset.k === k)); ({ users: usersTab, announce: announceTab, templates: templatesTab, audit: auditTab, gift: giftTab, pass: passTab, roles: rolesTab })[k](body); };
   tabs.forEach(([k, l]) => bar.append(h('button', { type: 'button', 'data-k': k, 'aria-pressed': 'false', text: l, onClick: () => show(k) })));
   mount(root, h('div', { class: 'shell' }, h('main', { class: 'screen' }, h('div', { class: 'topbar' }, h('h1', { text: 'FOREVYE NEXUS • Yönetim' }), h('span', { class: 'chip', text: `${admin.username} (${admin.role})` })), bar, body, h('p', { class: 'virtual' }, back('/', 'Uygulamaya dön')))));
   show('users');
@@ -73,6 +73,35 @@ function auditTab(body) {
 function giftTab(body) {
   mount(body, h('div', { class: 'panel' }, h('h3', { text: 'Hediye kartı modülü' }), h('div', { id: 'gs' })));
   load(body.querySelector('#gs'), () => api.get('/api/admin/giftcard'), (s) => h('div', { class: `notice ${s.connected ? '' : 'warn'}`, text: s.detail }));
+}
+
+// Nexus Pass paket kataloğu. Yetki sunucuda denetlenir (listeleme: yönetici, kaydetme: süper yönetici); burada yalnızca arayüz kolaylığı vardır.
+const feat = (t) => t.split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 12);
+const durLabel = (sec) => (sec % 86400 === 0 ? `${sec / 86400} gün` : `${Math.round(sec / 3600)} saat`);
+function passTab(body) {
+  const list = h('div'); const form = h('div');
+  const f = {
+    id: h('input', { type: 'text', maxlength: '64', placeholder: 'weather-premium-30', autocapitalize: 'off', spellcheck: 'false' }),
+    app: h('input', { type: 'text', maxlength: '60' }), name: h('input', { type: 'text', maxlength: '80' }),
+    desc: h('textarea', { maxlength: '300', rows: '2' }), feats: h('textarea', { rows: '4', placeholder: 'Her satıra bir özellik (en çok 12)' }),
+    price: h('input', { type: 'text', inputmode: 'decimal', placeholder: '50,00' }),
+    dur: h('input', { type: 'number', min: '1', max: '8784', step: '1', value: '30' }),
+    unit: h('select', {}, [['days', 'gün'], ['hours', 'saat']].map(([v, l]) => h('option', { value: v, text: l }))),
+    status: h('select', {}, [['on', 'Satışta'], ['off', 'Kapalı']].map(([v, l]) => h('option', { value: v, text: l }))),
+    sort: h('input', { type: 'number', step: '1', value: '0' }), reason: h('input', { type: 'text', maxlength: '300' }),
+  };
+  const fill = (p) => { f.id.value = p.id; f.app.value = p.app; f.name.value = p.name; f.desc.value = p.desc || ''; f.feats.value = (p.features || []).join('\n'); f.price.value = (p.price / 100).toFixed(2).replace('.', ','); const d = p.dur % 86400 === 0; f.unit.value = d ? 'days' : 'hours'; f.dur.value = d ? p.dur / 86400 : Math.round(p.dur / 3600); f.status.value = p.status; f.reason.value = ''; f.id.scrollIntoView({ block: 'center' }); };
+  const refresh = () => load(list, () => api.get('/api/admin/pass/products'), (d) => d.products.length ? h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, ['Paket ID', 'Uygulama', 'Ad', 'Fiyat', 'Süre', 'Durum', ''].map((x) => h('th', { text: x })))), h('tbody', {}, d.products.map((p) => h('tr', {}, h('td', { text: p.id }), h('td', { text: p.app }), h('td', { text: p.name }), h('td', { text: money(p.price) }), h('td', { text: durLabel(p.dur) }), h('td', { text: p.status === 'on' ? 'Satışta' : 'Kapalı' }), h('td', {}, isSuper() ? h('button', { class: 'btn small', type: 'button', text: 'Düzenle', onClick: () => fill(p) }) : null))))))  : empty('Paket yok', 'Süper yönetici ilk paketi aşağıdan ekleyebilir.'));
+  const save = (e) => {
+    e.preventDefault();
+    const days = f.unit.value === 'days';
+    const payload = { id: f.id.value.trim(), app: f.app.value.trim(), name: f.name.value.trim(), description: f.desc.value.trim(), features: feat(f.feats.value), price: f.price.value.trim().replace(',', '.'), status: f.status.value, sort: Number(f.sort.value) || 0, reason: f.reason.value.trim(), [days ? 'duration_days' : 'duration_hours']: Number(f.dur.value) };
+    const btn = e.submitter || form.querySelector('button[type=submit]');
+    busy(btn, async () => { try { await api.post('/api/admin/pass/products', payload); toast('Paket kaydedildi', 'ok'); f.reason.value = ''; refresh(); } catch (ex) { toast(ex.message, 'error'); } });
+  };
+  const note = h('p', { class: 'muted small', text: 'Fiyat/süre değişikliği veya paketi kapatmak mevcut satın alma kayıtlarını değiştirmez; yalnızca yeni satışları etkiler. Her kayıt denetim kaydına yazılır.' });
+  mount(form, isSuper() ? h('form', { class: 'panel', onSubmit: save }, h('h3', { text: 'Paket ekle / güncelle' }), field('Paket ID (sabit, küçük harf/rakam/tire)', f.id), field('Uygulama', f.app), field('Paket adı', f.name), field('Açıklama', f.desc), field('Özellikler', f.feats), field('Fiyat (FN)', f.price), field('Süre', f.dur), field('Süre birimi', f.unit), field('Durum', f.status), field('Sıra', f.sort), field('Gerekçe (zorunlu)', f.reason), h('button', { class: 'btn primary', type: 'submit', text: 'Kaydet' })) : h('div', { class: 'notice', text: 'Paket ekleme/güncelleme yalnızca süper yöneticiye açıktır.' }));
+  mount(body, h('div', { class: 'panel' }, h('h3', { text: 'Nexus Pass paketleri' }), note, list), form); refresh();
 }
 
 function rolesTab(body) {

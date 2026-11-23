@@ -232,3 +232,25 @@ test('pass: migration uygulanmamış D1\'de tablolar kendiliğinden kurulur (500
   assert.equal(ex.status, 200);
   assert.equal((await asPass(env, 'GET', '/api/pass/products', { token: ex.data.token })).status, 200);
 });
+
+test('pass: /api/pass/mine (banka içi Üyelikler ekranı) — oturumla çalışır, Pass jetonuyla veya oturumsuz açılmaz, iade "cancelled" görünür', async () => {
+  const { env, u, uid } = await setup();
+  await fund(env, uid, 20000);
+  // Boş liste: 500 değil 200 ve boş dizi
+  const empty = await u.cl.get('/api/pass/mine');
+  assert.equal(empty.status, 200); assert.deepEqual(empty.data.entitlements, []);
+  const tok = await login(env, u);
+  const buy = await asPass(env, 'POST', '/api/pass/purchase', { token: tok, body: { pid: 'weather-premium-30', idem: 'idem_mine00001' } });
+  assert.equal(buy.data.ok, true);
+  const a = await u.cl.get('/api/pass/mine');
+  assert.equal(a.status, 200); assert.equal(a.data.entitlements.length, 1);
+  assert.equal(a.data.entitlements[0].status, 'active');
+  assert.equal(a.data.entitlements[0].product.app, 'Mikro-Klima Hava');
+  // Pass Bearer jetonu Nexus oturum ucunu açamaz; oturumsuz çağrı 401
+  assert.equal((await asPass(env, 'GET', '/api/pass/mine', { token: tok })).status, 401);
+  assert.equal((await worker.fetch(new Request(NEXUS + '/api/pass/mine', { headers: { 'x-nx-csrf': '1' } }), env, {})).status, 401);
+  // İade sonrası aynı kaynaktan "cancelled"
+  const rf = await asPass(env, 'POST', '/api/internal/refund', { body: { ref: buy.data.purchase.id }, token: 'internal-test-key' });
+  assert.equal(rf.status, 201);
+  assert.equal((await u.cl.get('/api/pass/mine')).data.entitlements[0].status, 'cancelled');
+});

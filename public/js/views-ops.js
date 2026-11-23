@@ -33,6 +33,7 @@ export function opsMenu(screen) {
   mount(screen, h('h1', { text: 'İşlemler' }), h('div', { class: 'panel' }, h('ul', { class: 'list' },
     link('#/ops/send', '↗', 'Para gönder', 'Başka bir kullanıcıya sanal bakiye gönder'),
     link('#/market', '💎', 'Kristal Borsası', 'Kristal al/sat; fiyat gerçek altını izler'),
+    link('#/pass', '★', 'Nexus Pass', 'Aboneliklerini gör, yeni paket satın al'),
     link('#/ops/history', '☰', 'İşlem geçmişi', 'Transfer, borsa, alışveriş, iade'),
     link('#/ops/gift', '🎁', 'Hediye kartı kullan', 'Kodunu gir, kristal bakiyene yükle'),
     link('#/ops/moves', '⇅', 'Bakiye hareketleri', 'Giriş/çıkışları filtrele'))),
