@@ -29,7 +29,7 @@
     brand: { label: 'Banka logosu', group: 'brand', w: 300, h: 54, min: 0.7, max: 1.5 },
     chip: { label: 'EMV çip', group: 'chipqr', w: 100, h: 78, min: 0.7, max: 1.6 },
     code: { label: 'Sanal kart kodu', group: 'info', w: 250, h: 48, min: 0.7, max: 1.5 },
-    number: { label: 'Kart numarası', group: 'info', w: 200, h: 26, min: 0.7, max: 1.5 },
+    number: { label: 'Kart numarası', group: 'info', w: 230, h: 34, min: 0.7, max: 1.5 },
     name: { label: 'Kart sahibi', group: 'info', w: 400, h: 34, min: 0.6, max: 1.3 },
     qr: { label: 'QR kod', group: 'chipqr', w: 84, h: 84, min: 0.7, max: 1.8 }
   };
@@ -51,7 +51,7 @@
     }
     return {
       brand: { x: 48, y: 44, scale: 1 }, qr: { x: 724, y: 44, scale: 1 }, chip: { x: 48, y: 196, scale: 1 },
-      code: { x: 48, y: 322, scale: 1 }, number: { x: 608, y: 456, scale: 1 }, name: { x: 48, y: 448, scale: 1 }
+      code: { x: 48, y: 322, scale: 1 }, number: { x: 594, y: 450, scale: 1 }, name: { x: 48, y: 448, scale: 1 }
     };
   }
   function sysDims(key, qrStyle) {
