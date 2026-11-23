@@ -12,6 +12,7 @@
 // Bakiye yükleme (defter kaydı) bu uygulamada reference ile tekrar-güvenli yapılır.
 import { hmacHex } from '../lib/crypto.js';
 import { HttpError, now } from '../lib/util.js';
+import { mikroFetch } from '../lib/upstream.js';
 
 const baseUrl = (env) => String(env.GIFTCARD_API_URL || '').trim().replace(/\/+$/, '');
 
@@ -22,9 +23,10 @@ export function giftcardConfigured(env) {
 export async function giftcardStatus(env) {
   if (!giftcardConfigured(env)) return { connected: false, detail: 'Hediye kartı modülü bağlı değil (GIFTCARD_API_URL ve GIFTCARD_API_SECRET tanımlı olmalı).' };
   try {
-    const res = await fetch(`${baseUrl(env)}/api/ext/giftcard/health`, { method: 'GET' });
+    const res = await mikroFetch(env, `${baseUrl(env)}/api/ext/giftcard/health`, { method: 'GET' }, 6000);
     return { connected: res.ok, detail: res.ok ? 'Modül erişilebilir.' : `Modül yanıtı: ${res.status}` };
-  } catch {
+  } catch (e) {
+    console.log('[giftcard:health]', String(e && e.message || e).slice(0, 200));
     return { connected: false, detail: 'Modüle ulaşılamadı.' };
   }
 }
@@ -36,15 +38,17 @@ export async function redeemViaExistingModule(env, { userId, code, idempotencyKe
   const sig = await hmacHex(env.GIFTCARD_API_SECRET, `${ts}.${body}`);
   let res;
   try {
-    res = await fetch(`${baseUrl(env)}/api/ext/giftcard/redeem`, {
+    res = await mikroFetch(env, `${baseUrl(env)}/api/ext/giftcard/redeem`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-nx-timestamp': ts, 'x-nx-signature': sig },
       body,
-    });
-  } catch {
+    }, 10000);
+  } catch (e) {
+    console.log('[giftcard:redeem] ulaşılamadı:', String(e && e.message || e).slice(0, 200));
     throw new HttpError(503, 'giftcard_unavailable', 'Hediye kartı hizmeti şu an kullanılamıyor.');
   }
   const data = await res.json().catch(() => ({}));
+  if (!res.ok && !data.error) console.log('[giftcard:redeem]', res.status);
   if (res.ok && data.ok && Number.isSafeInteger(data.amount) && data.amount > 0 && typeof data.reference === 'string') {
     const perKristal = Number(env.GIFTCARD_MINOR_PER_KRISTAL) > 0 ? Number(env.GIFTCARD_MINOR_PER_KRISTAL) : 100;
     const amount = data.unit === 'kristal' ? data.amount * perKristal : data.amount;

@@ -5,7 +5,6 @@ import { newRef } from '../lib/util.js';
 import { validateDesign, readStoredDesign } from '../../shared/card-contract.js';
 import { giftcardStatus } from '../integrations/giftcard.js';
 import { balanceOf } from './wallet.js';
-import { passRevokeStmts } from '../lib/pass.js';
 import { shopRevokeStmts } from '../lib/shop.js';
 
 // Değiştirilemez denetim kaydı: yönetici ID'si, eylem, hedef, zaman, gerekçe, sonuç.
@@ -99,7 +98,7 @@ export const adminRoutes = {
     if (typeof b.ref !== 'string' || !/^NX[A-Z]-[A-Z2-9]{12}$/.test(b.ref)) throw new HttpError(400, 'invalid', 'Geçersiz işlem referansı.');
     try {
       const { ref, stmts } = await reverseRef(env, { originalRef: b.ref, actor: user.id, reason });
-      await runBatch(env, [...stmts, ...(await passRevokeStmts(env, b.ref)), ...(await shopRevokeStmts(env, b.ref)), auditStmt(env, user.id, 'ledger.reverse', b.ref, reason, 'success', `reversal=${ref}`)]);
+      await runBatch(env, [...stmts, ...(await shopRevokeStmts(env, b.ref)), auditStmt(env, user.id, 'ledger.reverse', b.ref, reason, 'success', `reversal=${ref}`)]);
       return json({ ok: true, reversal_ref: ref });
     } catch (err) {
       await auditStmt(env, user.id, 'ledger.reverse', b.ref, reason, 'failed', String(err.code || err.message).slice(0, 100)).run().catch(() => {});

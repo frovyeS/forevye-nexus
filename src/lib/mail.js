@@ -5,6 +5,7 @@
 //   "brevo"  → doğrudan Brevo (BREVO_API_KEY + EMAIL_FROM), "resend" (RESEND_API_KEY), "console" (yalnızca geliştirme).
 // EMAIL_FROM = "Ad <adres@...>"; Brevo'da gönderen adresi doğrulanmış olmalı.
 import { HttpError } from './util.js';
+import { mikroFetch } from './upstream.js';
 
 const parseFrom = (f) => {
   const m = /^\s*(.*?)\s*<([^>]+)>\s*$/.exec(String(f || ''));
@@ -21,17 +22,17 @@ async function hmac(secret, msg) {
 
 // Ortak posta servisine gönderir. true = gönderildi.
 async function viaRelay(env, { to, subject, text }) {
-  const base = String(env.MAIL_RELAY_URL || '').replace(/\/+$/, '');
+  const base = String(env.MAIL_RELAY_URL || env.GIFTCARD_API_URL || '').replace(/\/+$/, '');
   if (!base || !env.GIFTCARD_API_SECRET) return false;
   const raw = JSON.stringify({ to, subject, text }), ts = String(Date.now());
   try {
-    const res = await fetch(`${base}/api/ext/mail`, {
+    const res = await mikroFetch(env, `${base}/api/ext/mail`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-nx-timestamp': ts, 'x-nx-signature': await hmac(env.GIFTCARD_API_SECRET, `${ts}.${raw}`) },
-      body: raw, signal: AbortSignal.timeout(6000),
-    });
-    if (!res.ok) console.log('[mail:relay]', res.status);
+      body: raw,
+    }, 8000);
+    if (!res.ok) console.log('[mail:relay]', res.status, (await res.text().catch(() => '')).slice(0, 200));
     return res.ok;
-  } catch (e) { console.log('[mail:relay] ulaşılamadı'); return false; }
+  } catch (e) { console.log('[mail:relay] ulaşılamadı:', String(e && e.message || e).slice(0, 200)); return false; }
 }
 
 export async function sendMail(env, { to, subject, text }) {
