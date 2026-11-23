@@ -4,6 +4,7 @@ import { authRoutes } from './routes/auth.js';
 import { profileRoutes } from './routes/profile.js';
 import { walletRoutes } from './routes/wallet.js';
 import { cardRoutes } from './routes/cards.js';
+import { cardMoneyRoutes } from './routes/card-money.js';
 import { miscRoutes } from './routes/misc.js';
 import { adminRoutes } from './routes/admin.js';
 import { internalRoutes } from './routes/internal.js';
@@ -73,6 +74,9 @@ add('GET', '/api/cards/:id', cardRoutes.get);
 add('PATCH', '/api/cards/:id', cardRoutes.update);
 add('POST', '/api/cards/:id/default', cardRoutes.setDefault);
 add('POST', '/api/cards/:id/status', cardRoutes.setStatus);
+add('POST', '/api/cards/:id/fund', cardMoneyRoutes.fund);
+add('POST', '/api/cards/:id/pay', cardMoneyRoutes.pay);
+add('GET', '/api/cards/:id/transactions', cardMoneyRoutes.transactions);
 add('GET', '/api/cards/:id/history', cardRoutes.history);
 add('POST', '/api/cards/:id/revert', cardRoutes.revert);
 

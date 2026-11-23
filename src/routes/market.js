@@ -1,4 +1,4 @@
-import { HttpError, json, readJson, parseAmount, MIN } from '../lib/util.js';
+import { HttpError, json, readJson, parseAmount, str, MIN } from '../lib/util.js';
 import { rateLimit } from '../lib/rate.js';
 import { currentPrice, stats24h, history, holdingOf, parseQty, trade, getTradeByKey, ASSET, cfg, QTY_SCALE, PRICE_SCALE } from '../lib/market.js';
 import { balanceOf } from './wallet.js';
@@ -45,6 +45,8 @@ export const marketRoutes = {
     const key = b.idempotency_key;
     if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(key)) throw new HttpError(400, 'invalid_key', 'İşlem anahtarı eksik veya geçersiz.');
     if (b.side !== 'buy' && b.side !== 'sell') throw new HttpError(400, 'invalid_side', 'İşlem yönü geçersiz.');
+    const cardId = b.card_id ? str(b.card_id, { min: 8, max: 64, name: 'card_id' }) : null;
+    if (cardId && b.side !== 'buy') throw new HttpError(400, 'invalid_card_source', 'Kart yalnızca kristal alımında ödeme kaynağı olabilir.');
     if ((b.qty === undefined) === (b.amount === undefined)) throw new HttpError(400, 'invalid', 'Miktar (qty) ya da tutar (amount) girin; ikisini birden değil.');
     const args = { side: b.side, key };
     if (b.qty !== undefined) args.qty = parseQty(b.qty); else args.amountMinor = parseAmount(b.amount);
@@ -57,8 +59,11 @@ export const marketRoutes = {
     const prior = await getTradeByKey(env, user.id, key);
     if (prior) {
       if (prior.side !== b.side) throw new HttpError(409, 'key_reuse', 'Bu işlem anahtarı farklı bir istek için kullanılmış.');
-      return json({ ok: true, ...prior, price_micro: prior.price_micro, replayed: true, balance: await balanceOf(env, user.id) });
+      const priorCard = await env.DB.prepare("SELECT card_id FROM card_ledger WHERE tx_ref = ? AND user_id = ? AND type = 'payment' AND amount < 0").bind(prior.ref, user.id).first();
+      if ((priorCard?.card_id || null) !== cardId) throw new HttpError(409, 'key_reuse', 'Bu işlem anahtarı farklı bir ödeme kaynağı için kullanılmış.');
+      return json({ ok: true, ...prior, price_micro: prior.price_micro, replayed: true, balance: await balanceOf(env, user.id), ...(priorCard ? { payment_method: 'card', card_id: priorCard.card_id } : { payment_method: 'wallet' }) });
     }
+    if (cardId) args.cardId = cardId;
     const r = await trade(env, user, args);
     if (!r.replayed && r.side === 'buy') await grantAchievement(env, user.id, 'first_crystal');
     return json({ ok: true, ...r, balance: await balanceOf(env, user.id) }, r.replayed ? 200 : 201);

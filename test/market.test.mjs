@@ -51,6 +51,29 @@ test('al/sat: atomik, defter tutarlı, spread uygulanır, ortalama maliyet', asy
   assert.equal((await u.cl.get('/api/transactions?kind=market')).data.items.length, 2);
 });
 
+test('kristal alımı seçilen sanal karttan ödenebilir; cüzdan değişmez ve tekrar düşüm olmaz', async () => {
+  const { env, u } = await setup();
+  const card = (await u.cl.get('/api/cards')).data.cards[0];
+  const topup = await u.cl.post(`/api/cards/${card.id}/fund`, { amount: '60.00', direction: 'load', idempotency_key: 'krs-card-topup-001' });
+  assert.equal(topup.status, 201); assert.equal(topup.data.card_balance, 6000);
+  const keyValue = key();
+  const first = await u.cl.post('/api/market/trade', { side: 'buy', qty: '2', card_id: card.id, idempotency_key: keyValue });
+  assert.equal(first.status, 201); assert.equal(first.data.total, 5025);
+  assert.equal(first.data.payment_method, 'card'); assert.equal(first.data.card_balance, 975);
+  assert.equal((await u.cl.get('/api/wallet')).data.balance, 494000, 'borsa alımı karttan düşünce cüzdan değişmemeli');
+  const replay = await u.cl.post('/api/market/trade', { side: 'buy', qty: '2', card_id: card.id, idempotency_key: keyValue });
+  assert.equal(replay.status, 200); assert.equal(replay.data.replayed, true);
+  assert.equal((await u.cl.get(`/api/cards/${card.id}`)).data.balance, 975);
+  const wrongSource = await u.cl.post('/api/market/trade', { side: 'buy', qty: '2', idempotency_key: keyValue });
+  assert.equal(wrongSource.status, 409, 'aynı işlem anahtarı başka ödeme kaynağına taşınamaz');
+  const entries = await sql(env, 'SELECT type, amount FROM card_ledger WHERE card_id = ? ORDER BY type', card.id);
+  assert.deepEqual(entries.map((x) => [x.type, x.amount]), [['fund_in', 6000], ['payment', -5025]]);
+  await consistent(env);
+  await u.cl.post(`/api/cards/${card.id}/status`, { status: 'disabled' });
+  const blocked = await u.cl.post('/api/market/trade', { side: 'buy', qty: '1', card_id: card.id, idempotency_key: key() });
+  assert.equal(blocked.status, 400); assert.equal(blocked.data.error.code, 'card_disabled');
+});
+
 test('tutarla alım: harcanan FN, girilen tutarı aşmaz', async () => {
   const { env, u } = await setup();
   const r = await u.cl.post('/api/market/trade', { side: 'buy', amount: '50.00', idempotency_key: key() });

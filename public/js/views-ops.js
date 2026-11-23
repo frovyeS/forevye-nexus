@@ -31,7 +31,8 @@ export function opsMenu(screen) {
   const link = (href, ico, title, sub) => h('a', { class: 'item', href, style: { textDecoration: 'none', color: 'inherit' } },
     h('div', { class: 'avatar', text: ico }), h('div', { class: 'grow' }, h('div', { class: 't', text: title }), h('div', { class: 'muted small', text: sub })), h('span', { class: 'muted', text: '›' }));
   mount(screen, h('h1', { text: 'İşlemler' }), h('div', { class: 'panel' }, h('ul', { class: 'list' },
-    link('#/ops/send', '↗', 'Para gönder', 'Başka bir kullanıcıya sanal bakiye gönder'),
+    link('#/ops/send', '↗', 'Para gönder', 'Ana cüzdanından başka bir kullanıcıya gönder'),
+    link('#/cards/pay', '💳', 'Karttan ödeme', 'Ödeme kaynağı olarak kullanacağın kartı seç'),
     link('#/market', '💎', 'Kristal Borsası', 'Kristal al/sat; fiyat gerçek altını izler'),
     link('#/pass', '★', 'Nexus Pass', 'Aboneliklerini gör, yeni paket satın al'),
     link('#/ops/history', '☰', 'İşlem geçmişi', 'Transfer, borsa, alışveriş, iade'),

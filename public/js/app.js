@@ -3,7 +3,7 @@ import { h, mount, toast, money, dt, load, field, pwField, busy, empty, icon, ba
 import { state, refreshMe, setHide, cur, initial } from './state.js';
 import { renderCard } from './cardview.js';
 import { opsMenu, txList, txRow, sendFlow, giftFlow } from './views-ops.js';
-import { cardsList, cardNew, cardDetail, editorLaunch, vaultView, scanView } from './views-cards.js';
+import { cardsList, cardNew, cardDetail, cardPayView, editorLaunch, vaultView, scanView } from './views-cards.js';
 import { marketView, marketMini } from './views-market.js';
 import { passView } from './views-pass.js';
 import { shopView } from './views-shop.js';
@@ -239,7 +239,7 @@ async function route() {
     return opsMenu(screen);
   }
   if (top === 'market') return marketView(screen);
-  if (top === 'cards') return parts[1] === 'new' ? cardNew(screen) : parts[1] ? cardDetail(screen, parts[1]) : cardsList(screen);
+  if (top === 'cards') return parts[1] === 'new' ? cardNew(screen) : parts[1] === 'pay' ? cardPayView(screen) : parts[1] ? cardDetail(screen, parts[1]) : cardsList(screen);
   if (top === 'scan') return scanView(screen);
   if (top === 'pass') return passView(screen);
   if (top === 'shop') return shopView(screen);

@@ -1,5 +1,5 @@
 // Sunucudan sunucuya uçlar (oyun içi alışveriş / iade). Tarayıcıdan ÇAĞRILAMAZ: INTERNAL_API_KEY gerekir.
-import { HttpError, json, readJson, parseAmount, str } from '../lib/util.js';
+import { HttpError, json, readJson, parseAmount, str, now, newRef, isConstraint } from '../lib/util.js';
 import { safeEqual } from '../lib/crypto.js';
 import { purchase, reverseRef, runBatch } from '../lib/ledger.js';
 import { grantAchievement } from './misc.js';
@@ -30,6 +30,36 @@ export const internalRoutes = {
     requireKey(req, env);
     const b = await readJson(req);
     const ref = str(b.ref, { min: 8, max: 40, name: 'ref' });
+
+    // Market alışverişi kart bakiyesinden ödenmişse iade aynı karta döner.
+    const marketPurchase = await env.DB.prepare(`SELECT user_id, price, status FROM shop_purchases WHERE id = ?`).bind(ref).first();
+    const cardPayment = marketPurchase && await env.DB.prepare(`SELECT card_id FROM card_ledger WHERE tx_ref = ? AND user_id = ? AND type = 'payment' AND amount < 0`).bind(ref, marketPurchase.user_id).first();
+    if (marketPurchase && marketPurchase.status === 'success' && cardPayment) {
+      const rref = newRef('NXR'), t = now(env), refundKey = `shop_refund_${ref}`;
+      try {
+        await runBatch(env, [
+          env.DB.prepare(`SELECT json_extract(CASE WHEN EXISTS (
+            SELECT 1 FROM shop_purchases WHERE id = ? AND status = 'success'
+          ) THEN '{}' ELSE 'x' END, '$')`).bind(ref),
+          env.DB.prepare('UPDATE cards SET balance = balance + ?, updated_at = ? WHERE id = ? AND user_id = ?')
+            .bind(marketPurchase.price, t, cardPayment.card_id, marketPurchase.user_id),
+          env.DB.prepare(`INSERT INTO card_ledger
+            (id, tx_ref, user_id, card_id, type, amount, balance_after, counterparty_id, idempotency_key, description, created_at)
+            VALUES (?, ?, ?, ?, 'fund_in', ?, (SELECT balance FROM cards WHERE id = ? AND user_id = ?), NULL, ?, ?, ?)`)
+            .bind(crypto.randomUUID(), rref, marketPurchase.user_id, cardPayment.card_id, marketPurchase.price, cardPayment.card_id, marketPurchase.user_id, refundKey, `Nexus Market iadesi: ${ref}`, t),
+          ...(await shopRevokeStmts(env, ref)),
+          auditStmt(env, 'internal-api', 'purchase.refund', ref, 'kart bakiyesine oyun içi iade', 'success', `refund=${rref}; card=${cardPayment.card_id}`),
+        ]);
+      } catch (err) {
+        if (isConstraint(err, 'card_ledger.user_id') || String(err.message || err).includes('malformed JSON')) {
+          throw new HttpError(409, 'not_refundable', 'Bu alışveriş daha önce iade edilmiş veya iade edilemiyor.');
+        }
+        throw err;
+      }
+      const card = await env.DB.prepare('SELECT balance FROM cards WHERE id = ? AND user_id = ?').bind(cardPayment.card_id, marketPurchase.user_id).first();
+      return json({ ok: true, ref: rref, balance: await balanceOf(env, marketPurchase.user_id), card_balance: Number(card?.balance || 0), refunded_to: 'card' }, 201);
+    }
+
     const orig = await env.DB.prepare('SELECT type, user_id FROM ledger_entries WHERE tx_ref = ?').bind(ref).first();
     if (!orig || orig.type !== 'purchase') throw new HttpError(400, 'not_refundable', 'Yalnızca alışveriş kayıtları iade edilebilir.');
     const { ref: rref, stmts } = await reverseRef(env, { originalRef: ref, type: 'refund', actor: 'internal-api' });

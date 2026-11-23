@@ -40,7 +40,7 @@ async function mk(env, name) {
   u.uid = u.me.user.id; u.token = await tokenFor(env, u);
   return u;
 }
-const buy = (env, token, pid, idem) => asShop(env, 'POST', '/api/shop/purchase', { token, body: { pid, idem: idem || `idem-shop-${++n}-abcdefgh` } });
+const buy = (env, token, pid, idem, card_id = null) => asShop(env, 'POST', '/api/shop/purchase', { token, body: { pid, idem: idem || `idem-shop-${++n}-abcdefgh`, ...(card_id ? { card_id } : {}) } });
 const bal = async (env, uid) => (await one(env, 'SELECT balance FROM wallets WHERE user_id = ?', uid)).balance;
 const post = (env, path, body, headers = KEY) => worker.fetch(new Request(NEXUS + path, { method: 'POST', headers, body: JSON.stringify(body) }), env, {}).then(async (r) => ({ status: r.status, data: await r.json() }));
 
@@ -101,6 +101,31 @@ test('market: satın alma FN düşer, defterde görünür; çift sahiplik ve çi
   const hist = (await asShop(env, 'GET', '/api/shop/purchases', { token })).data;
   assert.equal(hist.items.length, 1); assert.equal(hist.items[0].price, FN(1800));
   assert.equal((await buy(env, token, 'yok_boyle_urun')).data.code, 'unavailable');
+});
+
+test('market: ödeme kaynağı sanal kart olabilir; iade aynı karta döner ve çift düşüm olmaz', async () => {
+  const { env, u, token, uid } = await setup({}, 'cardshop');
+  await fund(env, uid, FN(8000));
+  const card = (await u.cl.get('/api/cards')).data.cards[0];
+  const topup = await u.cl.post(`/api/cards/${card.id}/fund`, { amount: '2000.00', direction: 'load', idempotency_key: 'market-card-topup-001' });
+  assert.equal(topup.status, 201);
+  const idem = 'market-card-checkout-001';
+  const first = await buy(env, token, 'skin_onyx', idem, card.id);
+  assert.equal(first.status, 201); assert.equal(first.data.payment.method, 'card');
+  assert.equal(first.data.payment.card_id, card.id); assert.equal(first.data.payment.card_balance, FN(200));
+  assert.equal(await bal(env, uid), FN(6000), 'kartla Market ödemesi ana cüzdana dokunmamalı');
+  const replay = await buy(env, token, 'skin_onyx', idem, card.id);
+  assert.equal(replay.data.replayed, true); assert.equal((await u.cl.get(`/api/cards/${card.id}`)).data.balance, FN(200));
+  const payment = await one(env, "SELECT type, amount FROM card_ledger WHERE tx_ref = ?", first.data.purchase.id);
+  assert.deepEqual([payment.type, payment.amount], ['payment', -FN(1800)]);
+
+  const refunded = await post(env, '/api/internal/refund', { ref: first.data.purchase.id });
+  assert.equal(refunded.status, 201); assert.equal(refunded.data.refunded_to, 'card');
+  assert.equal(refunded.data.card_balance, FN(2000));
+  assert.equal(await bal(env, uid), FN(6000), 'iade ana cüzdana değil aynı karta dönmeli');
+  assert.equal((await one(env, 'SELECT status FROM shop_purchases WHERE id = ?', first.data.purchase.id)).status, 'refunded');
+  assert.equal((await one(env, 'SELECT qty FROM shop_entitlements WHERE user_id = ? AND product_id = ?', uid, 'skin_onyx'))?.qty || 0, 0);
+  assert.equal((await post(env, '/api/internal/refund', { ref: first.data.purchase.id })).status, 400, 'aynı alışveriş iki kez iade edilememeli');
 });
 
 test('market: yeni 45 tasarımlı katalogtan alış, seri numarası ve kart editöründe uygulama', async () => {

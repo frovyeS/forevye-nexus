@@ -8,7 +8,7 @@ import { validateDesign, validateDisplayName, validateLabel, defaultDesign, read
 // Veritabanındaki tasarım (eski sürüm 1 dahil) her zaman sürüm 2 olarak sunulur.
 export const shape = (c) => ({
   id: c.id, label: c.label, display_name: c.display_name, card_token: c.card_token, status: c.status,
-  is_default: Boolean(c.is_default), version: c.design_version, design: readStoredDesign(c.design_json, c.display_name, c.design_version), updated_at: c.updated_at,
+  balance: Number(c.balance || 0), is_default: Boolean(c.is_default), version: c.design_version, design: readStoredDesign(c.design_json, c.display_name, c.design_version), updated_at: c.updated_at,
 });
 
 export async function ownCard(env, userId, id) {

@@ -147,7 +147,7 @@ export async function getTradeByKey(env, userId, key) {
 }
 
 // Tek atomik işlem: cüzdan + defter + kristal bakiyesi + işlem kaydı birlikte yazılır ya da hiç yazılmaz.
-export async function trade(env, user, { side, qty: qtyIn, amountMinor, key, expectedMicro }) {
+export async function trade(env, user, { side, qty: qtyIn, amountMinor, key, expectedMicro, cardId = null }) {
   const c = cfg(env);
   const t = now(env);
   const p = await currentPrice(env, { spreadBps: spreadFor(env, await perksOf(env, user.id)) });   // Platin/Black kartı: daha dar alış-satış farkı
@@ -165,6 +165,15 @@ export async function trade(env, user, { side, qty: qtyIn, amountMinor, key, exp
   if (total < 1) throw new HttpError(400, 'too_small', 'İşlem tutarı çok küçük.');
   if (total > c.maxTradeMinor) throw new HttpError(400, 'limit_exceeded', `İşlem başına en fazla ${fmtMinor(c.maxTradeMinor)} FN değerinde işlem yapabilirsiniz.`);
 
+  let paymentCard = null;
+  if (cardId) {
+    if (side !== 'buy') throw new HttpError(400, 'invalid_card_source', 'Kart yalnızca kristal alımında ödeme kaynağı olabilir.');
+    paymentCard = await env.DB.prepare('SELECT id, status, balance FROM cards WHERE id = ? AND user_id = ?').bind(cardId, user.id).first();
+    if (!paymentCard) throw new HttpError(404, 'card_not_found', 'Seçilen kart bulunamadı.');
+    if (paymentCard.status !== 'active') throw new HttpError(400, 'card_disabled', 'Devre dışı kartla borsa alımı yapılamaz.');
+    if (paymentCard.balance < total) throw new HttpError(400, 'insufficient_card_funds', 'Seçilen kartta yeterli FN yok. Önce karta para yükleyin.');
+  }
+
   const ref = newRef('NXM');
   const stmts = [
     guardActiveStmt(env, user.id),
@@ -172,8 +181,21 @@ export async function trade(env, user, { side, qty: qtyIn, amountMinor, key, exp
       .bind(crypto.randomUUID(), ref, user.id, side, qty, price, p.mid_micro, total, key, t),
   ];
   if (side === 'buy') {
+    if (paymentCard) {
+      stmts.push(
+        env.DB.prepare(`SELECT json_extract(CASE WHEN EXISTS (
+          SELECT 1 FROM cards WHERE id = ? AND user_id = ? AND status = 'active' AND balance >= ?
+        ) THEN '{}' ELSE 'x' END, '$')`).bind(paymentCard.id, user.id, total),
+        env.DB.prepare(`UPDATE cards SET balance = balance - ?, updated_at = ? WHERE id = ? AND user_id = ? AND status = 'active'`).bind(total, t, paymentCard.id, user.id),
+        env.DB.prepare(`INSERT INTO card_ledger
+          (id, tx_ref, user_id, card_id, type, amount, balance_after, counterparty_id, idempotency_key, description, created_at)
+          VALUES (?, ?, ?, ?, 'payment', ?, (SELECT balance FROM cards WHERE id = ? AND user_id = ?), NULL, ?, ?, ?)`)
+          .bind(crypto.randomUUID(), ref, user.id, paymentCard.id, -total, paymentCard.id, user.id, `krs_${key}`, `Kristal alımı • ${fmtQty(qty)} KRS`, t),
+      );
+    } else {
+      stmts.push(...entryStmts(env, { ref, userId: user.id, type: 'market_buy', amount: -total, desc: `Kristal alımı • ${fmtQty(qty)} KRS` }));
+    }
     stmts.push(
-      ...entryStmts(env, { ref, userId: user.id, type: 'market_buy', amount: -total, desc: `Kristal alımı • ${fmtQty(qty)} KRS` }),
       env.DB.prepare(`INSERT INTO crystal_holdings (user_id, qty, cost_basis, updated_at) VALUES (?,?,?,?)
         ON CONFLICT(user_id) DO UPDATE SET qty = qty + excluded.qty, cost_basis = cost_basis + excluded.cost_basis, updated_at = excluded.updated_at`).bind(user.id, qty, total, t),
       notifyStmt(env, user.id, 'market_buy', 'Kristal alındı', `${fmtQty(qty)} kristal ${fmtMinor(total)} FN karşılığında alındı. Ref: ${ref}`),
@@ -191,19 +213,26 @@ export async function trade(env, user, { side, qty: qtyIn, amountMinor, key, exp
     await env.DB.batch(stmts);
   } catch (err) {
     if (isConstraint(err, 'wallet_nonneg')) throw new HttpError(400, 'insufficient_funds', 'Yetersiz bakiye.');
+    if (isConstraint(err, 'card_balance_nonneg')) throw new HttpError(400, 'insufficient_card_funds', 'Seçilen kartta yeterli FN yok. Önce karta para yükleyin.');
     if (isConstraint(err, 'crystal_nonneg')) throw new HttpError(400, 'insufficient_crystal', 'Yeterli kristaliniz yok.');
     if (isConstraint(err, 'trade_idem')) {
       const prior = await getTradeByKey(env, user.id, key);
       if (prior) return { ref: prior.ref, side: prior.side, qty: prior.qty, price_micro: prior.price_micro, total: prior.total, replayed: true };
     }
     if (String(err.message || err).includes('malformed JSON')) {
+      if (paymentCard) {
+        const latest = await env.DB.prepare('SELECT status, balance FROM cards WHERE id = ? AND user_id = ?').bind(paymentCard.id, user.id).first();
+        if (!latest || latest.status !== 'active') throw new HttpError(400, 'card_disabled', 'Borsa alımı sırasında kart devre dışı bırakıldı.');
+        if (latest.balance < total) throw new HttpError(400, 'insufficient_card_funds', 'Seçilen kartta yeterli FN yok. Önce karta para yükleyin.');
+      }
       throw side === 'sell'
         ? new HttpError(400, 'insufficient_crystal', 'Yeterli kristaliniz yok veya hesap askıda.')
         : new HttpError(409, 'account_state_changed', 'Hesap durumu değişti; işlem yapılamadı.');
     }
     throw err;
   }
-  return { ref, side, qty, price_micro: price, total, replayed: false };
+  const cardBalance = paymentCard ? Number((await env.DB.prepare('SELECT balance FROM cards WHERE id = ? AND user_id = ?').bind(paymentCard.id, user.id).first())?.balance || 0) : null;
+  return { ref, side, qty, price_micro: price, total, replayed: false, ...(paymentCard ? { payment_method: 'card', card_id: paymentCard.id, card_balance: cardBalance } : { payment_method: 'wallet' }) };
 }
 
 // Hediye kartı: kullanıcının KRİSTAL bakiyesine doğrudan ekler (FN defterine dokunmaz). `ref` (Mikro-Klima referansı) başına bir kez işlenir.
