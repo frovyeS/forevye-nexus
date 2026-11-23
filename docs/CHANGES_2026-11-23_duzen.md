@@ -17,3 +17,11 @@
 - Yönetici durum ucu (`/api/admin/giftcard`) artık `reason` ve açıklama döner; health yanıtı gövdesiyle doğrulanır.
 - `wrangler.toml`: `GIFTCARD_API_URL` dosyadaki değerden okunur (deploy panel değerini ezer); açıklaması eklendi.
 - Test: `hediye kartı: hata nedeni kodu ...` (toplam 71 test geçiyor).
+
+## Hediye kartı artık KRİSTAL veriyor (FN değil)
+- Mikro-Klima'da FN yok, yalnızca kristal var; kart tutarı kristal adedidir. Önceden `GIFTCARD_MINOR_PER_KRISTAL` ile FN'ye çevrilip cüzdana yazılıyordu.
+- Şimdi doğrudan `crystal_holdings` bakiyesine eklenir (1 kristal = 10.000 birim). FN bakiyesi ve defter değişmez.
+- Yeni: `migrations/0008_crystal_gifts.sql` (kart referansı başına tek kayıt, değiştirilemez; migration uygulanmazsa tablo kendiliğinden kurulur), `creditGiftCrystals` (`src/lib/market.js`).
+- Aynı referans ikinci kez gelirse tekrar yüklenmez (`replayed`); başka kullanıcıya ait referans reddedilir.
+- Arayüz: "Kristal yükle" düğmesi ve "N kristal yüklendi" ekranı. `GIFTCARD_MINOR_PER_KRISTAL` ayarı kaldırıldı.
+- Dağıtım: `npm run db:migrate:remote` ile 0008 uygulanır.

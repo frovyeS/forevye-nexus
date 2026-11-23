@@ -6,10 +6,9 @@
 //   POST {GIFTCARD_API_URL}/api/ext/giftcard/redeem
 //   Başlıklar: x-nx-timestamp (ms), x-nx-signature = HMAC-SHA256(GIFTCARD_API_SECRET, `${timestamp}.${gövde}`)
 //   Gövde: { user_id, code, idempotency_key }
-//   Yanıt 200: { ok: true, amount, unit: 'kristal', reference }   (unit yoksa amount zaten FN minor unit sayılır)
+//   Yanıt 200: { ok: true, amount, unit: 'kristal', reference }   (amount = kristal adedi; kullanıcıya KRİSTAL olarak verilir, FN'ye çevrilmez)
 //   Yanıt 4xx: { ok: false, error: "invalid" | "used" | "expired" | "rate_limited" }
-// Kristal -> FN dönüşümü GIFTCARD_MINOR_PER_KRISTAL ile yapılır (varsayılan 100 = 1 kristal 1 FN).
-// Bakiye yükleme (defter kaydı) bu uygulamada reference ile tekrar-güvenli yapılır.
+// Kristal yüklemesi bu uygulamada reference ile tekrar-güvenli yapılır (bkz. market.js creditGiftCrystals).
 import { hmacHex } from '../lib/crypto.js';
 import { HttpError, now } from '../lib/util.js';
 import { mikroFetch } from '../lib/upstream.js';
@@ -69,10 +68,8 @@ export async function redeemViaExistingModule(env, { userId, code, idempotencyKe
   }
   const data = await res.json().catch(() => null);
   if (res.ok && data && data.ok && Number.isSafeInteger(data.amount) && data.amount > 0 && typeof data.reference === 'string') {
-    const perKristal = Number(env.GIFTCARD_MINOR_PER_KRISTAL) > 0 ? Number(env.GIFTCARD_MINOR_PER_KRISTAL) : 100;
-    const amount = data.unit === 'kristal' ? data.amount * perKristal : data.amount;
-    if (!Number.isSafeInteger(amount) || amount <= 0) throw unavailable('GC-SRV');
-    return { amount, reference: data.reference };
+    // Mikro-Klima'da yalnızca kristal vardır: amount = kristal adedi (FN'ye çevrilmez).
+    return { kristal: data.amount, reference: data.reference };
   }
   const msgs = { invalid: 'Kod geçersiz.', used: 'Bu kod daha önce kullanılmış.', expired: 'Kodun süresi dolmuş.', rate_limited: 'Çok fazla deneme. Biraz sonra tekrar deneyin.' };
   // Yalnızca Mikro-Klima'nın tanıdığı bir ret nedeni geldiyse kod reddedilmiştir; diğer her şey bir bağlantı/yapılandırma sorunudur.

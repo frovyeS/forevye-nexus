@@ -205,3 +205,45 @@ export async function trade(env, user, { side, qty: qtyIn, amountMinor, key, exp
   }
   return { ref, side, qty, price_micro: price, total, replayed: false };
 }
+
+// Hediye kartı: kullanıcının KRİSTAL bakiyesine doğrudan ekler (FN defterine dokunmaz). `ref` (Mikro-Klima referansı) başına bir kez işlenir.
+// Tablo migration (0008_crystal_gifts.sql) uygulanmadıysa ilk çağrıda kendiliğinden kurulur.
+const GIFT_SCHEMA_OK = new WeakSet();
+async function ensureGiftSchema(env) {
+  if (GIFT_SCHEMA_OK.has(env.DB)) return;
+  await env.DB.batch([
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS crystal_gifts (ref TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), qty INTEGER NOT NULL CHECK (qty > 0), created_at INTEGER NOT NULL)'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_crystal_gifts_user ON crystal_gifts(user_id, created_at DESC)'),
+    env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS crystal_gifts_no_update BEFORE UPDATE ON crystal_gifts BEGIN SELECT RAISE(ABORT, 'crystal_gifts are append-only'); END`),
+    env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS crystal_gifts_no_delete BEFORE DELETE ON crystal_gifts BEGIN SELECT RAISE(ABORT, 'crystal_gifts are append-only'); END`),
+  ]);
+  GIFT_SCHEMA_OK.add(env.DB);
+}
+
+export async function creditGiftCrystals(env, { userId, kristal, ref }) {
+  if (!Number.isSafeInteger(kristal) || kristal <= 0 || kristal > 1000000) throw new HttpError(503, 'giftcard_unavailable', 'Hediye kartı hizmeti şu an kullanılamıyor. (Kod: GC-SRV)');
+  const qty = kristal * QTY_SCALE;
+  await ensureGiftSchema(env);
+  const done = async () => {
+    const row = await env.DB.prepare('SELECT user_id, qty FROM crystal_gifts WHERE ref = ?').bind(ref).first();
+    if (!row) return null;
+    if (row.user_id !== userId) throw new HttpError(400, 'giftcard_rejected', 'Bu kod daha önce kullanılmış.');
+    return { replayed: true, qty: row.qty };
+  };
+  const prior = await done();
+  if (prior) return prior;
+  const t = now(env);
+  try {
+    await env.DB.batch([
+      guardActiveStmt(env, userId),
+      env.DB.prepare('INSERT INTO crystal_gifts (ref, user_id, qty, created_at) VALUES (?,?,?,?)').bind(ref, userId, qty, t),
+      env.DB.prepare(`INSERT INTO crystal_holdings (user_id, qty, cost_basis, updated_at) VALUES (?,?,0,?)
+        ON CONFLICT(user_id) DO UPDATE SET qty = qty + excluded.qty, updated_at = excluded.updated_at`).bind(userId, qty, t),
+      notifyStmt(env, userId, 'gift_crystal', 'Hediye kristal yüklendi', `${kristal} kristal hesabına eklendi.`),
+    ]);
+  } catch (err) {
+    if (isConstraint(err, 'crystal_gifts.ref')) { const again = await done(); if (again) return again; }
+    throw err;
+  }
+  return { replayed: false, qty };
+}

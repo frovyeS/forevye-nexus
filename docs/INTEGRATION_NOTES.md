@@ -9,8 +9,7 @@ Kart sistemi Mikro-Klima Worker'ında kalır; `src/integrations/giftcard.js` yal
     gövde: { user_id, code: "NNNNNNNN CVV AA/YY", idempotency_key }
     200: { ok:true, amount:<kristal>, unit:"kristal", reference }   4xx: { ok:false, error:"invalid|used|expired|rate_limited" }
 
-Kristal tutarı `GIFTCARD_MINOR_PER_KRISTAL` (varsayılan 100) ile FN minor unit'e çevrilir ve defter `reference` ile
-tekrar-güvenli yüklenir. Kurulum: `wrangler.toml` içinde `GIFTCARD_API_URL` hazır; `npx wrangler secret put GIFTCARD_API_SECRET`
+Hediye kartı FN değil KRİSTAL verir: `amount` kristal adedidir ve doğrudan kullanıcının kristal bakiyesine (`crystal_holdings`) eklenir (FN defterine yazılmaz). `reference` başına bir kez işlenir (`crystal_gifts`, 0008 migration). Kurulum: `wrangler.toml` içinde `GIFTCARD_API_URL` hazır; `npx wrangler secret put GIFTCARD_API_SECRET`
 değeri Mikro-Klima'daki `NEXUS_SECRET` ile aynı olmalı. İkisi birden tanımlı değilse özellik "bağlı değil" görünür.
 
 ## 2. Oyun içi alışveriş (sunucudan sunucuya)

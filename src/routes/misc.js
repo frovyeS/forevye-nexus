@@ -2,7 +2,7 @@ import { limitsFor, skinsOf } from '../lib/shop.js';
 import { HttpError, json, readJson, now, cfgNum, DAY, MIN, HOUR, isSuspended } from '../lib/util.js';
 import { rateLimit } from '../lib/rate.js';
 import { notify } from '../lib/auth.js';
-import { creditExternal } from '../lib/ledger.js';
+import { creditGiftCrystals, holdingOf, QTY_SCALE } from '../lib/market.js';
 import { giftcardStatus, redeemViaExistingModule } from '../integrations/giftcard.js';
 import { balanceOf } from './wallet.js';
 import { usernameChangeStatus } from './profile.js';
@@ -100,8 +100,9 @@ export const miscRoutes = {
     if (typeof b.code !== 'string' || b.code.trim().length < 4 || b.code.length > 64) throw new HttpError(400, 'invalid_code', 'Kod geçersiz.');
     const idem = typeof b.idempotency_key === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(b.idempotency_key) ? b.idempotency_key : crypto.randomUUID();
     const r = await redeemViaExistingModule(env, { userId: user.id, code: b.code.trim(), idempotencyKey: idem });
-    const credit = await creditExternal(env, { userId: user.id, amount: r.amount, externalRef: `giftcard:${r.reference}`, desc: 'Hediye kartı yüklemesi' });
+    const credit = await creditGiftCrystals(env, { userId: user.id, kristal: r.kristal, ref: `giftcard:${r.reference}` });
     if (!credit.replayed) await grantAchievement(env, user.id, 'first_topup');
-    return json({ ok: true, ref: credit.ref, amount: r.amount, replayed: credit.replayed, balance: await balanceOf(env, user.id) });
+    const h = await holdingOf(env, user.id);
+    return json({ ok: true, kristal: credit.qty / QTY_SCALE, replayed: credit.replayed, crystal_balance: h.qty / QTY_SCALE, balance: await balanceOf(env, user.id) });
   },
 };

@@ -34,7 +34,7 @@ export function opsMenu(screen) {
     link('#/ops/send', '↗', 'Para gönder', 'Başka bir kullanıcıya sanal bakiye gönder'),
     link('#/market', '💎', 'Kristal Borsası', 'Kristal al/sat; fiyat gerçek altını izler'),
     link('#/ops/history', '☰', 'İşlem geçmişi', 'Transfer, borsa, alışveriş, iade'),
-    link('#/ops/gift', '🎁', 'Hediye kartı kullan', 'Kodunu gir, bakiyene yükle'),
+    link('#/ops/gift', '🎁', 'Hediye kartı kullan', 'Kodunu gir, kristal bakiyene yükle'),
     link('#/ops/moves', '⇅', 'Bakiye hareketleri', 'Giriş/çıkışları filtrele'))),
     h('p', { class: 'virtual', text: 'Tüm bakiye ve işlemler sanal oyun ekonomisine aittir; gerçek para değildir.' }));
 }
@@ -172,14 +172,14 @@ export function giftFlow(screen) {
     if (!st.available) return h('div', { class: 'notice warn', text: 'Hediye kartı hizmeti şu an bağlı değil. Lütfen daha sonra tekrar deneyin.' });
     const inp = h('input', { type: 'text', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', placeholder: '12345678 123 05/28', maxlength: '64' });
     const err = h('p', { class: 'err-text', role: 'alert' });
-    const btn = h('button', { class: 'btn primary block', type: 'submit', text: 'Bakiyeye yükle' });
+    const btn = h('button', { class: 'btn primary block', type: 'submit', text: 'Kristal yükle' });
     const key = crypto.randomUUID();
     return h('form', { onSubmit: (e) => { e.preventDefault(); busy(btn, async () => {
       err.textContent = '';
       try {
         const r = await api.post('/api/giftcard/redeem', { code: inp.value, idempotency_key: key });
         await refreshMe().catch(() => {});
-        mount(holder, h('div', { class: 'success' }, h('div', { class: 'big', text: '✓' }), h('h2', { text: `${money(r.amount, cur())} yüklendi` }), h('p', { class: 'muted small', text: `Referans: ${r.ref}` })), h('a', { class: 'btn primary block', href: '#/home', text: 'Ana sayfa' }));
+        mount(holder, h('div', { class: 'success' }, h('div', { class: 'big', text: '✓' }), h('h2', { text: `${r.kristal} kristal yüklendi` }), h('p', { class: 'muted small', text: `Kristal bakiyen: ${r.crystal_balance}` })), h('a', { class: 'btn primary block', href: '#/home', text: 'Ana sayfa' }));
       } catch (ex) { err.textContent = ex.message; }
     }); } }, field('Kart no, CVV ve son kullanma (AA/YY)', inp), err, btn);
   });

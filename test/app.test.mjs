@@ -366,10 +366,12 @@ test('hediye kartı: modül bağlı değilken güvenli hata; bağlıyken yalnız
     assert.equal((await a.cl.post('/api/giftcard/redeem', { code: 'BAD-CODE' })).data.error.code, 'giftcard_rejected');
     const r1 = await a.cl.post('/api/giftcard/redeem', { code: 'GOOD-CODE' });
     assert.equal(r1.status, 200);
-    assert.equal(r1.data.balance, 2500);
+    assert.equal(r1.data.kristal, 2500);
+    assert.equal(r1.data.balance, 0, 'FN bakiyesi değişmez; hediye kartı kristal verir');
+    assert.equal(r1.data.crystal_balance, 2500);
     const r2 = await a.cl.post('/api/giftcard/redeem', { code: 'GOOD-CODE' });
     assert.equal(r2.data.replayed, true);
-    assert.equal(r2.data.balance, 2500, 'aynı kaynak referansı iki kez yüklenmez');
+    assert.equal(r2.data.crystal_balance, 2500, 'aynı kaynak referansı iki kez yüklenmez');
   } finally { globalThis.fetch = realFetch; }
   assert.ok(calls >= 3);
   await assertLedgerConsistent(env);
@@ -400,7 +402,7 @@ test('hediye kartı: hata nedeni kodu (adres/anahtar/ağ/imza) ayırt edilir', a
   } finally { globalThis.fetch = realFetch; }
 });
 
-test('hediye kartı: kristal tutarı FN minor unit\'e çevrilir', async () => {
+test('hediye kartı: kristal adedi doğrudan kristal bakiyesine yazılır', async () => {
   const env = makeEnv();
   env.GIFTCARD_API_URL = 'https://gift.internal.test/';
   env.GIFTCARD_API_SECRET = 'shh';
@@ -410,8 +412,10 @@ test('hediye kartı: kristal tutarı FN minor unit\'e çevrilir', async () => {
   try {
     const r = await a.cl.post('/api/giftcard/redeem', { code: '12345678 123 05/28' });
     assert.equal(r.status, 200);
-    assert.equal(r.data.amount, 700);
-    assert.equal(r.data.balance, 700);
+    assert.equal(r.data.kristal, 7);
+    assert.equal(r.data.balance, 0);
+    const h = await one(env, 'SELECT qty FROM crystal_holdings WHERE user_id = ?', a.me.user.id);
+    assert.equal(h.qty, 70000, '7 kristal = 70.000 birim');
   } finally { globalThis.fetch = realFetch; }
   await assertLedgerConsistent(env);
 });

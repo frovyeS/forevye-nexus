@@ -1,0 +1,7 @@
+Bu dosyaları projeden SİL (eski/yanlış yerdeki kopyalar):
+  giftcard.js                (kökteki; yenisi src/integrations/giftcard.js)
+  mail.js                    (kökteki; yenisi src/lib/mail.js)
+  upstream.js                (kökteki; yenisi src/lib/upstream.js)
+  "docs /" klasörü           (sonunda boşluklu; içeriği docs/ altına alındı)
+  migrations/0006_pass.sql   (eski Pass şeması)
+  src/lib/pass.js            (eski Pass yardımcısı)
