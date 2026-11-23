@@ -6,12 +6,8 @@ compatibility_date = "2026-11-01"
 # Dosyada olmayan panel değişkenleri korunur. Sırlar (secret) zaten deploy'dan etkilenmez.
 keep_vars = true
 
-# Mikro-Klima Worker'ına SERVİS BAĞLANTISI (hediye kartı + ortak posta). Aynı hesapta iki Worker birbirini
-# workers.dev adresiyle çağırınca istekler koparak "yanıt vermiyor" olur; servis bağlantısı bunu çözer.
-# service = Mikro-Klima Worker'ının adı (Cloudflare > Workers listesindeki ad; adresi mikroklimakontrolmerkezi.forevye.workers.dev ise ad budur).
-[[services]]
-binding = "MIKRO"
-service = "mikroklimakontrolmerkezi"
+# Mikro-Klima Worker'ı (hediye kartı + ortak posta) BAŞKA bir Cloudflare hesabında olduğu için servis bağlantısı
+# ([[services]]) kullanılmaz; Nexus ona aşağıdaki [vars] adresleri üzerinden normal HTTP isteği atar.
 
 # Statik arayüz public/ klasöründen sunulur; yalnızca /api/* istekleri Worker'dan geçer.
 # Statik dosyaların güvenlik başlıkları public/_headers dosyasındadır.
@@ -54,7 +50,7 @@ MARKET_STALE_SEC = "900"          # fiyat 15 dk güncellenmezse işlem durur
 # Gizli değer: npx wrangler secret put GIFTCARD_API_SECRET   (Mikro-Klima'daki NEXUS_SECRET ile AYNI olmalı)
 GIFTCARD_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
 GIFTCARD_MINOR_PER_KRISTAL = "100"   # 1 kristal = 100 minor = 1 FN
-# E-posta: Mikro-Klima'daki ortak posta servisi (Brevo). Gönderen adresi orada ayarlıdır; EMAIL_FROM gerekmez.
+# E-posta: Mikro-Klima'daki ortak posta servisi (Brevo); adresi Mikro-Klima Worker'ının herkese açık URL'sidir. Gönderen adresi orada ayarlıdır; EMAIL_FROM gerekmez.
 EMAIL_PROVIDER = "relay"
 MAIL_RELAY_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
 # Aşağıdakileri panelde elle girdiysen bırak (keep_vars korur); dosyada tutmak istersen açıp kendi adreslerini yaz:

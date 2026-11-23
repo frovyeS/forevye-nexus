@@ -6,6 +6,6 @@
 - Nexus → Mikro-Klima çağrıları workers.dev adresiyle yapılıyordu; aynı hesaptaki Worker'lar arası bu çağrı koparak asılı kalıyordu (zaman aşımı da yoktu).
 
 ## Değişenler
-- `wrangler.toml`: `keep_vars = true`, `[[services]] MIKRO`, `EMAIL_PROVIDER="relay"`, `MAIL_RELAY_URL`.
+- `wrangler.toml`: `keep_vars = true`, `EMAIL_PROVIDER="relay"`, `MAIL_RELAY_URL`.
 - `src/lib/upstream.js` (yeni): servis bağlantısı varsa onunla, yoksa fetch + zaman aşımı.
 - `src/lib/mail.js`, `src/integrations/giftcard.js`: bu yardımcıyı kullanır, hata nedenlerini loglar.
