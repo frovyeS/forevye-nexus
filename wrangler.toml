@@ -37,6 +37,8 @@ MAX_TRANSFER_MINOR = "500000"
 DAILY_TRANSFER_LIMIT_MINOR = "1500000"
 REAUTH_THRESHOLD_MINOR = "100000"
 MAX_CARDS = "5"
+EDITOR_URL = "https://mhaforevye.github.io/forevye_nexus_bank/"
+EDITOR_ORIGINS = "https://mhaforevye.github.io"
 SESSION_TTL_DAYS = "14"
 OLD_NAME_RESERVE_DAYS = "30"
 # Kristal borsası (kristal = oyunun "altın"ı; fiyatı gerçek altını izler, baz altın fiyatı = 1 FN)

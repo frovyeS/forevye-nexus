@@ -102,8 +102,8 @@ test('editör: başkasının kartı için bilet alınamaz; jeton yalnızca edit�
   const t2 = ticketOf((await u.cl.post('/api/editor/ticket', { card_id: card.id })).data.url);
   env.__NOW += 6 * 60 * 1000;
   assert.equal((await asEditor(env, 'POST', '/api/editor/exchange', { body: { ticket: t2 } })).status, 400, 'bilet süresi doldu');
-  // jeton 2 saat kayar; kullanılmazsa düşer
-  env.__NOW += 121 * 60 * 1000;
+  // jeton 30 dk kayar; kullanılmazsa düşer
+  env.__NOW += 31 * 60 * 1000;
   assert.equal((await asEditor(env, 'GET', '/api/editor/card', { token: ex.data.token })).data.error.code, 'editor_token');
   // veritabanında yalnızca özet saklanır
   assert.ok(!(await sql(env, 'SELECT token_hash FROM editor_tokens')).some((r) => r.token_hash === ex.data.token));
