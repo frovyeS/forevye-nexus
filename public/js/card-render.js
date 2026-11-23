@@ -81,7 +81,15 @@
       var vb = ICON_VB;
       return '<g transform="scale(' + (100 / vb[2]) + ' ' + (100 / vb[3]) + ') translate(' + (-vb[0]) + ' ' + (-vb[1]) + ')">' +
         ICON.map(function (d) { return '<path d="' + d + '" ' + a + '/>'; }).join('') + '</g>';
-    }
+    },
+    rect: function (a) { return '<rect x="1" y="1" width="98" height="98" ' + a + '/>'; },
+    diamond: function (a) { return '<path d="M50 2L98 50L50 98L2 50Z" ' + a + '/>'; },
+    dots: function (a) { var o=''; for(var y=12;y<=88;y+=25) for(var x=12;x<=88;x+=25) o+='<circle cx="'+x+'" cy="'+y+'" r="3" '+a+'/>'; return o; },
+    rings: function (a) { var o=''; for(var y=18;y<=82;y+=32) for(var x=18;x<=82;x+=32) o+='<circle cx="'+x+'" cy="'+y+'" r="10" '+a+'/>'; return o; },
+    rays: function (a) { var o=''; for(var i=0;i<12;i++){var q=i*Math.PI/6,x1=50+18*Math.cos(q),y1=50+18*Math.sin(q),x2=50+47*Math.cos(q),y2=50+47*Math.sin(q);o+='<path d="M'+x1.toFixed(1)+' '+y1.toFixed(1)+'L'+x2.toFixed(1)+' '+y2.toFixed(1)+'" '+a+'/>'; } return o; },
+    hexgrid: function (a) { var o=''; for(var y=8;y<100;y+=28) for(var x=8+(Math.round(y/28)%2)*16;x<100;x+=32) o+='<path d="M'+(x-8)+' '+y+'l8 -5l8 5v10l-8 5l-8 -5Z" '+a+'/>'; return o; },
+    glow: function (a) { return '<ellipse cx="50" cy="50" rx="48" ry="34" '+a+'/>'; },
+    beam: function (a) { return '<path d="M0 20L100 0L100 80L0 100Z" '+a+'/>'; }
   };
 
   function shapeInner(kind, p) {
@@ -100,7 +108,9 @@
     if (kind === 'nexus') { stroke = 'none'; sw = 0; }
     var a = 'fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (sw || 0) + '"' + extra +
       ' stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"';
-    return SHAPES[kind](a);
+    var draw = SHAPES[kind];
+    if (typeof draw !== 'function') return '<g opacity="0" aria-label="Desteklenmeyen şekil"></g>';
+    return draw(a);
   }
 
   function chipMarkup(style, x, y, w, h, P) {
@@ -153,31 +163,30 @@
   }
 
 
-  function qrMarkup(cardToken, P) {
+  function qrMarkup(cardToken, P, x, y, size) {
     if (!cardToken || !root.FNXQRCode) return '';
     try {
       var qr = new root.FNXQRCode(0, (root.FNXQRErrorCorrectLevel || {}).M || 0);
-      qr.addData('FNX1|' + String(cardToken));
-      qr.make();
-      var n = qr.getModuleCount(), size = 104, quiet = 3, unit = size / (n + quiet * 2), x = 718, y = 354;
+      qr.addData('FNX1|' + String(cardToken)); qr.make();
+      var n = qr.getModuleCount(), quiet = 3, unit = size / (n + quiet * 2);
       var out = '<g data-sys="card-qr" aria-label="Kart QR kodu"><rect x="' + x + '" y="' + y + '" width="' + size + '" height="' + size + '" rx="5" fill="#fff"/>';
-      for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) {
-        if (qr.isDark(r, c)) out += '<rect x="' + (x + (c + quiet) * unit).toFixed(2) + '" y="' + (y + (r + quiet) * unit).toFixed(2) + '" width="' + (unit + 0.08).toFixed(2) + '" height="' + (unit + 0.08).toFixed(2) + '" fill="#101116"/>';
-      }
+      for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) if (qr.isDark(r, c))
+        out += '<rect x="' + (x + (c + quiet) * unit).toFixed(2) + '" y="' + (y + (r + quiet) * unit).toFixed(2) + '" width="' + (unit + 0.08).toFixed(2) + '" height="' + (unit + 0.08).toFixed(2) + '" fill="#101116"/>';
       return out + '</g>';
-    } catch (e) { return ''; }
+    } catch (_) { return ''; }
   }
 
   function renderCard(d, sys, o) {
     o = o || {};
+    var cv = R.canvasOf(d && d.orientation); W = cv.width; H = cv.height;
+    sys = sys || {}; var se = sys.layout || d.sys || R.sysDefaults(d.orientation);
+    function pos(k) { var v = se[k] || R.sysDefaults(d.orientation)[k], m = R.SYS[k]; return { x:v.x, y:v.y, s:v.scale || 1, w:m.w*(v.scale||1), h:m.h*(v.scale||1) }; }
     var P = o.prefix || 'c', t = tone(d), bg = bgLayer(d), bp = bg.properties;
     // Market kart yüzeyi (skin): takılıysa kullanıcının katmanları/yüzeyi yerine skin çizilir; yazı rengi skin'e kilitlenir.
     var sk = sys && sys.skin && root.FNXSkins ? root.FNXSkins.get(sys.skin) : null;
     var sp = sk ? sk.build(P, { animate: o.animate !== false, serial: sys.skinSerial ? String(sys.skinSerial).replace(/[^0-9\/]/g, '') : '' }) : null;
     if (sp) { t.brand = sk.brand; t.name = sk.brand; t.plate = false; t.nameFallback = false; }
-    var zonePath = 'M0 0H' + W + 'V' + H + 'H0Z' + R.ZONES.filter(function (z) { return !z.noclip; }).map(function (z) {
-      return 'M' + z.x + ' ' + z.y + 'h' + z.w + 'v' + z.h + 'h' + (-z.w) + 'Z';
-    }).join('');
+    var zonePath = 'M0 0H' + W + 'V' + H + 'H0Z';
     var chips = Object.keys(CHIP_STOPS).map(function (k) {
       var s = CHIP_STOPS[k];
       return '<linearGradient id="' + P + 'chip_' + k + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="' + s[0] + '"/><stop offset=".5" stop-color="' + s[1] + '"/><stop offset="1" stop-color="' + s[2] + '"/></linearGradient>';
@@ -203,41 +212,44 @@
     if (fin) body += '<g pointer-events="none">' + fin + '</g>';
 
     // Sistem katmanları (Grup D): banka adı/logosu, çip, sistem bilgileri.
-    var ix = 52, iy = 46, ih = 66, iw = ih * ICON_VB[2] / ICON_VB[3];
-    var wh = 50, ww = wh * WORDMARK.ratio, wx = ix + iw + 24, wy = iy + (ih - wh) / 2;
+    var bp0 = pos('brand'), cp0 = pos('chip'), code0 = pos('code'), num0 = pos('number'), name0 = pos('name'), qr0 = pos('qr');
+    var ix = bp0.x, iy = bp0.y, brandH = 54 * bp0.s, brandW = 300 * bp0.s, iw = brandH * ICON_VB[2] / ICON_VB[3], ih = brandH;
+    var wh = 42 * bp0.s, ww = wh * WORDMARK.ratio, wx = ix + iw + 14 * bp0.s, wy = iy + (ih - wh) / 2;
     var brand = '<g data-sys="brand">' +
       '<svg x="' + ix + '" y="' + iy + '" width="' + iw + '" height="' + ih + '" viewBox="' + ICON_VB.join(' ') + '" fill="' + t.brand + '">' +
       ICON.map(function (dd) { return '<path d="' + dd + '"/>'; }).join('') + '</svg>' +
-      '<mask id="' + P + 'wm" maskUnits="userSpaceOnUse" x="' + wx + '" y="' + wy + '" width="' + ww + '" height="' + wh + '">' +
-      '<image href="' + WORDMARK.src + '" x="' + wx + '" y="' + wy + '" width="' + ww + '" height="' + wh + '"/></mask>' +
+      '<mask id="' + P + 'wm" maskUnits="userSpaceOnUse" x="' + wx + '" y="' + wy + '" width="' + ww + '" height="' + wh + '"><image href="' + WORDMARK.src + '" x="' + wx + '" y="' + wy + '" width="' + ww + '" height="' + wh + '"/></mask>' +
       '<rect x="' + wx + '" y="' + wy + '" width="' + ww + '" height="' + wh + '" fill="' + t.brand + '" mask="url(#' + P + 'wm)"/></g>';
-    // Nexus'ta kart kimliği NXC-XXXX-XXXX biçimindedir (harf içerir): sys.last4 verilirse olduğu gibi gösterilir, yoksa kart numarasının son 4 hanesi.
-    var last4 = sys && sys.last4 ? String(sys.last4).replace(/[^A-Za-z0-9•]/g, '').slice(-4) : String((sys && sys.cardNumber) || '0000').replace(/\D/g, '').slice(-4);
     var cardToken = sys && sys.cardToken ? String(sys.cardToken) : '';
-    var info = '<g data-sys="info"><path d="M748 62H800" stroke="' + t.brand + '" stroke-width="3.5" stroke-linecap="round" opacity=".9"/>' +
-      (cardToken ? '<text x="205" y="405" font-family="' + FONT + '" font-size="13" letter-spacing="2" fill="' + t.brand + '" opacity=".7">NEXUS KART KODU</text><text x="205" y="438" font-family="' + FONT + '" font-size="23" letter-spacing="1.5" font-weight="600" fill="' + t.brand + '">' + esc(cardToken) + '</text>' : '') +
-      '<text x="830" y="498" text-anchor="end" font-family="' + FONT + '" font-size="22" letter-spacing="3" fill="' + t.brand + '" opacity=".85">•••• ' + esc(last4) + '</text></g>';
+    var last4 = sys && sys.last4 ? String(sys.last4).replace(/[^A-Za-z0-9•]/g, '').slice(-4) : String((sys && sys.cardNumber) || '0000').replace(/\D/g, '').slice(-4);
+    var codeText = cardToken || (sys && sys.cardCode) || '';
+    var maskedNumber = sys && sys.cardNumber ? String(sys.cardNumber).replace(/\s/g,'').replace(/(\d{4})(?=\d)/g,'$1 ').trim() : '•••• •••• •••• ' + last4;
+    var fontBase = Math.max(13, Math.min(22 * num0.s, num0.w / (0.62 * Math.max(1, Array.from(maskedNumber).length)))), codeFont = Math.max(12, 19 * code0.s);
+    var info = '<g data-sys="info">' +
+      (codeText ? '<text x="' + code0.x + '" y="' + (code0.y + 16 * code0.s) + '" font-family="' + FONT + '" font-size="' + (12*code0.s) + '" letter-spacing="1.8" fill="' + t.brand + '" opacity=".78">NEXUS KART KODU</text><text x="' + code0.x + '" y="' + (code0.y + 40 * code0.s) + '" font-family="' + FONT + '" font-size="' + codeFont + '" letter-spacing="1.2" font-weight="600" fill="' + t.brand + '">' + esc(codeText) + '</text>' : '') +
+      '<text x="' + num0.x + '" y="' + (num0.y + 25 * num0.s) + '" font-family="' + FONT + '" font-size="' + fontBase + '" letter-spacing="1.5" font-weight="600" fill="' + t.brand + '">' + esc(maskedNumber) + '</text>' +
+      '<text x="' + (W - 28) + '" y="' + (H - 24) + '" text-anchor="end" font-family="' + FONT + '" font-size="16" letter-spacing="2" fill="' + t.brand + '" opacity=".75">•••• ' + esc(last4) + '</text></g>';
+
     // Hiçbir renk logoya yeterli kontrast veremiyorsa (ör. çok renkli/orta tonlu zemin) sistem, markanın arkasına kendi yarı saydam zeminini koyar.
     if (t.plate) {
-      var bz = R.ZONES.filter(function (z) { return z.id === 'brand'; })[0];
-      body += '<rect data-sys="brand-plate" x="' + bz.x + '" y="' + (bz.y + 6) + '" width="' + (bz.w - 20) + '" height="' + (bz.h - 12) + '" rx="22" fill="' + (t.dark ? 'rgba(0,0,0,.5)' : 'rgba(255,255,255,.6)') + '"/>';
+      body += '<rect data-sys="brand-plate" x="' + bp0.x + '" y="' + (bp0.y - 4) + '" width="' + (brandW + 8) + '" height="' + (brandH + 8) + '" rx="18" fill="' + (t.dark ? 'rgba(0,0,0,.5)' : 'rgba(255,255,255,.6)') + '"/>';
     }
-    body += brand + chipMarkup((sp && sk.chip) || d.chipStyle || 'gold', 52, 176, 112, 88, P) + info + qrMarkup(cardToken, P);
+    body += brand + chipMarkup((sp && sk.chip) || d.chipStyle || 'gold', cp0.x, cp0.y, 100 * cp0.s, 78 * cp0.s, P) + info + qrMarkup(cardToken, P, qr0.x, qr0.y, R.sysDims('qr', d.qrStyle).w * qr0.s);
 
-    // Kullanıcı adı (Grup E): yerleşimi sabit, boyutu otomatik sığdırılır.
+    // Kart sahibi adı: editördeki sistem kutusu koordinatlarını kullanır.
     var nm = String(d.userDisplayName || '').toLocaleUpperCase('tr-TR');
     var len = Math.max(1, Array.from(nm).length);
-    var size = Math.min(30, R.NAME_AREA.w / (0.95 * len));
-    body += '<text data-id="name" x="52" y="488" font-family="' + FONT + '" font-weight="500" font-size="' + size.toFixed(1) +
-      '" letter-spacing="' + (size * 0.16).toFixed(1) + '" fill="' + t.name + '">' + esc(nm) + '</text>';
+    var nameSize = Math.min(28 * name0.s, name0.w / (0.95 * len));
+    body += '<text data-id="name" x="' + name0.x + '" y="' + (name0.y + 27 * name0.s) + '" font-family="' + FONT + '" font-weight="600" font-size="' + nameSize.toFixed(1) +
+      '" letter-spacing="' + (nameSize * 0.12).toFixed(1) + '" fill="' + t.name + '">' + esc(nm) + '</text>';
 
     var edge = '<rect x="1" y="1" width="' + (W - 2) + '" height="' + (H - 2) + '" rx="35" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="2" pointer-events="none"/>';
     return defs + '<g clip-path="url(#' + P + 'cc)">' + body + '</g>' + (sp ? sp.edge : edge);
   }
 
   function cardSvg(d, sys, o) {
-    return '<svg class="card-svg" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Forevye Nexus sanal kartı">' +
-      renderCard(d, sys, o) + '</svg>';
+    var cv = R.canvasOf(d && d.orientation); W = cv.width; H = cv.height;
+    return '<svg class="card-svg" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Forevye Nexus sanal kartı">' + renderCard(d, sys, o) + '</svg>';
   }
   function iconSvg(cls) {
     return '<svg class="' + (cls || '') + '" viewBox="' + ICON_VB.join(' ') + '" fill="currentColor" aria-hidden="true">' +
