@@ -221,11 +221,11 @@ test('kartlar: oluşturma, korunan alanlar, sahiplik, limit, geri dönüş', asy
   for (const f of [{ card_token: 'NXC-HACK-HACK' }, { status: 'disabled' }, { user_id: 'x' }, { is_default: true }]) {
     assert.equal((await a.cl.patch(`/api/cards/${main.id}`, f)).data.error.code, 'protected_field');
   }
-  // Korunan bölge (çip) üzerine süs bindirilemez
+  // Geçersiz şablon / zemin rengi reddedilir
   const d = defaultDesign();
-  d.decor = [{ id: 'star', x: 30, y: 85, size: 20 }];
+  d.template = 'evil';
   assert.equal((await a.cl.patch(`/api/cards/${main.id}`, { design: d })).data.error.code, 'invalid_design');
-  d.decor = [{ id: 'star', x: 280, y: 100, size: 20 }];
+  d.template = 'classic';
   const ok = await a.cl.patch(`/api/cards/${main.id}`, { design: d, display_name: 'Ada L.' });
   assert.equal(ok.status, 200);
   assert.equal(ok.data.version, 2);
@@ -256,9 +256,15 @@ test('kartlar: oluşturma, korunan alanlar, sahiplik, limit, geri dönüş', asy
 });
 
 test('kart sözleşmesi: bilinmeyen alan ve geçersiz renk reddedilir', () => {
-  assert.equal(validateDesign({ ...defaultDesign(), extra: 1 }).ok, false);
-  assert.equal(validateDesign({ ...defaultDesign(), accent: 'red' }).ok, false);
-  assert.equal(validateDesign({ ...defaultDesign(), pattern: 'evil' }).ok, false);
+  // Bilinmeyen alan reddedilmez ama izin listesiyle yeniden kurulduğu için çıktıya geçmez
+  const x = validateDesign({ ...defaultDesign(), extra: 1 });
+  assert.equal(x.ok, true);
+  assert.equal('extra' in x.design, false);
+  const bad = defaultDesign();
+  bad.layers[0].properties.colors = ['red', 'blue'];
+  assert.equal(validateDesign(bad).ok, false);
+  assert.equal(validateDesign({ ...defaultDesign(), template: 'evil' }).ok, false);
+  assert.equal(validateDesign({ ...defaultDesign(), chipStyle: 'evil' }).ok, false);
   assert.equal(validateDesign(defaultDesign()).ok, true);
 });
 
