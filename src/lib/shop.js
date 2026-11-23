@@ -81,13 +81,21 @@ export const SCHEMA = [
 export const SEED = [
   { id: 'card_black', kind: 'function', rarity: 'mythic', name: 'Nexus Black', tagline: 'Her şeyin en üstü. Yalnızca 50 adet.', descr: 'Altın çift çerçeveli, hareketli ışık süpürmeli siyah kart. Limitlerin 3 katı, borsada %90 daha dar fark ve 2 ek kart hakkı.', price: 4000000, stock_total: 50, max_qty: 1, sort: 1, is_new: 1, data: { skin: 'royal', perks: { limit_mult: 3, transfer_mult: 3, spread_discount_pct: 90, extra_cards: 2 } } },
   { id: 'skin_guilloche', kind: 'design', rarity: 'legendary', name: 'Altın Gilyoş', tagline: 'Banknot işçiliğinde altın rozet.', descr: 'Siyah zemin üzerinde matematiksel gilyoş rozet ve altın folyo parıltısı. Numaralı, 100 adetle sınırlı seri.', price: 950000, stock_total: 100, max_qty: 1, sort: 2, is_new: 1, data: { skin: 'guilloche' } },
-  { id: 'card_platinum', kind: 'function', rarity: 'legendary', name: 'Platin Borsa Kartı', tagline: 'Kristal borsasında daha dar fark.', descr: 'İnce kazınmış platin yüzey. Kristal alış/satışında fark %60 azalır ve +1 kart hakkı verir.', price: 1200000, max_qty: 1, sort: 3, is_new: 0, data: { skin: 'platinum', perks: { spread_discount_pct: 60, extra_cards: 1 } } },
+  { id: 'card_platinum', kind: 'function', rarity: 'legendary', name: 'Platin Borsa Kartı', tagline: 'Kristal borsasında daha dar fark.', descr: 'İnce kazınmış platin yüzey. Kristal alış/satışında fark %60 azalır ve +1 kart hakkı verir.', price: 1200000, stock_total: 80, max_qty: 1, sort: 3, is_new: 0, data: { skin: 'platinum', perks: { spread_discount_pct: 60, extra_cards: 1 } } },
   { id: 'skin_prism', kind: 'design', rarity: 'legendary', name: 'Prizma Cam', tagline: 'Işığı bölen, hareketli cam yüzey.', descr: 'Renkli yüzeylere bölünmüş buzlu cam ve yavaşça süpüren ışık. Numaralı, 150 adetle sınırlı seri.', price: 800000, stock_total: 150, max_qty: 1, sort: 4, is_new: 0, data: { skin: 'prism' } },
-  { id: 'card_titan', kind: 'function', rarity: 'epic', name: 'Titanyum Limit Kartı', tagline: 'Günlük ve işlem limitin 2 katı.', descr: 'Fırçalanmış titanyum yüzey. İşlem başına ve günlük transfer limitleri 2 katına çıkar.', price: 750000, max_qty: 1, sort: 5, is_new: 0, data: { skin: 'titan', perks: { limit_mult: 2, transfer_mult: 2 } } },
-  { id: 'skin_nebula', kind: 'design', rarity: 'epic', name: 'Nebula', tagline: 'Yıldız tozu ve mor bulutlar.', descr: 'Derin uzay zemini üzerinde prosedürel bulutlar ve yıldız alanı.', price: 480000, max_qty: 1, sort: 6, is_new: 0, data: { skin: 'nebula' } },
-  { id: 'skin_aurora', kind: 'design', rarity: 'epic', name: 'Aurora', tagline: 'Kuzey ışıkları akışı.', descr: 'Zümrüt, mavi ve mor ışık akıntıları; renk geçişli ışıltılı kenar.', price: 450000, max_qty: 1, sort: 7, is_new: 0, data: { skin: 'aurora' } },
-  { id: 'skin_carbon', kind: 'design', rarity: 'rare', name: 'Karbon Fiber', tagline: 'Spor otomobil dokusu.', descr: 'Gerçek karbon örgü deseni ve kırmızı hız şeridi.', price: 240000, max_qty: 1, sort: 8, is_new: 0, data: { skin: 'carbon' } },
-  { id: 'skin_onyx', kind: 'design', rarity: 'rare', name: 'Oniks Mat', tagline: 'Sade, mat, altın ince çizgili.', descr: 'Mat siyah zemin, ince gilyoş dokusu ve şampanya altını çerçeve.', price: 180000, max_qty: 1, sort: 9, is_new: 0, data: { skin: 'onyx' } },
+  { id: 'card_titan', kind: 'function', rarity: 'epic', name: 'Titanyum Limit Kartı', tagline: 'Günlük ve işlem limitin 2 katı.', descr: 'Fırçalanmış titanyum yüzey. İşlem başına ve günlük transfer limitleri 2 katına çıkar.', price: 750000, stock_total: 120, max_qty: 1, sort: 5, is_new: 0, data: { skin: 'titan', perks: { limit_mult: 2, transfer_mult: 2 } } },
+  { id: 'skin_nebula', kind: 'design', rarity: 'epic', name: 'Nebula', tagline: 'Yıldız tozu ve mor bulutlar.', descr: 'Derin uzay zemini üzerinde prosedürel bulutlar ve yıldız alanı.', price: 480000, stock_total: 160, max_qty: 1, sort: 6, is_new: 0, data: { skin: 'nebula' } },
+  { id: 'skin_aurora', kind: 'design', rarity: 'epic', name: 'Aurora', tagline: 'Kuzey ışıkları akışı.', descr: 'Zümrüt, mavi ve mor ışık akıntıları; renk geçişli ışıltılı kenar.', price: 450000, stock_total: 180, max_qty: 1, sort: 7, is_new: 0, data: { skin: 'aurora' } },
+  { id: 'skin_carbon', kind: 'design', rarity: 'rare', name: 'Karbon Fiber', tagline: 'Spor otomobil dokusu.', descr: 'Gerçek karbon örgü deseni ve kırmızı hız şeridi.', price: 240000, stock_total: 220, max_qty: 1, sort: 8, is_new: 0, data: { skin: 'carbon' } },
+  { id: 'skin_onyx', kind: 'design', rarity: 'rare', name: 'Oniks Mat', tagline: 'Sade, mat, altın ince çizgili.', descr: 'Mat siyah zemin, ince gilyoş dokusu ve şampanya altını çerçeve.', price: 180000, stock_total: 250, max_qty: 1, sort: 9, is_new: 0, data: { skin: 'onyx' } },
+  { id: 'skin_singularity', kind: 'design', rarity: 'mythic', name: 'Singularity', tagline: 'Tekillik serisi · 33 adet.', descr: 'Prosedürel yıldız alanı, mor enerji halkaları ve karanlık tekillik. Sadece 33 kart.', price: 1800000, stock_total: 33, max_qty: 1, sort: 10, is_new: 1, data: { skin: 'singularity' } },
+  { id: 'skin_lunar', kind: 'design', rarity: 'legendary', name: 'Lunar Pearl', tagline: 'Sedefli ay yüzeyi · 64 adet.', descr: 'Ay kraterlerinden esinlenen mikro gravür, sedefli seramik ve yörünge çizgileri.', price: 1250000, stock_total: 64, max_qty: 1, sort: 11, is_new: 1, data: { skin: 'lunar' } },
+  { id: 'skin_aether', kind: 'design', rarity: 'legendary', name: 'Aether Glass', tagline: 'Kristal cam koleksiyonu · 48 adet.', descr: 'Katmanlı turkuaz cam, ışık kırılımları ve elde üretilmiş hissi veren geometrik fasetler.', price: 1400000, stock_total: 48, max_qty: 1, sort: 12, is_new: 1, data: { skin: 'aether' } },
+  { id: 'skin_phoenix', kind: 'design', rarity: 'mythic', name: 'Phoenix Ember', tagline: 'Anka serisi · 21 adet.', descr: 'Alev tüyleri, ergimiş bakır damarlar ve sıcak metalik parıltı. Çok sınırlı edisyon.', price: 2200000, stock_total: 21, max_qty: 1, sort: 13, is_new: 1, data: { skin: 'phoenix' } },
+  { id: 'skin_deepsea', kind: 'design', rarity: 'epic', name: 'Abyssal Bio', tagline: 'Derin deniz · 88 adet.', descr: 'Biyolüminesans organizmalar, derin okyanus katmanları ve organik ışık dokusu.', price: 980000, stock_total: 88, max_qty: 1, sort: 14, is_new: 1, data: { skin: 'deepsea' } },
+  { id: 'skin_chronos', kind: 'design', rarity: 'legendary', name: 'Chronos Engraved', tagline: 'Mekanik gravür · 42 adet.', descr: 'Mikro kadran, 120 hassas saat çizgisi ve pirinç/altın gravür dokusu.', price: 1600000, stock_total: 42, max_qty: 1, sort: 15, is_new: 1, data: { skin: 'chronos' } },
+  { id: 'skin_eclipse', kind: 'design', rarity: 'mythic', name: 'Solar Eclipse', tagline: 'Tutulma edisyonu · 29 adet.', descr: 'Altın korona, tutulma halkası ve gece göğünde yayılan sıcak ışık.', price: 2000000, stock_total: 29, max_qty: 1, sort: 16, is_new: 1, data: { skin: 'eclipse' } },
+  { id: 'skin_celestial', kind: 'design', rarity: 'legendary', name: 'Celestial Atlas', tagline: 'Takımyıldız atlası · 56 adet.', descr: 'Safir gece yüzeyinde takımyıldız haritası, yıldız bağlantıları ve altın yörüngeler.', price: 1500000, stock_total: 56, max_qty: 1, sort: 17, is_new: 1, data: { skin: 'celestial' } },
   { id: 'slot_extra', kind: 'function', rarity: 'common', name: 'Ek Kart Hakkı', tagline: 'Hesabına +1 sanal kart yeri.', descr: 'Her alışta kart sınırın bir artar (en fazla 5 kez alınabilir).', price: 120000, max_qty: 5, sort: 10, is_new: 0, data: { perks: { extra_cards: 1 } } },
 ];
 
@@ -175,6 +183,22 @@ export async function skinsOf(env, userId) {
     out[r.card_id] = { product_id: r.product_id, skin, name: r.name, serial: r.stock_total && r.serial ? `${String(r.serial).padStart(3, '0')}/${String(r.stock_total).padStart(3, '0')}` : '' };
   }
   return out;
+}
+
+// Editörün kullanabileceği sahip olunan premium yüzeyler. Sahiplik Worker/D1 üzerinden doğrulanır.
+export async function ownedSkinsOf(env, userId) {
+  await ensureShopSchema(env);
+  const rows = (await env.DB.prepare(
+    `SELECT e.product_id, e.qty, e.serial, p.name, p.rarity, p.kind, p.stock_total, p.data
+     FROM shop_entitlements e JOIN shop_products p ON p.id = e.product_id
+     WHERE e.user_id = ? ORDER BY e.acquired_at DESC`,
+  ).bind(userId).all()).results;
+  return rows.map((r) => {
+    const skin = parseData(r.data).skin;
+    if (!skin || !SKINS().has(skin)) return null;
+    return { product_id: r.product_id, skin, name: r.name, rarity: r.rarity, kind: r.kind, qty: r.qty,
+      serial: r.stock_total && r.serial ? `${String(r.serial).padStart(3, '0')}/${String(r.stock_total).padStart(3, '0')}` : '' };
+  }).filter(Boolean);
 }
 
 // İade/ters kayıt: satın alma 'refunded' olur, hak bir azalır (0'a inerse silinir), sahipliği kalmayan yüzeyler kartlardan çıkarılır.

@@ -95,20 +95,28 @@ export async function equipSkin(env, user, cardId, productId) {
   return (await skinsOf(env, user.id))[card.id] || null;
 }
 
+export async function createShopTicket(env, user, productId = null) {
+  const base = shopUrl(env);
+  if (!base) throw new HttpError(503, 'shop_unavailable', 'Nexus Market bu sunucuda ayarlı değil.');
+  await ensureShopSchema(env);
+  await rateLimit(env, `shopticket:${user.id}`, 30, 10 * MIN);
+  const t = now(env), ticket = randomToken(32);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM shop_tickets WHERE expires_at < ?').bind(t - HOUR),
+    env.DB.prepare('DELETE FROM shop_tokens WHERE expires_at < ?').bind(t - HOUR),
+    env.DB.prepare('INSERT INTO shop_tickets (token_hash, user_id, expires_at) VALUES (?,?,?)').bind(await sha256hex(ticket), user.id, t + TICKET_TTL),
+  ]);
+  const target = new URL(base);
+  if (productId) target.searchParams.set('product_id', String(productId));
+  target.hash = `t=${ticket}`;
+  return { url: target.toString(), expires_in: TICKET_TTL / 1000 };
+}
+
 export const shopRoutes = {
   // Nexus oturumuyla çağrılır.
   async ticket(req, env, ctx, { user }) {
-    const url = shopUrl(env);
-    if (!url) throw new HttpError(503, 'shop_unavailable', 'Nexus Market bu sunucuda ayarlı değil.');
-    await ensureShopSchema(env);
-    await rateLimit(env, `shopticket:${user.id}`, 30, 10 * MIN);
-    const t = now(env), ticket = randomToken(32);
-    await env.DB.batch([
-      env.DB.prepare('DELETE FROM shop_tickets WHERE expires_at < ?').bind(t - HOUR),
-      env.DB.prepare('DELETE FROM shop_tokens WHERE expires_at < ?').bind(t - HOUR),
-      env.DB.prepare('INSERT INTO shop_tickets (token_hash, user_id, expires_at) VALUES (?,?,?)').bind(await sha256hex(ticket), user.id, t + TICKET_TTL),
-    ]);
-    return json({ url: `${url}${url.includes('#') ? '' : '#'}t=${ticket}`, expires_in: TICKET_TTL / 1000 });
+    const b = await readJson(req).catch(() => ({}));
+    return json(await createShopTicket(env, user, b.product_id || null));
   },
 
   // Nexus içinde: sahip olunanlar, etkin avantajlar ve limitler.

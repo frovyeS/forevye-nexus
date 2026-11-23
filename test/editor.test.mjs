@@ -2,16 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import worker from '../src/worker.js';
-import { makeEnv, client, register, sql, one } from './helpers.mjs';
+import { makeEnv, client, register, fund, sql, one } from './helpers.mjs';
 import { defaultDesign, validateDesign } from '../shared/card-contract.js';
 
 const EDITOR = 'https://bank.example/editor/';
 const ORIGIN = 'https://bank.example';
+const SHOP = 'https://shop.example/nexus-market/';
+const SHOP_ORIGIN = 'https://shop.example';
 const NEXUS = 'https://nexus.test';
 
 // Editör (ayrı site) gibi davranır: çerez yok, Origin başlığı var, Bearer jeton.
 async function asEditor(env, method, path, { body, token, origin = ORIGIN } = {}) {
   const headers = { 'content-type': 'application/json', origin, 'cf-connecting-ip': '5.5.5.5' };
+  if (token) headers.authorization = `Bearer ${token}`;
+  const res = await worker.fetch(new Request(NEXUS + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }), env, {});
+  let data = null; try { data = await res.clone().json(); } catch { /* json değil */ }
+  return { status: res.status, data, res };
+}
+async function asMarket(env, method, path, { body, token, origin = SHOP_ORIGIN } = {}) {
+  const headers = { 'content-type': 'application/json', origin, 'cf-connecting-ip': '6.6.6.6' };
   if (token) headers.authorization = `Bearer ${token}`;
   const res = await worker.fetch(new Request(NEXUS + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }), env, {});
   let data = null; try { data = await res.clone().json(); } catch { /* json değil */ }
@@ -51,6 +60,51 @@ test('editör: bilet → jeton → kayıt; tasarım Nexus kartına işlenir, sü
   // aynı tasarımı tekrar kaydetmek sürümü artırmaz
   const again = await asEditor(env, 'PUT', '/api/editor/card', { token: ex.data.token, body: { design: sv.data.card.design } });
   assert.equal(again.data.card.version, 2);
+});
+
+test('üçlü bağlantı: banka editörü markette ürüne özel bilet açar; satın alınan yüzey editöre gelir ve karta kaydolur', async () => {
+  const { env, u, card } = await setup({ SHOP_URL: SHOP });
+  const editorTicket = (await u.cl.post('/api/editor/ticket', { card_id: card.id })).data;
+  const editor = await asEditor(env, 'POST', '/api/editor/exchange', { body: { ticket: ticketOf(editorTicket.url) } });
+  assert.equal(editor.status, 200);
+  assert.deepEqual(editor.data.owned_skins, []);
+
+  const marketLink = await asEditor(env, 'POST', '/api/editor/shop-ticket', {
+    token: editor.data.token, body: { product_id: 'skin_singularity' },
+  });
+  assert.equal(marketLink.status, 200);
+  const marketUrl = new URL(marketLink.data.url);
+  assert.equal(marketUrl.origin, SHOP_ORIGIN);
+  assert.equal(marketUrl.searchParams.get('product_id'), 'skin_singularity');
+  assert.match(marketUrl.hash, /^#t=[A-Za-z0-9_-]{20,80}$/);
+  assert.equal((await asEditor(env, 'OPTIONS', '/api/editor/shop-ticket')).status, 204);
+
+  await fund(env, u.me.user.id, 2_000_000); // 20.000 FN
+  const marketSession = await asMarket(env, 'POST', '/api/shop/exchange', { body: { ticket: ticketOf(marketUrl.toString()) } });
+  assert.equal(marketSession.status, 200);
+  const purchase = await asMarket(env, 'POST', '/api/shop/purchase', {
+    token: marketSession.data.token,
+    body: { pid: 'skin_singularity', idem: 'editor-market-link-001' },
+  });
+  assert.equal(purchase.status, 201);
+  assert.equal(purchase.data.purchase.serial, '001/033');
+
+  const refreshed = await asEditor(env, 'GET', '/api/editor/card', { token: editor.data.token });
+  assert.equal(refreshed.status, 200);
+  assert.deepEqual(refreshed.data.owned_skins[0], {
+    product_id: 'skin_singularity', skin: 'singularity', name: 'Singularity', rarity: 'mythic',
+    kind: 'design', qty: 1, serial: '001/033',
+  });
+  const saved = await asEditor(env, 'PUT', '/api/editor/card', {
+    token: editor.data.token,
+    body: { design: refreshed.data.card.design, skin_product_id: 'skin_singularity' },
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.data.skin.skin, 'singularity');
+  assert.equal(saved.data.skin.serial, '001/033');
+  const fromBank = (await u.cl.get(`/api/cards/${card.id}`)).data;
+  assert.equal(fromBank.skin.product_id, 'skin_singularity');
+  assert.equal(fromBank.skin.skin, 'singularity');
 });
 
 test('editör: sunucu kuralları — serbest yerleşim, sistem katmanı, korunan alan, kimlik sahteciliği', async () => {

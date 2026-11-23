@@ -11,6 +11,8 @@ import { randomToken, sha256hex } from '../lib/crypto.js';
 import { rateLimit } from '../lib/rate.js';
 import { validateLabel, suggestDisplayName, defaultDesign } from '../../shared/card-contract.js';
 import { shape, ownCard, createCard, updateCard } from './cards.js';
+import { ownedSkinsOf, skinsOf } from '../lib/shop.js';
+import { equipSkin, createShopTicket } from './shop.js';
 
 const TICKET_TTL = 5 * MIN, TOKEN_SLIDE = 30 * MIN, TOKEN_MAX = 4 * HOUR;
 
@@ -44,10 +46,12 @@ export function editorOrigins(env) {
 async function sessionPayload(env, tok, user) {
   const card = tok.card_id ? shape(await ownCard(env, user.id, tok.card_id)) : null;
   const max = cfgNum(env, 'MAX_CARDS', 5);
+  const [owned_skins, equipped] = await Promise.all([ownedSkinsOf(env, user.id), skinsOf(env, user.id)]);
   return {
     mode: card ? 'edit' : 'new', card, label: tok.label || '',
     suggested_name: suggestDisplayName(user.username), base_design: card ? null : defaultDesign(suggestDisplayName(user.username)),
     max_cards: max, user: { username: user.username }, expires_at: tok.expires_at,
+    owned_skins, equipped_skin: card ? (equipped[card.id] || null) : null,
   };
 }
 
@@ -109,10 +113,17 @@ export const editorRoutes = {
     return json(await sessionPayload(env, tok, user));
   },
 
+  async shopTicket(req, env) {
+    const { user } = await useToken(env, req);
+    const b = await readJson(req).catch(() => ({}));
+    const productId = b.product_id == null ? null : String(b.product_id);
+    return json(await createShopTicket(env, user, productId));
+  },
+
   async save(req, env) {
     const { tok, th, user } = await useToken(env, req);
     const b = await readJson(req, 96 * 1024);
-    for (const k of Object.keys(b)) if (!['design', 'label'].includes(k)) throw new HttpError(400, 'protected_field', `“${k}” alanı değiştirilemez.`);
+    for (const k of Object.keys(b)) if (!['design', 'label', 'skin_product_id'].includes(k)) throw new HttpError(400, 'protected_field', `“${k}” alanı değiştirilemez.`);
     if (!b.design) throw new HttpError(400, 'invalid_design', 'Tasarım gerekli.');
     await rateLimit(env, `cardedit:${user.id}`, 60, 10 * MIN);
     let card, created = false;
@@ -124,6 +135,8 @@ export const editorRoutes = {
       created = true;
       await env.DB.prepare('UPDATE editor_tokens SET card_id = ? WHERE token_hash = ?').bind(card.id, th).run();   // sonraki kayıtlar aynı kartı günceller
     }
-    return json({ ok: true, created, card: shape(card), return_path: `/#/cards/${card.id}` }, created ? 201 : 200);
+    let skin = undefined;
+    if (Object.prototype.hasOwnProperty.call(b, 'skin_product_id')) skin = await equipSkin(env, user, card.id, b.skin_product_id === null || b.skin_product_id === '' ? null : b.skin_product_id);
+    return json({ ok: true, created, card: shape(card), skin: skin === undefined ? (await skinsOf(env, user.id))[card.id] || null : skin, return_path: `/#/cards/${card.id}` }, created ? 201 : 200);
   },
 };

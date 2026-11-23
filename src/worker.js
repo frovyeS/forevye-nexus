@@ -68,6 +68,7 @@ add('POST', '/api/editor/ticket', editorRoutes.ticket);
 add('POST', '/api/editor/exchange', editorRoutes.exchange, 'editor');
 add('GET', '/api/editor/card', editorRoutes.card, 'editor');
 add('PUT', '/api/editor/card', editorRoutes.save, 'editor');
+add('POST', '/api/editor/shop-ticket', editorRoutes.shopTicket, 'editor');
 add('GET', '/api/cards/:id', cardRoutes.get);
 add('PATCH', '/api/cards/:id', cardRoutes.update);
 add('POST', '/api/cards/:id/default', cardRoutes.setDefault);
@@ -157,9 +158,10 @@ async function handleApi(req, env) {
 
 // Ayrı siteler (kart editörü, Nexus Pass) için CORS: yalnızca EDITOR_URL / PASS_URL (+ *_ORIGINS) kaynağına izin verilir. Çerez gönderilmez; kimlik bilet/Bearer jetondadır.
 const EDITOR_PATHS = new Set(['/api/editor/exchange', '/api/editor/card']);
+const EDITOR_SHOP_PATHS = new Set(['/api/editor/shop-ticket']);
 const PASS_PATHS = new Set(['/api/pass/exchange', '/api/pass/me', '/api/pass/products', '/api/pass/product', '/api/pass/purchases', '/api/pass/purchase']);
 const SHOP_PATHS = new Set(['/api/shop/exchange', '/api/shop/me', '/api/shop/products', '/api/shop/product', '/api/shop/purchases', '/api/shop/purchase', '/api/shop/wishlist', '/api/shop/equip']);
-const CORS_PATHS = new Set([...EDITOR_PATHS, ...PASS_PATHS, ...SHOP_PATHS]);
+const CORS_PATHS = new Set([...EDITOR_PATHS, ...EDITOR_SHOP_PATHS, ...PASS_PATHS, ...SHOP_PATHS]);
 function siteCors(req, env, url) {
   if (!CORS_PATHS.has(url.pathname)) return null;
   const allowed = SHOP_PATHS.has(url.pathname) ? shopOrigins(env) : PASS_PATHS.has(url.pathname) ? passOrigins(env) : editorOrigins(env);
