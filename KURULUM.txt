@@ -1,0 +1,21 @@
+FOREVYE NEXUS - KART BAKIYESI KESIN DUZELTME PAKETI
+
+BU PAKET NE YAPIYOR?
+Ekrandaki hata, canli D1 veritabaninda cards.balance sutunu ve/veya card_ledger tablosu olmadigini gosteriyor. Bu paket migration'i dogru proje kokunde uygular, iki sema parcasini uzaktan sorgulayarak dogrular ve ancak dogrulamadan sonra Worker deploy eder.
+
+KURULUM (WINDOWS)
+1. Bu ZIP'in icerigini Nexus ana proje klasorunun ICINE cikartin. Bu klasorde package.json ve wrangler.toml zaten bulunmali. Dosya birlestirmesine izin verin.
+2. KART_BAKIYESI_FIX_CALISTIR.bat dosyasina cift tiklayin.
+3. Cloudflare girisi sorarsa tarayicida dogru Cloudflare hesabiyla oturum acin.
+4. Ekranda [BASARILI] yazisini gorene kadar pencereyi kapatmayin.
+5. Nexus sitesini Ctrl+Shift+R ile yenileyin.
+
+ONEMLI
+- Script varsayilan production D1 baglamini (wrangler.toml icindeki forevye-nexus) kullanir.
+- Migration yalnizca kart bakiyesi sutununu, kart hareket tablosunu, indeksleri ve salt-okunur/silme koruma trigger'larini ekler; mevcut kullanici veya cüzdan verilerini silmez.
+- Migration veya D1 dogrulamasi basarisizsa Worker deploy edilmez.
+- Migration komutu "No migrations to apply" derse bile sonrasinda iki SQL kontrolu gercek semayi dogrular.
+- Bu paket uzaktaki Cloudflare hesabina otomatik erisemez; BAT dosyasinin calistirilmasi kullanicinin kendi Cloudflare oturumunu kullanir.
+
+TEKNIK DOSYA
+migrations/0010_card_balances.sql
