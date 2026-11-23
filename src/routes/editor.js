@@ -1,7 +1,7 @@
 // Kart editörü devri.  Nexus (cookie oturumu) → bilet → banka editörü (ayrı site) → jeton → Nexus'a kayıt.
 //
 //  1) POST /api/editor/ticket     (Nexus oturumu)   tek kullanımlık 5 dk'lık bilet üretir, editör adresini döner. Bilet URL'nin # kısmında taşınır.
-//  2) POST /api/editor/exchange   (CORS: editör)    bileti jetona çevirir (30 dk kayan, en çok 4 saat); kart + sistem bilgisini döner.
+//  2) POST /api/editor/exchange   (CORS: editör)    bileti jetona çevirir (2 saat kayan, en çok 12 saat); kart + sistem bilgisini döner.
 //  3) GET  /api/editor/card       (Bearer jeton)    sayfa yenilenirse aynı bilgiyi tekrar verir.
 //  4) PUT  /api/editor/card       (Bearer jeton)    tasarımı kaydeder: sunucu `card-rules.js` ile doğrular (editörle aynı kod), sürümü ve geçmişi Nexus yazar.
 //
@@ -12,7 +12,7 @@ import { rateLimit } from '../lib/rate.js';
 import { validateLabel, suggestDisplayName, defaultDesign } from '../../shared/card-contract.js';
 import { shape, ownCard, createCard, updateCard } from './cards.js';
 
-const TICKET_TTL = 5 * MIN, TOKEN_SLIDE = 30 * MIN, TOKEN_MAX = 4 * HOUR;
+const TICKET_TTL = 5 * MIN, TOKEN_SLIDE = 2 * HOUR, TOKEN_MAX = 12 * HOUR;   // editör açık kalıp düşünülürken oturum kopmasın
 
 // 0004_editor.sql canlı D1'e uygulanmadıysa "no such table: editor_tickets" → 500 "Beklenmeyen bir hata oluştu" olurdu.
 // Tablolar eksikse (IF NOT EXISTS ile, migration'la birebir aynı şema) burada kendiliğinden kurulur; isolate başına bir kez çalışır.
