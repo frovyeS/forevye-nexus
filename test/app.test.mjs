@@ -375,6 +375,31 @@ test('hediye kartı: modül bağlı değilken güvenli hata; bağlıyken yalnız
   await assertLedgerConsistent(env);
 });
 
+test('hediye kartı: hata nedeni kodu (adres/anahtar/ağ/imza) ayırt edilir', async () => {
+  const env = makeEnv();
+  const a = await register(env, 'r@example.com', 'gift_r');
+  const err = async () => (await a.cl.post('/api/giftcard/redeem', { code: '12345678 123 05/28' })).data.error.message;
+  env.GIFTCARD_API_SECRET = 'shh';
+  assert.match(await err(), /GC-URL/);
+  env.GIFTCARD_API_URL = 'http://yanlis.test';
+  assert.match(await err(), /GC-URL/, 'https zorunlu');
+  env.GIFTCARD_API_URL = 'https://gift.internal.test';
+  delete env.GIFTCARD_API_SECRET;
+  assert.match(await err(), /GC-KEY/);
+  env.GIFTCARD_API_SECRET = 'shh';
+  const realFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => { throw new Error('boom'); };
+    assert.match(await err(), /GC-NET/);
+    globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, error: 'bad_signature' }), { status: 401 });
+    assert.match(await err(), /GC-AUTH/);
+    globalThis.fetch = async () => new Response('<html>Not found</html>', { status: 404 });
+    assert.match(await err(), /GC-PATH/);
+    globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, error: 'unavailable' }), { status: 503 });
+    assert.match(await err(), /GC-SRV/);
+  } finally { globalThis.fetch = realFetch; }
+});
+
 test('hediye kartı: kristal tutarı FN minor unit\'e çevrilir', async () => {
   const env = makeEnv();
   env.GIFTCARD_API_URL = 'https://gift.internal.test/';
