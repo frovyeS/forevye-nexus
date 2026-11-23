@@ -261,26 +261,119 @@
   });
 
   var PRODUCT_META = {
-    onyx:['skin_onyx','Oniks Mat','Saten matlık ve şampanya altını çerçeve.','rare',1800],
-    carbon:['skin_carbon','Karbon Fiber','Katmanlı karbon örgü ve yarış şeridi.','rare',2400],
-    aurora:['skin_aurora','Aurora','Kuzey ışıkları gibi akan renk katmanları.','epic',4500],
-    nebula:['skin_nebula','Nebula','Prosedürel yıldız alanı ve kozmik bulutlar.','epic',4800],
-    prism:['skin_prism','Prizma Cam','Kırılan ışık ve hareketli cam yüzey.','legendary',8000],
-    guilloche:['skin_guilloche','Altın Gilyoş','Mikro çizgili banknot gravürü ve altın folyo.','legendary',9500],
-    titan:['card_titan','Titanyum','Fırçalanmış metal ve çift limit avantajı.','epic',7500],
-    platinum:['card_platinum','Platin','İnce halkalı platin ve borsa avantajı.','legendary',12000],
-    royal:['card_black','Nexus Black','Siyah-altın imza yüzey, en üst seviye avantajlar.','mythic',40000],
-    singularity:['skin_singularity','Singularity','Karanlık tekillik, yıldız alanı ve ışık yörüngeleri.','mythic',18000],
-    lunar:['skin_lunar','Lunar Pearl','Ay yüzeyi gravürü ve sedefli seramik katman.','legendary',12500],
-    aether:['skin_aether','Aether Glass','Turkuaz kristal kırılımları ve cam katmanlar.','legendary',14000],
-    phoenix:['skin_phoenix','Phoenix Ember','Alev tüyleri, sıcak metalik parıltı.','mythic',22000],
-    deepsea:['skin_deepsea','Abyssal Bio','Biyolüminesans ve derin deniz dokusu.','epic',9800],
-    chronos:['skin_chronos','Chronos Engraved','Mekanik saat gravürü ve mikro kadran.','legendary',16000],
-    eclipse:['skin_eclipse','Solar Eclipse','Altın korona, tutulma halkası ve gece göğü.','mythic',20000],
-    celestial:['skin_celestial','Celestial Atlas','Takımyıldız haritası ve safir gece yüzeyi.','legendary',15000]
+    onyx:['skin_onyx','Oniks Mat','Saten matlık ve şampanya altını çerçeve.','rare',180000],
+    carbon:['skin_carbon','Karbon Fiber','Katmanlı karbon örgü ve yarış şeridi.','rare',240000],
+    aurora:['skin_aurora','Aurora','Kuzey ışıkları gibi akan renk katmanları.','epic',450000],
+    nebula:['skin_nebula','Nebula','Prosedürel yıldız alanı ve kozmik bulutlar.','epic',480000],
+    prism:['skin_prism','Prizma Cam','Kırılan ışık ve hareketli cam yüzey.','legendary',800000],
+    guilloche:['skin_guilloche','Altın Gilyoş','Mikro çizgili banknot gravürü ve altın folyo.','legendary',950000],
+    titan:['card_titan','Titanyum','Fırçalanmış metal ve çift limit avantajı.','epic',750000],
+    platinum:['card_platinum','Platin','İnce halkalı platin ve borsa avantajı.','legendary',1200000],
+    royal:['card_black','Nexus Black','Siyah-altın imza yüzey, en üst seviye avantajlar.','mythic',4000000],
+    singularity:['skin_singularity','Singularity','Karanlık tekillik, yıldız alanı ve ışık yörüngeleri.','mythic',1800000],
+    lunar:['skin_lunar','Lunar Pearl','Ay yüzeyi gravürü ve sedefli seramik katman.','legendary',1250000],
+    aether:['skin_aether','Aether Glass','Turkuaz kristal kırılımları ve cam katmanlar.','legendary',1400000],
+    phoenix:['skin_phoenix','Phoenix Ember','Alev tüyleri, sıcak metalik parıltı.','mythic',2200000],
+    deepsea:['skin_deepsea','Abyssal Bio','Biyolüminesans ve derin deniz dokusu.','epic',980000],
+    chronos:['skin_chronos','Chronos Engraved','Mekanik saat gravürü ve mikro kadran.','legendary',1600000],
+    eclipse:['skin_eclipse','Solar Eclipse','Altın korona, tutulma halkası ve gece göğü.','mythic',2000000],
+    celestial:['skin_celestial','Celestial Atlas','Takımyıldız haritası ve safir gece yüzeyi.','legendary',1500000]
   };
+
+  // 31 yeni koleksiyon yüzeyi. Her biri parametrik ama kendine ait motif/renk/gravür bileşimiyle SVG olarak çizilir.
+  // Aynı katalog hem Market vitrininde hem Banka kart editöründe hem de Worker skin doğrulamasında kullanılır.
+  var GALLERY = [
+    {id:'imperial',productId:'skin_imperial',name:'Imperial Lacquer',label:'IMPERIAL',desc:'Bordo lake, altın yelpaze gravürü ve el işçiliği hissi veren katmanlı çerçeve.',rarity:'mythic',price:1650000,stock:28,sort:18,motif:'fan',colors:['#10070D','#381321','#6A2631'],accent:'#F0C77B',ink:'#FFF0D2'},
+    {id:'rose',productId:'skin_rose',name:'Rose Obsidian',label:'ROSE OBSIDIAN',desc:'Vişne siyahı obsidyen, gül altını damarlar ve saten parlaklık.',rarity:'legendary',price:1180000,stock:54,sort:19,motif:'cracks',colors:['#100910','#32172B','#572A47'],accent:'#E9A7B8',ink:'#FFE9EF'},
+    {id:'sapphire',productId:'skin_sapphire',name:'Sapphire Sovereign',label:'SAPPHIRE',desc:'Derin safir kristali, mikro yıldızlar ve çift katmanlı mücevher çerçeve.',rarity:'legendary',price:1320000,stock:48,sort:20,motif:'stars',colors:['#061126','#102B58','#173D70'],accent:'#8BC8FF',ink:'#E8F5FF'},
+    {id:'jade',productId:'skin_jade',name:'Jade Dynasty',label:'JADE DYNASTY',desc:'Yeşim taşı damarları, altın mühür ve doğu esintili geometrik gravür.',rarity:'legendary',price:1250000,stock:50,sort:21,motif:'contour',colors:['#061B18','#0D4037','#176052'],accent:'#D9C27E',ink:'#F3F5D8'},
+    {id:'arctic',productId:'skin_arctic',name:'Arctic Halo',label:'ARCTIC HALO',desc:'Buzlu safir cam, kristal kırılmaları ve kutup ışığı halkası.',rarity:'epic',price:820000,stock:92,sort:22,motif:'crystal',colors:['#071A2A','#123C56','#1A5A73'],accent:'#A8ECFF',ink:'#E8FBFF'},
+    {id:'volcanic',productId:'skin_volcanic',name:'Volcanic Glass',label:'VOLCANIC',desc:'Bazalt siyahı üzerinde lav damarları ve erimiş bakır parıltısı.',rarity:'mythic',price:1720000,stock:24,sort:23,motif:'cracks',colors:['#100A0A','#33110D','#4A1B0D'],accent:'#FF8A45',ink:'#FFE6C9'},
+    {id:'amethyst',productId:'skin_amethyst',name:'Amethyst Vault',label:'AMETHYST',desc:'Mor jeot kristalleri, menekşe ışık ve keskin faset yansımaları.',rarity:'epic',price:940000,stock:76,sort:24,motif:'crystal',colors:['#100B20','#2B174D','#493078'],accent:'#D7B7FF',ink:'#F7ECFF'},
+    {id:'monarch',productId:'skin_monarch',name:'Monarch Wings',label:'MONARCH',desc:'Altın kelebek kanadı simetrisi, ince damar çizgileri ve mücevher merkezi.',rarity:'legendary',price:1450000,stock:40,sort:25,motif:'wing',colors:['#120D09','#352315','#594022'],accent:'#EBC779',ink:'#FFF3D4'},
+    {id:'vortex',productId:'skin_vortex',name:'Vortex Prime',label:'VORTEX PRIME',desc:'Merkezine çeken enerji girdabı, ince ışık halkaları ve derin uzay.',rarity:'mythic',price:1850000,stock:22,sort:26,motif:'spiral',colors:['#090B18','#1B1C43','#30245E'],accent:'#B8A0FF',ink:'#F2EDFF'},
+    {id:'quantum',productId:'skin_quantum',name:'Quantum Flux',label:'QUANTUM FLUX',desc:'Kuantum devre yolları, neon düğümler ve çok katmanlı veri akışı.',rarity:'epic',price:990000,stock:68,sort:27,motif:'circuit',colors:['#041418','#063B40','#07545A'],accent:'#62F5DA',ink:'#E1FFFA'},
+    {id:'mech',productId:'skin_mech',name:'Mechano Royale',label:'MECHANO',desc:'Saat mekanizması dişlileri, fırçalanmış pirinç ve mikro kadranlar.',rarity:'legendary',price:1380000,stock:44,sort:28,motif:'gear',colors:['#11100D','#30271B','#51412A'],accent:'#E8C27A',ink:'#FFF1D2'},
+    {id:'topo',productId:'skin_topo',name:'Atlas Topography',label:'ATLAS TOPO',desc:'Dağ sırtı topografyası, kontur gravürü ve pusula merkez rozeti.',rarity:'epic',price:880000,stock:84,sort:29,motif:'contour',colors:['#0A1719','#16353B','#24505A'],accent:'#C5D4B1',ink:'#F0F6E9'},
+    {id:'kintsugi',productId:'skin_kintsugi',name:'Kintsugi Nocturne',label:'KINTSUGI',desc:'Gece seramiği üzerinde altın onarım damarları; her kırık ayrı bir imza.',rarity:'mythic',price:1780000,stock:20,sort:30,motif:'cracks',colors:['#08090D','#191B22','#302C31'],accent:'#F0C86D',ink:'#FFF0C6'},
+    {id:'marble',productId:'skin_marble',name:'Nero Marble',label:'NERO MARBLE',desc:'Siyah mermer, beyaz kuvars damarları ve minimal platin hat.',rarity:'legendary',price:1120000,stock:56,sort:31,motif:'contour',colors:['#090B0D','#1A2025','#30363A'],accent:'#D9E0E4',ink:'#F7F9FA'},
+    {id:'opal',productId:'skin_opal',name:'Opaline Mirage',label:'OPALINE',desc:'Opal taşından esinlenen katmanlı sedef, pembe-mavi ışık kırılması.',rarity:'legendary',price:1260000,stock:46,sort:32,motif:'facets',colors:['#101426','#25294B','#3B3560'],accent:'#E8BFFF',ink:'#FFF0FF'},
+    {id:'lotus',productId:'skin_lotus',name:'Lotus Nocturne',label:'LOTUS NOCTURNE',desc:'Gece nilüferi, simetrik yaprak gravürü ve ay ışığında gümüş merkez.',rarity:'epic',price:920000,stock:72,sort:33,motif:'petal',colors:['#08151A','#12313B','#224B55'],accent:'#B7DAD4',ink:'#EFFFFB'},
+    {id:'tiger',productId:'skin_tiger',name:'Tiger Eye Reserve',label:'TIGER EYE',desc:'Kaplan gözü taşının kehribar lifleri, optik derinlik ve bronz kenar.',rarity:'legendary',price:1190000,stock:52,sort:34,motif:'waves',colors:['#160D08','#3C2110','#694018'],accent:'#F3B85E',ink:'#FFF0D2'},
+    {id:'seraph',productId:'skin_seraph',name:'Seraphim Gold',label:'SERAPHIM',desc:'Melek kanadı tüy gravürü, altın ışık ve kutsal geometri rozeti.',rarity:'mythic',price:1980000,stock:18,sort:35,motif:'wing',colors:['#111018','#302B3B','#51465D'],accent:'#F0D9A0',ink:'#FFF7E3'},
+    {id:'glacier',productId:'skin_glacier',name:'Glacier Bloom',label:'GLACIER BLOOM',desc:'Buz çiçeği kristalleri, donmuş cam katmanları ve soğuk gümüş.',rarity:'epic',price:860000,stock:88,sort:36,motif:'petal',colors:['#081927','#173A51','#285D76'],accent:'#B5E8F7',ink:'#ECFAFF'},
+    {id:'solstice',productId:'skin_solstice',name:'Solstice 24',label:'SOLSTICE',desc:'Güneş ve ayın tek yüzeyde buluştuğu, astronomik halka gravürü.',rarity:'legendary',price:1420000,stock:38,sort:37,motif:'sun',colors:['#100C1B','#31203F','#59402F'],accent:'#E9BD75',ink:'#FFF0D6'},
+    {id:'tesseract',productId:'skin_tesseract',name:'Tesseract',label:'TESSERACT',desc:'Dört boyutlu geometri illüzyonu, perspektif küpler ve lazer hatlar.',rarity:'mythic',price:1900000,stock:16,sort:38,motif:'facets',colors:['#080E1B','#142B45','#284C69'],accent:'#8EE8EE',ink:'#E8FFFF'},
+    {id:'geode',productId:'skin_geode',name:'Geode Sovereign',label:'GEODE',desc:'Kristal mağara iç katmanları, ametist uçlar ve mineral damarları.',rarity:'legendary',price:1350000,stock:42,sort:39,motif:'crystal',colors:['#100B1B','#2A183B','#49315E'],accent:'#D8A6F2',ink:'#F8EFFF'},
+    {id:'silk',productId:'skin_silk',name:'Silk Dynasty',label:'SILK DYNASTY',desc:'Akışkan ipek kıvrımları, saten yüzey ve zarif altın dikiş.',rarity:'epic',price:970000,stock:70,sort:40,motif:'waves',colors:['#141018','#392039','#60324E'],accent:'#E8B9CE',ink:'#FFF0F5'},
+    {id:'velvet',productId:'skin_velvet',name:'Velvet Noir',label:'VELVET NOIR',desc:'Kadife bordo dokusu, siyah krom ve derin yakut parıltısı.',rarity:'legendary',price:1280000,stock:44,sort:41,motif:'arches',colors:['#12080E','#36101E','#5C1F32'],accent:'#E2A0B0',ink:'#FFEAF0'},
+    {id:'neoncity',productId:'skin_neoncity',name:'Tokyo Afterglow',label:'TOKYO AFTERGLOW',desc:'Gece şehri silueti, neon tabelalar ve yağmur sonrası yansımalar.',rarity:'epic',price:1050000,stock:64,sort:42,motif:'city',colors:['#080B1B','#191A3C','#2D2450'],accent:'#F29EDB',ink:'#FFF0FC'},
+    {id:'matrix',productId:'skin_matrix',name:'Matrix Cipher',label:'MATRIX CIPHER',desc:'Dijital kod yağmuru, mikro ızgara ve yeşil fosforik izler.',rarity:'rare',price:520000,stock:180,sort:43,motif:'circuit',colors:['#020F0B','#06301D','#0C4A2B'],accent:'#65F59B',ink:'#E3FFEC'},
+    {id:'mosaic',productId:'skin_mosaic',name:'Celadon Mosaic',label:'CELADON',desc:'El yapımı mozaik parçaları, seramik sır ve ince metal birleşimler.',rarity:'epic',price:890000,stock:82,sort:44,motif:'mosaic',colors:['#0A1717','#17403A','#286157'],accent:'#C5DDAE',ink:'#F0F8E6'},
+    {id:'circuit',productId:'skin_circuit',name:'Aurum Circuit',label:'AURUM CIRCUIT',desc:'Altın devre şeması, hassas bağlantı düğümleri ve siyah titanyum.',rarity:'legendary',price:1470000,stock:36,sort:45,motif:'circuit',colors:['#0C0D10','#25221A','#3E3520'],accent:'#E5C26E',ink:'#FFF4D5'},
+    {id:'plasma',productId:'skin_plasma',name:'Plasma Crown',label:'PLASMA CROWN',desc:'Mor plazma koronu, iyon halkaları ve elektrik arkı katmanları.',rarity:'mythic',price:2050000,stock:14,sort:46,motif:'rings',colors:['#0B0819','#25113F','#421D65'],accent:'#CB9AFF',ink:'#F9EFFF'},
+    {id:'monsoon',productId:'skin_monsoon',name:'Monsoon Noire',label:'MONSOON',desc:'Fırtına bulutları, gümüş yağmur çizgileri ve elektrik mavisi ufuk.',rarity:'epic',price:930000,stock:74,sort:47,motif:'waves',colors:['#070F1A','#142C42','#1F465B'],accent:'#A6DDF5',ink:'#EAF8FF'},
+    {id:'artdeco',productId:'skin_artdeco',name:'Art Deco 1928',label:'ART DECO',desc:'1920’ler mimarisinden altın yelpazeler, dikey çizgiler ve siyah lake.',rarity:'legendary',price:1510000,stock:34,sort:48,motif:'arches',colors:['#0D0D12','#27232A','#48382A'],accent:'#E6C27A',ink:'#FFF2D4'}
+  ];
+
+  function gallerySkin(item) {
+    return {
+      name:item.name, label:item.label, brand:item.ink, chip:item.rarity==='mythic'?'gold':'silver', bg:item.colors,
+      build:function(P,o) {
+        var c=item.colors, a=item.accent, r=rng(item.sort*7919+item.id.length*313), motif='', defs=lg(P+'sk_a',0,[[0,c[0]],[.55,c[1]],[1,c[2]]],0,0,1,1)+
+          '<radialGradient id="'+P+'sk_r" cx=".72" cy=".26" r=".82"><stop offset="0" stop-color="'+a+'" stop-opacity=".32"/><stop offset=".56" stop-color="'+a+'" stop-opacity=".07"/><stop offset="1" stop-color="'+c[0]+'" stop-opacity="0"/></radialGradient>'+
+          '<pattern id="'+P+'sk_p" width="24" height="24" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><path d="M0 0V24" stroke="'+a+'" stroke-width=".7" opacity=".055"/><circle cx="12" cy="12" r="1" fill="'+a+'" opacity=".12"/></pattern>'+
+          '<linearGradient id="'+P+'sk_g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="'+a+'" stop-opacity=".7"/><stop offset=".48" stop-color="'+a+'" stop-opacity=".05"/><stop offset="1" stop-color="'+a+'" stop-opacity=".55"/></linearGradient>';
+        if(item.motif==='rings' || item.motif==='sun') {
+          var cx=item.motif==='sun'?630:610, cy=item.motif==='sun'?265:260;
+          for(var i=0;i<15;i++){var rr=58+i*19; motif+='<circle cx="'+cx+'" cy="'+cy+'" r="'+rr+'" fill="none" stroke="'+(i%3===0?a:'#EAF2FF')+'" stroke-width="'+(i%3===0?2.1:.8)+'" opacity="'+(i%3===0?.38:.13)+'"/>';}
+          for(var j=0;j<48;j++){var an=j*Math.PI/24, x1=cx+150*Math.cos(an),y1=cy+150*Math.sin(an),x2=cx+(item.motif==='sun'?270:245)*Math.cos(an),y2=cy+(item.motif==='sun'?270:245)*Math.sin(an);motif+='<path d="M'+x1.toFixed(1)+' '+y1.toFixed(1)+'L'+x2.toFixed(1)+' '+y2.toFixed(1)+'" stroke="'+a+'" stroke-width="1" opacity=".28"/>';}
+          if(item.motif==='sun') motif+='<circle cx="630" cy="265" r="92" fill="'+a+'" fill-opacity=".12" stroke="'+a+'" stroke-width="3"/>';
+        } else if(item.motif==='waves') {
+          for(var i=0;i<15;i++){var y=65+i*31, amp=30+r()*48, phase=r()*150; motif+='<path d="M-30 '+y+' C170 '+(y-amp-phase*.12)+' 210 '+(y+amp)+' 420 '+y+' S680 '+(y-amp)+' 890 '+(y+phase*.15)+'" fill="none" stroke="'+(i%4===0?a:'#D7E8F2')+'" stroke-width="'+(i%4===0?2.4:1)+'" opacity="'+(i%4===0?.42:.16)+'"/>';}
+        } else if(item.motif==='facets' || item.motif==='crystal') {
+          for(var y=30;y<560;y+=76) for(var x=-20;x<900;x+=116){var dx=18+r()*60,dy=12+r()*48,flip=r()>.5;var p1=(x+dx)+','+(y-dy),p2=(x+105)+','+(y+38),p3=(x+dx-20)+','+(y+78),p4=(x-10)+','+(y+36);motif+='<polygon points="'+(flip?p1+' '+p2+' '+p3:p4+' '+p1+' '+p3)+'" fill="'+a+'" fill-opacity="'+(.025+r()*.07).toFixed(3)+'" stroke="'+a+'" stroke-opacity=".28" stroke-width="1.2"/>';}
+          motif+='<path d="M420 80L570 210L510 390L340 430L270 245Z" fill="url(#'+P+'sk_g)" fill-opacity=".28" stroke="'+a+'" stroke-opacity=".7" stroke-width="2"/><path d="M420 80L420 280L570 210M420 280L510 390M420 280L270 245" fill="none" stroke="'+a+'" stroke-opacity=".5"/>';
+        } else if(item.motif==='circuit') {
+          for(var i=0;i<20;i++){var x=30+r()*790,y=35+r()*460,dx=50+r()*130,dy=(r()>.5?1:-1)*(24+r()*100);motif+='<path d="M'+x.toFixed(1)+' '+y.toFixed(1)+'h'+dx.toFixed(1)+'v'+dy.toFixed(1)+'h'+(35+r()*90).toFixed(1)+'" fill="none" stroke="'+a+'" stroke-width="'+(i%4===0?2.4:1.1)+'" opacity="'+(i%4===0?.58:.25)+'"/><circle cx="'+(x+dx+35+r()*90).toFixed(1)+'" cy="'+(y+dy).toFixed(1)+'" r="'+(2+r()*4).toFixed(1)+'" fill="'+a+'" opacity=".7"/>';}
+        } else if(item.motif==='petal' || item.motif==='wing' || item.motif==='fan') {
+          var cx=430,cy=280;
+          for(var i=0;i<(item.motif==='fan'?19:16);i++){var ang=(i*360/(item.motif==='fan'?19:16)),rx=item.motif==='wing'?220:150,ry=item.motif==='wing'?58:110;motif+='<ellipse cx="'+cx+'" cy="'+(cy-ry)+'" rx="'+(item.motif==='wing'?20:34)+'" ry="'+ry+'" transform="rotate('+ang+' '+cx+' '+cy+')" fill="url(#'+P+'sk_g)" fill-opacity=".13" stroke="'+a+'" stroke-width="1.35" stroke-opacity=".48"/>';motif+='<path d="M'+cx+' '+cy+'Q'+(cx+rx*Math.cos(ang*Math.PI/180)).toFixed(1)+' '+(cy+ry*Math.sin(ang*Math.PI/180)).toFixed(1)+' '+(cx+rx*1.35*Math.cos(ang*Math.PI/180)).toFixed(1)+' '+(cy+ry*1.35*Math.sin(ang*Math.PI/180)).toFixed(1)+'" stroke="'+a+'" stroke-width="1" opacity=".25" fill="none"/>';}
+          motif+='<circle cx="430" cy="280" r="38" fill="url(#'+P+'sk_g)" stroke="'+a+'" stroke-width="2" opacity=".8"/>';
+        } else if(item.motif==='contour') {
+          for(var i=0;i<22;i++){var yy=35+i*24,off=r()*100;motif+='<path d="M-20 '+yy+' C130 '+(yy-80+off)+' 250 '+(yy+100-off)+' 390 '+(yy-10)+' S650 '+(yy-100+off)+' 880 '+(yy+35)+'" fill="none" stroke="'+(i%5===0?a:'#D7E6E2')+'" stroke-width="'+(i%5===0?1.9:.85)+'" opacity="'+(i%5===0?.42:.16)+'"/>';}
+          motif+='<circle cx="620" cy="230" r="92" fill="none" stroke="'+a+'" stroke-width="1.5" opacity=".6"/><circle cx="620" cy="230" r="76" fill="none" stroke="'+a+'" stroke-width=".8" opacity=".4"/>';
+        } else if(item.motif==='gear') {
+          for(var k=0;k<3;k++){var cx=590-k*210,cy=240+k*45,rad=95-k*18;motif+='<circle cx="'+cx+'" cy="'+cy+'" r="'+rad+'" fill="none" stroke="'+a+'" stroke-width="4" opacity=".45"/><circle cx="'+cx+'" cy="'+cy+'" r="'+(rad-16)+'" fill="none" stroke="'+a+'" stroke-width="1.4" opacity=".35"/>';for(var j=0;j<24;j++){var an=j*Math.PI/12;motif+='<path d="M'+(cx+(rad-5)*Math.cos(an)).toFixed(1)+' '+(cy+(rad-5)*Math.sin(an)).toFixed(1)+'L'+(cx+(rad+12)*Math.cos(an)).toFixed(1)+' '+(cy+(rad+12)*Math.sin(an)).toFixed(1)+'" stroke="'+a+'" stroke-width="5" opacity=".4"/>';}}
+        } else if(item.motif==='arches') {
+          for(var i=0;i<16;i++){var x=40+i*53;motif+='<path d="M'+x+' 520V'+(170-i*5)+' Q'+(x+22)+' '+(70-i*3)+' '+(x+44)+' '+(170-i*5)+'V520" fill="none" stroke="'+(i%3===0?a:'#D9C6A4')+'" stroke-width="'+(i%3===0?2.8:1)+'" opacity="'+(i%3===0?.56:.17)+'"/>';}
+        } else if(item.motif==='city') {
+          for(var i=0;i<24;i++){var x=i*39-8,w=18+r()*16,h=55+r()*180,y=510-h;motif+='<rect x="'+x+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)+'" fill="'+a+'" fill-opacity=".055" stroke="'+a+'" stroke-opacity=".33"/><path d="M'+(x+5)+' '+(y+15)+'v'+(h-20)+'" stroke="'+a+'" stroke-width="2" stroke-dasharray="3 9" opacity=".36"/>';}
+          motif+='<path d="M0 485Q210 430 420 485T856 475" fill="none" stroke="'+a+'" stroke-width="2" opacity=".8"/>';
+        } else if(item.motif==='mosaic') {
+          for(var y=28;y<560;y+=68) for(var x=-20;x<900;x+=76){var jx=r()*28-14,jy=r()*22-11;motif+='<polygon points="'+(x+jx)+','+(y+jy)+' '+(x+64+jx)+','+(y-8+jy)+' '+(x+72+jx)+','+(y+54+jy)+' '+(x+7+jx)+','+(y+65+jy)+'" fill="'+a+'" fill-opacity="'+(.025+r()*.085).toFixed(3)+'" stroke="'+a+'" stroke-opacity=".3" stroke-width="1"/>';}
+        } else if(item.motif==='spiral') {
+          for(var i=0;i<9;i++){var rad=34+i*24;motif+='<path d="M'+(450-rad)+' 275 C'+(390-rad)+' '+(60+i*10)+' '+(780-rad)+' '+(40+i*18)+' '+(710-rad*.4)+' 280 S'+(430+rad)+' '+(500-i*9)+' '+(440+rad*.7)+' 280" fill="none" stroke="'+(i%2===0?a:'#A9A7FF')+'" stroke-width="'+(i%3===0?2.8:1.1)+'" opacity=".42"/>';}
+        } else if(item.motif==='cracks') {
+          for(var i=0;i<18;i++){var x=40+r()*760,y=30+r()*470,dx=(r()-.5)*260,dy=90+r()*170;motif+='<path d="M'+x.toFixed(1)+' '+y.toFixed(1)+'l'+(dx*.42).toFixed(1)+' '+(dy*.35).toFixed(1)+'l'+(dx*.58).toFixed(1)+' '+(dy*.65).toFixed(1)+'m'+(-dx*.25).toFixed(1)+' '+(-dy*.3).toFixed(1)+'l'+(-dx*.22).toFixed(1)+' '+(dy*.12).toFixed(1)+'m'+(dx*.42).toFixed(1)+' '+(dy*.53).toFixed(1)+'l'+(-dx*.15).toFixed(1)+' '+(dy*.22).toFixed(1)+'" fill="none" stroke="'+a+'" stroke-width="'+(i%4===0?2.4:1)+'" opacity="'+(i%4===0?.56:.27)+'"/>';}
+        } else if(item.motif==='stars') {
+          for(var i=0;i<120;i++){var x=20+r()*816,y=20+r()*500,rr=.6+r()*2.7;motif+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+rr.toFixed(1)+'" fill="'+(i%7===0?a:'#F3F7FF')+'" opacity="'+(.25+r()*.62).toFixed(2)+'"/>';if(i%13===0)motif+='<path d="M'+(x-12)+' '+y+'h24M'+x+' '+(y-12)+'v24" stroke="'+a+'" stroke-width="1" opacity=".46"/>';}
+        }
+        var under=full('url(#'+P+'sk_a)')+full('url(#'+P+'sk_r)')+full('url(#'+P+'sk_p)')+'<g>'+motif+'</g>'+
+          '<path d="M20 430C210 350 300 500 500 385S730 340 836 210" fill="none" stroke="url(#'+P+'sk_g)" stroke-width="2" opacity=".45"/>'+
+          '<path d="M25 468H831" stroke="'+a+'" stroke-width=".8" opacity=".18"/>';
+        return {defs:defs,under:under,over:sweep(P,o.animate,a,.42,11)+tag(item.label,o.serial,item.ink),edge:edge(P,a,c[1])};
+      }
+    };
+  }
+  GALLERY.forEach(function(item){
+    def(item.id,gallerySkin(item));
+    PRODUCT_META[item.id]=[item.productId,item.name,item.desc,item.rarity,item.price];
+  });
+
   var api = {
     IDS: Object.keys(SKINS),
+    catalog: GALLERY.map(function(x){return {id:x.id,productId:x.productId,name:x.name,tagline:x.desc,desc:x.desc,rarity:x.rarity,price:x.price,stock:x.stock,sort:x.sort};}),
     list: Object.keys(SKINS).map(function(id){var m=PRODUCT_META[id]||[],s=SKINS[id];return {id:id,n:m[1]||s.name,d:m[2]||'Özel kart yüzeyi.',price:(m[4]||1000)/100,brand:s.brand,chip:s.chip,rarity:m[3]||'rare',productId:m[0]||('skin_'+id),build:s.build};}),
     has: function (id) { return Object.prototype.hasOwnProperty.call(SKINS, id); },
     get: function (id) { return api.has(id) ? SKINS[id] : null; },

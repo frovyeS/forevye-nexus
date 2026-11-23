@@ -99,6 +99,11 @@ export const SEED = [
   { id: 'slot_extra', kind: 'function', rarity: 'common', name: 'Ek Kart Hakkı', tagline: 'Hesabına +1 sanal kart yeri.', descr: 'Her alışta kart sınırın bir artar (en fazla 5 kez alınabilir).', price: 120000, max_qty: 5, sort: 10, is_new: 0, data: { perks: { extra_cards: 1 } } },
 ];
 
+// Yeni kart yüzeyleri doğrudan ortak FNXSkins kataloğundan tohumlanır; editör, Market ve sunucu ürün kimlikleri eşleşir.
+for (const item of (SKINS().catalog || [])) {
+  SEED.push({ id: item.productId, kind: 'design', rarity: item.rarity, name: item.name, tagline: item.tagline, descr: item.desc, price: item.price, stock_total: item.stock, max_qty: 1, sort: item.sort, is_new: 1, data: { skin: item.id } });
+}
+
 const seedSql = () => `INSERT OR IGNORE INTO shop_products (id, kind, rarity, name, tagline, descr, price, stock_total, stock_sold, max_qty, data, status, is_new, sort, created_at, updated_at) VALUES\n` +
   SEED.map((p) => `  ('${p.id}', '${p.kind}', '${p.rarity}', '${p.name.replace(/'/g, "''")}', '${p.tagline.replace(/'/g, "''")}', '${p.descr.replace(/'/g, "''")}', ${p.price}, ${p.stock_total ?? 'NULL'}, 0, ${p.max_qty}, '${JSON.stringify(p.data)}', 'on', ${p.is_new}, ${p.sort}, 0, 0)`).join(',\n');
 export const MIGRATION_SQL = () => `-- Nexus Market: FN ile satılan tasarım ve fonksiyonel kartlar (stok, seri no, kalıcı sahiplik).\n-- Bu dosya scripts/gen-shop-migration.mjs ile src/lib/shop.js'ten üretilir.\n${SCHEMA.join(';\n')};\n${seedSql()};\n`;

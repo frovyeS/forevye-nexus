@@ -8,6 +8,7 @@ import '../shared/card-skins.js';
 import '../shared/card-rules.js';
 import '../public/js/qrcode.js';
 import '../public/js/card-render.js';
+import { defaultDesign } from '../shared/card-contract.js';
 
 const SHOP = 'https://shop.example/nexus-market/';
 const ORIGIN = 'https://shop.example';
@@ -70,6 +71,10 @@ test('market: SHOP_URL yoksa bilet 503; katalog tohumu ve fiyatlar sunucudan gel
   const black = list.find((p) => p.id === 'card_black');
   assert.equal(black.price, FN(40000)); assert.equal(black.stock_left, 50); assert.equal(black.skin, 'royal'); assert.equal(black.perks.limit_mult, 3);
   assert.ok(list.some((p) => p.kind === 'design') && list.some((p) => p.kind === 'function'));
+  assert.equal(list.filter((p) => p.kind === 'design').length, 45, 'Market vitrini 45 satın alınabilir tasarım sunar');
+  const imperial = list.find((p) => p.id === 'skin_imperial');
+  assert.equal(imperial.skin, 'imperial'); assert.equal(imperial.price, FN(16500));
+  assert.equal(imperial.stock_left, 28); assert.equal(imperial.stock_total, 28);
 });
 
 test('market: satın alma FN düşer, defterde görünür; çift sahiplik ve çift gönderim engellenir', async () => {
@@ -96,6 +101,20 @@ test('market: satın alma FN düşer, defterde görünür; çift sahiplik ve çi
   const hist = (await asShop(env, 'GET', '/api/shop/purchases', { token })).data;
   assert.equal(hist.items.length, 1); assert.equal(hist.items[0].price, FN(1800));
   assert.equal((await buy(env, token, 'yok_boyle_urun')).data.code, 'unavailable');
+});
+
+test('market: yeni 45 tasarımlı katalogtan alış, seri numarası ve kart editöründe uygulama', async () => {
+  const { env, u, token, uid } = await setup({}, 'newskin');
+  await fund(env, uid, FN(20000));
+  const products = (await asShop(env, 'GET', '/api/shop/products', { token })).data.products;
+  const item = products.find((p) => p.id === 'skin_imperial');
+  assert.equal(item.skin, 'imperial'); assert.equal(item.stock_total, 28);
+  const bought = await buy(env, token, item.id);
+  assert.equal(bought.status, 201); assert.equal(bought.data.purchase.serial, '001/028');
+  const card = (await u.cl.post('/api/cards', { display_name: 'IMPERIAL TEST' })).data;
+  const equipped = await asShop(env, 'POST', '/api/shop/equip', { token, body: { card_id: card.id, product_id: item.id } });
+  assert.equal(equipped.status, 200); assert.equal(equipped.data.skin.skin, 'imperial');
+  assert.equal(equipped.data.skin.serial, '001/028');
 });
 
 test('market: sınırlı seri numaralanır, tükenince satılmaz, son adet için yarışta yalnızca biri alır', async () => {
@@ -218,7 +237,13 @@ test('market yönetimi: katalog yazma yalnızca süper yönetici; skin/perk/stok
 
 test('kart yüzeyleri: tohum ürünleri geçerli skin kullanır, yazı rengi okunaklı, kullanıcı katmanları gizlenir', () => {
   const S = globalThis.FNXSkins, X = globalThis.FNXRender;
-  assert.ok(S.IDS.length >= 9);
+  assert.equal(S.IDS.length, 48, '45 tasarım yüzeyi + 3 fonksiyonel kart yüzeyi');
+  assert.equal(SEED.filter((p) => p.kind === 'design').length, 45);
+  for (const p of SEED.filter((x) => x.kind === 'design')) {
+    const item = S.list.find((x) => x.productId === p.id);
+    assert.ok(item, `${p.id}: editör ve Market kataloğunda görünmeli`);
+    assert.equal(item.price, p.price / 100, `${p.id}: editör ve Market fiyatları eşleşmeli`);
+  }
   for (const p of SEED) { const c = cleanData(p.data); assert.ok(c.data, `${p.id}: ${c.error}`); if (p.data.skin) assert.ok(S.has(p.data.skin), p.id); }
   for (const id of S.IDS) {
     const m = S.meta(id);
@@ -226,6 +251,8 @@ test('kart yüzeyleri: tohum ürünleri geçerli skin kullanır, yazı rengi oku
     const out = S.get(id).build('t', { animate: true, serial: '007/100' });
     const all = out.defs + out.under + out.over + out.edge;
     assert.ok(!/<script|href=|javascript:|onload=|onerror=|<image|<foreignObject/i.test(all), `${id}: güvensiz içerik`);
+    const svg = X.cardSvg(defaultDesign('MARKET TEST'), { last4: 'NX01', cardToken: 'NXC-TEST-NX01', skin: id, skinSerial: '001/028' }, { prefix: 'test' + id, animate: false });
+    assert.ok(svg.includes(`data-skin=\"${id}\"`), `${id}: tam kart SVG önizlemesi çizilmeli`);
   }
   const R = globalThis.FNXRules;
   const design = { designId: 'd', ownerId: 'o', template: 'classic', canvas: { width: 856, height: 540 }, userDisplayName: 'ALI VELI', nameStyle: { color: 'auto' }, chipStyle: 'rose', version: 1,
