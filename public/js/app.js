@@ -6,7 +6,7 @@ import { opsMenu, txList, txRow, sendFlow, giftFlow } from './views-ops.js';
 import { cardsList, cardNew, cardDetail, cardPayView, editorLaunch, vaultView, scanView } from './views-cards.js';
 import { marketView, marketMini } from './views-market.js';
 import { passView } from './views-pass.js';
-import { shopView } from './views-shop.js';
+import { shopView, openShop } from './views-shop.js';
 
 const root = document.getElementById('app');
 const LOGO = '/assets/logo.svg';
@@ -18,7 +18,7 @@ addEventListener('online', syncOnline); addEventListener('offline', syncOnline);
 
 // ---------- Giriş sonrası hedef ----------
 // Banka editörü "giriş gerekli" diyerek #/editor-launch/<kart|new> adresine yollar. FOREVYE ID girişi sayfadan çıkıp geri döndüğü için hedef oturum belleğinde (yalnızca bu sekme) tutulur.
-const NEXT_OK = /^#\/(editor-launch\/[A-Za-z0-9-]{1,40}|cards(\/[A-Za-z0-9-]{1,40})?)$/;
+const NEXT_OK = /^#\/(editor-launch\/[A-Za-z0-9-]{1,40}|cards(\/[A-Za-z0-9-]{1,40})?|shop-launch)$/;
 function rememberNext() { try { if (NEXT_OK.test(location.hash)) sessionStorage.setItem('nx_next', location.hash); } catch { /* depolama yok */ } }
 function takeNext() { try { const n = sessionStorage.getItem('nx_next'); sessionStorage.removeItem('nx_next'); return n && NEXT_OK.test(n) ? n : ''; } catch { return ''; } }
 
@@ -228,7 +228,7 @@ async function route() {
   const hash = location.hash || '#/home';
   const parts = hash.slice(2).split('/');
   const top = parts[0];
-  const active = { shop: '#/ops', pass: '#/ops', scan: '#/cards', home: '#/home', ops: '#/ops', market: '#/market', cards: '#/cards', 'editor-launch': '#/cards', profile: '#/profile', notifications: '#/profile', vault: '#/profile', settings: '#/profile' }[top] || '#/home';
+  const active = { shop: '#/ops', 'shop-launch': '#/ops', pass: '#/ops', scan: '#/cards', home: '#/home', ops: '#/ops', market: '#/market', cards: '#/cards', 'editor-launch': '#/cards', profile: '#/profile', notifications: '#/profile', vault: '#/profile', settings: '#/profile' }[top] || '#/home';
   const screen = shell(active);
   scrollTo(0, 0);
   if (top === 'ops') {
@@ -243,6 +243,7 @@ async function route() {
   if (top === 'scan') return scanView(screen);
   if (top === 'pass') return passView(screen);
   if (top === 'shop') return shopView(screen);
+  if (top === 'shop-launch') { try { await openShop(); } catch (e) { toast(e.message || 'Market açılamadı.', 'error'); location.hash = '#/shop'; } return; }
   if (top === 'editor-launch') return editorLaunch(screen, parts[1]);
   if (top === 'profile') return parts[1] === 'security' ? securityView(screen) : profileView(screen);
   if (top === 'notifications') return notificationsView(screen);
