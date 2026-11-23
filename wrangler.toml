@@ -48,6 +48,9 @@ MARKET_STALE_SEC = "900"          # fiyat 15 dk güncellenmezse işlem durur
 # GOLD_API_URL = "https://api.gold-api.com/price/XAU"
 # Hediye kartı (kristal kartı) Mikro-Klima Worker'ında; Nexus ona imzalı istek atar.
 # Gizli değer: npx wrangler secret put GIFTCARD_API_SECRET   (Mikro-Klima'daki NEXUS_SECRET ile AYNI olmalı)
+# ADRES BURADAN OKUNUR: dosyadaki değer her deploy'da panelde elle yazılan değeri ezer. Adres değişirse BURAYI düzenle.
+# Doğru adres, Mikro-Klima Worker'ının herkese açık adresidir; tarayıcıda <adres>/api/ext/giftcard/health açınca {"ok":true} görünmelidir.
+# Mikro-Klima ayrı hesapta olduğundan adres Nexus'unkinden (forevyenexus.workers.dev) FARKLI bir workers.dev alt alan adı olabilir.
 GIFTCARD_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
 GIFTCARD_MINOR_PER_KRISTAL = "100"   # 1 kristal = 100 minor = 1 FN
 # E-posta: Mikro-Klima'daki ortak posta servisi (Brevo); adresi Mikro-Klima Worker'ının herkese açık URL'sidir. Gönderen adresi orada ayarlıdır; EMAIL_FROM gerekmez.

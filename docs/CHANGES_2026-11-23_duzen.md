@@ -8,3 +8,12 @@
 ## Servis bağlantısı kaldırıldı
 - Mikro-Klima Worker'ı ayrı hesapta olduğu için `wrangler.toml`'daki `[[services]] MIKRO` silindi (deploy "Service binding ... not found" hatası veriyordu).
 - `src/lib/upstream.js` artık yalnızca `fetch` + zaman aşımı kullanır; adresler `GIFTCARD_API_URL` ve `MAIL_RELAY_URL` değişkenlerinden gelir.
+
+## Hediye kartı "şu an kullanılamıyor" hatası
+- Sebep tek değildi; hepsi aynı genel mesajın arkasına gizleniyordu. Artık mesajın sonunda neden kodu görünür:
+  `GC-URL` adres tanımsız/https değil · `GC-KEY` GIFTCARD_API_SECRET yok · `GC-NET` Worker'a ulaşılamıyor (adres yanlış) ·
+  `GC-AUTH` iki taraftaki gizli değer farklı · `GC-PATH` adres Mikro-Klima'yı göstermiyor (404/HTML) · `GC-SRV` Mikro-Klima'da NEXUS_SECRET yok ya da sunucu hatası.
+- Eskiden 401/404 gibi yanıtlar "Kod kabul edilmedi" diye gösterilebiliyordu; artık yalnızca Mikro-Klima'nın tanıdığı ret nedenleri (geçersiz/kullanılmış/süresi dolmuş) kod reddi sayılır.
+- Yönetici durum ucu (`/api/admin/giftcard`) artık `reason` ve açıklama döner; health yanıtı gövdesiyle doğrulanır.
+- `wrangler.toml`: `GIFTCARD_API_URL` dosyadaki değerden okunur (deploy panel değerini ezer); açıklaması eklendi.
+- Test: `hediye kartı: hata nedeni kodu ...` (toplam 71 test geçiyor).
