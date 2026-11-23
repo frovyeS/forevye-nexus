@@ -282,3 +282,24 @@ th{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--sil
 /* Kart QR okuyucu */
 .qr-video{display:block;width:100%;max-height:360px;aspect-ratio:4/3;object-fit:cover;background:#08090d;border-radius:14px;margin:0 0 12px}
 [data-sys="card-qr"]{shape-rendering:crispEdges}
+
+/* ---------- Kristal borsası: sade işlem akışı ---------- */
+.trade-panel{padding:16px}
+.trade-intro{color:var(--muted);font-size:.9rem;line-height:1.55;margin:0 0 16px}
+.trade-panel .sidetabs{gap:8px;margin-bottom:14px}
+.trade-panel .sidetabs button{font-size:.82rem;letter-spacing:.08em}
+.trade-panel .field{margin-bottom:12px}
+.trade-panel .field label{letter-spacing:.08em}
+.trade-panel .field input{font-variant-numeric:tabular-nums}
+.trade-available{color:var(--muted);font-size:.78rem;margin:-6px 0 8px;font-variant-numeric:tabular-nums}
+.trade-shortcuts{margin:0 0 14px}
+.trade-shortcuts button{min-height:36px;padding:0 12px;font-size:.82rem}
+.trade-quote{border:1px solid var(--line-2);border-radius:var(--r);background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.015));padding:12px 14px;margin:4px 0 14px;min-width:0}
+.trade-quote-head,.trade-quote-row,.trade-quote-total{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.trade-quote-head{margin-bottom:10px;font-size:.84rem}
+.trade-quote-row{padding:5px 0;color:var(--muted);font-size:.82rem}
+.trade-quote-row strong{color:var(--text);text-align:right;font-variant-numeric:tabular-nums}
+.trade-quote-total{border-top:1px solid var(--line-2);margin-top:8px;padding-top:11px;font-size:.88rem}
+.trade-quote-total strong{font-size:1.15rem;font-variant-numeric:tabular-nums}
+.trade-quote-warning{color:var(--warn);font-size:.8rem;line-height:1.45;margin:10px 0 0}
+.trade-footnote{font-size:.72rem;color:var(--muted);line-height:1.5;margin:12px 0 0}

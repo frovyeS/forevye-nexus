@@ -101,13 +101,22 @@ function buildDetail(card) {
 
   const cardActivity = h('div', { class: 'panel' }, h('h3', { text: 'Kart hareketleri' }));
   const cardActivityBody = h('div', { class: 'muted small', text: 'Hareketler yükleniyor…' }); cardActivity.append(cardActivityBody);
-  api.get(`/api/cards/${card.id}/transactions`).then((d) => {
-    if (!d.items.length) return mount(cardActivityBody, h('p', { class: 'muted small', text: 'Bu kartta henüz işlem yok.' }));
-    mount(cardActivityBody, h('ul', { class: 'list' }, d.items.map((t) => h('li', { class: 'item' },
-      h('div', { class: 'grow' }, h('div', { class: 't', text: t.description || (t.type === 'payment' ? 'Kartla ödeme' : t.type === 'fund_in' ? 'Karta yükleme' : 'Cüzdana aktarım') }),
-        h('div', { class: 'muted small', text: `${dt(t.created_at)} • ${t.counterparty ? '@' + t.counterparty : t.tx_ref}` })),
-      h('strong', { class: t.amount >= 0 ? 'pos' : 'neg', text: `${t.amount >= 0 ? '+' : '−'}${money(Math.abs(t.amount), cur())}` })))));
-  }).catch((e) => mount(cardActivityBody, h('p', { class: 'muted small', text: e.message || 'Kart hareketleri yüklenemedi.' })));
+  const loadCardActivity = async () => {
+    mount(cardActivityBody, h('p', { class: 'muted small', text: 'Kart hareketleri yükleniyor…' }));
+    try {
+      const d = await api.get(`/api/cards/${card.id}/transactions`);
+      if (!d.items.length) return mount(cardActivityBody, h('p', { class: 'muted small', text: 'Bu kartta henüz işlem yok.' }));
+      mount(cardActivityBody, h('ul', { class: 'list' }, d.items.map((t) => h('li', { class: 'item' },
+        h('div', { class: 'grow' }, h('div', { class: 't', text: t.description || (t.type === 'payment' ? 'Kartla ödeme' : t.type === 'fund_in' ? 'Karta yükleme' : 'Cüzdana aktarım') }),
+          h('div', { class: 'muted small', text: `${dt(t.created_at)} • ${t.counterparty ? '@' + t.counterparty : t.tx_ref}` })),
+        h('strong', { class: t.amount >= 0 ? 'pos' : 'neg', text: `${t.amount >= 0 ? '+' : '−'}${money(Math.abs(t.amount), cur())}` })))));
+    } catch (e) {
+      mount(cardActivityBody,
+        h('p', { class: 'err-text', role: 'alert', text: e.message || 'Kart hareketleri yüklenemedi.' }),
+        h('button', { class: 'btn small', type: 'button', onClick: loadCardActivity }, icon('undo', 16), 'Yeniden yükle'));
+    }
+  };
+  loadCardActivity();
 
   const cardCode = h('div', { class: 'panel' }, h('h3', { text: 'Sanal kart kodu' }),
     h('p', { class: 'strong', text: card.card_token }),

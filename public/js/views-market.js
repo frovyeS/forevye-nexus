@@ -1,12 +1,12 @@
 // Kristal borsası ekranı. Fiyat ve tutarlar SUNUCUDAN gelir; istemci yalnızca gösterir ve niyet (yön + miktar) gönderir.
 import { api } from './api.js';
-import { h, mount, toast, money, dt, load, field, busy, empty, icon } from './ui.js';
-import { state, refreshMe, cur } from './state.js';
+import { h, mount, toast, money, dt, load, busy, empty, icon } from './ui.js';
+import { refreshMe, cur } from './state.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 export const fnPrice = (micro) => `${(micro / 1e6).toLocaleString('tr-TR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} FN`;
 export const qtyFmt = (q) => (q / 1e4).toLocaleString('tr-TR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-const pct = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}%${Math.abs(v).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const pct = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 const deltaEl = (v) => h('span', { class: `delta ${cls(v)}` }, v > 0 ? icon('up', 16) : v < 0 ? icon('down', 16) : null, pct(v));
 const cls = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
 
@@ -66,55 +66,166 @@ export function marketView(screen) {
 }
 
 function tradePanel(m, redraw, allCards = []) {
-  let side = 'buy', mode = 'amount', cardChoice = '';
-  const cards = allCards.filter((c) => c.status === 'active');
-  const box = h('div', { class: 'panel' });
+  let side = 'buy';
+  let cardChoice = '';
+  let inputValue = '';
   let key = null;
-  const paint = () => {
+  const cards = allCards.filter((c) => c.status === 'active');
+  const box = h('div', { class: 'panel trade-panel' });
+
+  const render = () => {
     const price = side === 'buy' ? m.buy_micro : m.sell_micro;
-    const inp = h('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: mode === 'amount' ? '0,00' : '0,0000' });
-    const err = h('p', { class: 'err-text', role: 'alert' });
-    const est = h('p', { class: 'muted small', style: { margin: '0 0 12px' } });
-    const paymentSelect = side === 'buy' ? h('select', { value: cardChoice },
-      h('option', { value: '', text: `Ana cüzdan · ${money(m.balance, cur())}` }),
-      cards.map((c) => h('option', { value: c.id, text: `${c.label || c.display_name} · ${money(c.balance || 0, cur())}` }))) : null;
-    const paymentField = paymentSelect ? field('Ödeme kartı (isteğe bağlı)', paymentSelect, 'Ana cüzdanı veya alışverişte kullanacağın aktif kartı seç.') : null;
-    const available = () => cardChoice ? Number(cards.find((c) => c.id === cardChoice)?.balance || 0) : Number(m.balance || 0);
-    if (paymentSelect) paymentSelect.addEventListener('change', () => { cardChoice = paymentSelect.value; key = null; refresh(); });
+    const input = h('input', {
+      type: 'text', inputmode: 'decimal', autocomplete: 'off', value: inputValue,
+      placeholder: 'Örn. 2,5000', 'aria-label': 'Kristal miktarı (KRS)',
+    });
+    const error = h('p', { class: 'err-text', role: 'alert' });
+    const quote = h('div', { class: 'trade-quote', 'aria-live': 'polite' });
+    const available = () => cardChoice
+      ? Number(cards.find((c) => c.id === cardChoice)?.balance || 0)
+      : Number(m.balance || 0);
     const parse = () => {
-      const v = inp.value.trim().replace(',', '.');
-      if (!v) return null;
-      if (mode === 'amount') { if (!/^\d{1,9}(\.\d{1,2})?$/.test(v) || Number(v) <= 0) return { bad: 'Geçerli bir FN tutarı girin (en fazla 2 ondalık).' }; const minor = Math.round(Number(v) * 100); return { body: { amount: v }, minor, qty: side === 'buy' ? Math.floor(minor * 1e8 / price) : Math.ceil(minor * 1e8 / price) }; }
-      if (!/^\d{1,6}(\.\d{1,4})?$/.test(v) || Number(v) <= 0) return { bad: 'Geçerli bir kristal miktarı girin (en fazla 4 ondalık).' };
-      const qty = Math.round(Number(v) * 1e4); const minor = side === 'buy' ? Math.ceil(qty * price / 1e8) : Math.floor(qty * price / 1e8); return { body: { qty: v }, minor, qty };
+      const value = input.value.trim().replace(',', '.');
+      if (!value) return null;
+      if (!/^\d{1,6}(\.\d{1,4})?$/.test(value) || Number(value) <= 0) {
+        return { bad: 'Kristal miktarını 0,0001 ile 999999,9999 arasında gir (en fazla 4 ondalık).' };
+      }
+      const [whole, fraction = ''] = value.split('.');
+      const qty = Number(whole) * 10000 + Number(fraction.padEnd(4, '0'));
+      if (!Number.isSafeInteger(qty) || qty <= 0) return { bad: 'Geçerli bir kristal miktarı gir.' };
+      const product = BigInt(qty) * BigInt(price);
+      const div = 100000000n;
+      const minor = Number(side === 'buy' ? (product + div - 1n) / div : product / div);
+      return { qty, minor, body: { qty: (qty / 10000).toFixed(4) } };
     };
-    const refresh = () => { const p = parse(); err.textContent = ''; est.textContent = !p ? '' : p.bad ? p.bad : `≈ ${qtyFmt(p.qty)} KRS • ${money(p.minor, cur())} • birim fiyat ${fnPrice(price)}`; };
-    inp.addEventListener('input', () => { key = null; refresh(); });
-    const quick = h('div', { class: 'chips' }, (side === 'buy' ? [['25%', 0.25], ['50%', 0.5], ['Tümü', 1]] : [['25%', 0.25], ['50%', 0.5], ['Tümü', 1]]).map(([l, f]) => h('button', { type: 'button', text: l, onClick: () => {
-      if (side === 'buy') { mode = 'amount'; const cap = Math.min(available(), m.max_trade_minor); paint(); const i = box.querySelector('input'); i.value = (Math.floor(cap * f) / 100).toFixed(2); i.dispatchEvent(new Event('input')); }
-      else { mode = 'qty'; paint(); const i = box.querySelector('input'); const q = f === 1 ? m.you.qty : Math.floor(m.you.qty * f); i.value = (q / 1e4).toFixed(4); i.dispatchEvent(new Event('input')); }
-    } })));
-    const btn = h('button', { class: 'btn primary block', type: 'submit', text: side === 'buy' ? 'Kristal al' : 'Kristal sat', disabled: !m.tradable });
-    const form = h('form', { onSubmit: (e) => { e.preventDefault(); const p = parse(); if (!p) { err.textContent = 'Bir değer girin.'; return; } if (p.bad) { err.textContent = p.bad; return; }
-      if (p.minor > m.max_trade_minor) { err.textContent = `İşlem başına en fazla ${money(m.max_trade_minor, cur())} değerinde işlem yapabilirsiniz.`; return; }
-      if (side === 'buy' && p.minor > available()) { err.textContent = cardChoice ? 'Seçtiğin kartın bakiyesi yetersiz. Önce karta para yükle.' : 'Yetersiz FN bakiyesi.'; return; }
-      if (side === 'sell' && p.qty > m.you.qty) { err.textContent = 'Yeterli kristalin yok.'; return; }
-      if (!confirm(`${side === 'buy' ? 'Alınacak' : 'Satılacak'}: ≈ ${qtyFmt(p.qty)} KRS\n${side === 'buy' ? 'Ödenecek' : 'Alınacak'}: ≈ ${money(p.minor, cur())}\nBirim fiyat: ${fnPrice(price)}\n\nOnaylıyor musun?`)) return;
+    const updateQuote = () => {
+      inputValue = input.value;
+      const parsed = parse();
+      mount(quote);
+      if (!parsed) {
+        quote.append(h('p', { class: 'muted small', text: side === 'buy'
+          ? 'Almak istediğin kristal miktarını yaz. Ödenecek FN tutarı otomatik hesaplanır.'
+          : 'Satmak istediğin kristal miktarını yaz. Cüzdanına geçecek FN otomatik hesaplanır.' }));
+        return;
+      }
+      if (parsed.bad) {
+        quote.append(h('p', { class: 'err-text', text: parsed.bad }));
+        return;
+      }
+      const hasEnough = side === 'buy' ? parsed.minor <= available() : parsed.qty <= Number(m.you.qty || 0);
+      quote.append(
+        h('div', { class: 'trade-quote-head' }, h('strong', { text: 'İşlem özeti' }), h('span', { class: 'chip', text: 'TAHMİNİ' })),
+        h('div', { class: 'trade-quote-row' }, h('span', { text: side === 'buy' ? 'Alacağın miktar' : 'Satacağın miktar' }), h('strong', { text: `${qtyFmt(parsed.qty)} KRS` })),
+        h('div', { class: 'trade-quote-row' }, h('span', { text: side === 'buy' ? 'Birim alış fiyatı' : 'Birim satış fiyatı' }), h('strong', { text: fnPrice(price) })),
+        h('div', { class: 'trade-quote-total' }, h('span', { text: side === 'buy' ? 'Ödeyeceğin toplam' : 'Cüzdanına geçecek' }), h('strong', { text: money(parsed.minor, cur()) })),
+      );
+      if (!hasEnough) {
+        quote.append(h('p', { class: 'trade-quote-warning', text: side === 'buy'
+          ? (cardChoice ? 'Bu kartın bakiyesi yetmiyor. Kartlarım bölümünden karta FN aktarabilirsin.' : 'Ana cüzdan bakiyen bu alış için yetersiz.')
+          : 'Bu miktarda kristalin yok. Elindeki miktarı aşağıdan kontrol et.' }));
+      }
+    };
+
+    const paymentSelect = side === 'buy' ? h('select', { 'aria-label': 'Ödeme kaynağı' },
+      h('option', { value: '', text: `Ana cüzdan • ${money(m.balance, cur())}` }),
+      cards.map((c) => h('option', { value: c.id, text: `${c.label || c.display_name} • ${money(c.balance || 0, cur())}` }))) : null;
+    if (paymentSelect) {
+      paymentSelect.value = cardChoice;
+      paymentSelect.addEventListener('change', () => {
+        cardChoice = paymentSelect.value;
+        key = null;
+        updateQuote();
+        const balance = h('span', { text: money(available(), cur()) });
+        const hint = box.querySelector('[data-payment-available]');
+        if (hint) hint.replaceChildren('Bu kaynaktan kullanılabilir: ', balance);
+      });
+    }
+    const balanceHint = side === 'buy'
+      ? h('p', { class: 'trade-available', 'data-payment-available': '', text: `Bu kaynaktan kullanılabilir: ${money(available(), cur())}` })
+      : h('p', { class: 'trade-available', text: `Elindeki kristal: ${qtyFmt(m.you.qty)} KRS` });
+
+    const setAmount = (value) => {
+      input.value = value;
+      inputValue = value;
+      key = null;
+      updateQuote();
+    };
+    const shortcuts = side === 'buy'
+      ? [
+          ['1 KRS', () => setAmount('1,0000')],
+          ['5 KRS', () => setAmount('5,0000')],
+          ['Maksimum', () => {
+            const cap = Math.min(available(), m.max_trade_minor);
+            const maxQty = Number((BigInt(Math.max(0, cap)) * 100000000n) / BigInt(price));
+            setAmount((maxQty / 10000).toFixed(4).replace('.', ','));
+          }],
+        ]
+      : [
+          ['%25', () => setAmount((Math.floor(Number(m.you.qty || 0) * 0.25) / 10000).toFixed(4).replace('.', ','))],
+          ['%50', () => setAmount((Math.floor(Number(m.you.qty || 0) * 0.50) / 10000).toFixed(4).replace('.', ','))],
+          ['Tümü', () => {
+            const maxByLimit = Number((BigInt(m.max_trade_minor) * 100000000n) / BigInt(price));
+            setAmount((Math.min(Number(m.you.qty || 0), maxByLimit) / 10000).toFixed(4).replace('.', ','));
+          }],
+        ];
+    const shortcutRow = h('div', { class: 'chips trade-shortcuts' }, shortcuts.map(([label, run]) => h('button', { type: 'button', text: label, onClick: run })));
+    const submit = h('button', { class: 'btn primary block', type: 'submit', text: side === 'buy' ? 'Alışı onayla' : 'Satışı onayla', disabled: !m.tradable });
+
+    input.addEventListener('input', () => { key = null; updateQuote(); });
+    const form = h('form', { onSubmit: (event) => {
+      event.preventDefault();
+      const parsed = parse();
+      if (!parsed) { error.textContent = 'Önce almak veya satmak istediğin kristal miktarını gir.'; return; }
+      if (parsed.bad) { error.textContent = parsed.bad; return; }
+      if (parsed.minor < 1) { error.textContent = 'İşlem tutarı çok küçük. Biraz daha fazla kristal gir.'; return; }
+      if (parsed.minor > m.max_trade_minor) { error.textContent = `Tek işlem sınırı ${money(m.max_trade_minor, cur())}. Daha düşük miktar gir.`; return; }
+      if (side === 'buy' && parsed.minor > available()) { error.textContent = cardChoice ? 'Seçtiğin kartta yeterli FN yok. Önce karta para yükle.' : 'Ana cüzdanında yeterli FN yok.'; return; }
+      if (side === 'sell' && parsed.qty > Number(m.you.qty || 0)) { error.textContent = 'Elindeki kristal miktarı bu satış için yeterli değil.'; return; }
+      const sourceName = side === 'buy' && cardChoice
+        ? (cards.find((c) => c.id === cardChoice)?.label || cards.find((c) => c.id === cardChoice)?.display_name || 'Seçilen kart')
+        : 'Ana cüzdan';
+      const summary = side === 'buy'
+        ? `KRİSTAL ALIŞI\n\nAlacağın: ${qtyFmt(parsed.qty)} KRS\nÖdeyeceğin: ${money(parsed.minor, cur())}\nBirim alış fiyatı: ${fnPrice(price)}\nÖdeme kaynağı: ${sourceName}\n\nİşlemi onaylıyor musun?`
+        : `KRİSTAL SATIŞI\n\nSatacağın: ${qtyFmt(parsed.qty)} KRS\nCüzdanına geçecek: ${money(parsed.minor, cur())}\nBirim satış fiyatı: ${fnPrice(price)}\n\nİşlemi onaylıyor musun?`;
+      if (!confirm(summary)) return;
       key ||= crypto.randomUUID();
-      busy(btn, async () => {
+      busy(submit, async () => {
+        error.textContent = '';
         try {
-          const r = await api.post('/api/market/trade', { side, ...p.body, expected_price_micro: price, idempotency_key: key, ...(side === 'buy' && cardChoice ? { card_id: cardChoice } : {}) });
-          key = null; await refreshMe().catch(() => {});
-          toast(`${side === 'buy' ? 'Alındı' : 'Satıldı'}: ${qtyFmt(r.qty)} KRS • ${money(r.total, cur())}`, 'ok'); redraw();
-        } catch (ex) { err.textContent = ex.message; if (ex.code === 'price_moved') { key = null; redraw(); } }
-      }); } },
-      h('div', { class: 'seg', role: 'group', 'aria-label': 'Giriş türü' }, [['amount', 'FN tutarı'], ['qty', 'Kristal miktarı']].map(([v, l]) => h('button', { type: 'button', 'aria-pressed': String(mode === v), text: l, onClick: () => { mode = v; key = null; paint(); } }))),
-      paymentField, field(mode === 'amount' ? `Tutar (${cur()})` : 'Miktar (KRS)', inp, side === 'buy' ? `Kullanılabilir: ${money(available(), cur())}` : `Elindeki: ${qtyFmt(m.you.qty)} KRS`), quick, est, err, btn);
-    mount(box, h('div', { class: 'sidetabs', role: 'tablist' },
-      h('button', { class: 'buy', role: 'tab', type: 'button', 'aria-selected': String(side === 'buy'), text: 'Al', onClick: () => { side = 'buy'; key = null; paint(); } }),
-      h('button', { class: 'sell', role: 'tab', type: 'button', 'aria-selected': String(side === 'sell'), text: 'Sat', onClick: () => { side = 'sell'; key = null; paint(); } })), form);
+          const result = await api.post('/api/market/trade', {
+            side, ...parsed.body, expected_price_micro: price, idempotency_key: key,
+            ...(side === 'buy' && cardChoice ? { card_id: cardChoice } : {}),
+          });
+          key = null;
+          await refreshMe().catch(() => {});
+          toast(`${side === 'buy' ? 'Alış tamamlandı' : 'Satış tamamlandı'} • ${qtyFmt(result.qty)} KRS • ${money(result.total, cur())}`, 'ok');
+          redraw();
+        } catch (ex) {
+          error.textContent = ex.message || 'İşlem tamamlanamadı.';
+          if (ex.code === 'price_moved') { key = null; redraw(); }
+        }
+      });
+    } },
+      paymentSelect ? h('div', { class: 'field' }, h('label', { text: 'Ödemeyi nereden yapacaksın?' }), paymentSelect, balanceHint) : null,
+      h('div', { class: 'field' }, h('label', { text: 'Kristal miktarı (KRS)' }), input,
+        h('small', { class: 'muted', text: side === 'buy' ? 'Ödeme, seçtiğin cüzdan veya kart bakiyesinden düşer.' : 'Satış bedeli ana FN cüzdanına aktarılır.' })),
+      shortcutRow, quote, error, submit,
+    );
+
+    mount(box,
+      h('div', { class: 'sidetabs', role: 'tablist', 'aria-label': 'İşlem yönü' },
+        h('button', { class: 'buy', role: 'tab', type: 'button', 'aria-selected': String(side === 'buy'), text: 'KRİSTAL AL', onClick: () => { if (side !== 'buy') { side = 'buy'; inputValue = ''; key = null; render(); } } }),
+        h('button', { class: 'sell', role: 'tab', type: 'button', 'aria-selected': String(side === 'sell'), text: 'KRİSTAL SAT', onClick: () => { if (side !== 'sell') { side = 'sell'; inputValue = ''; key = null; render(); } } }),
+      ),
+      h('p', { class: 'trade-intro', text: side === 'buy'
+        ? 'Kaç kristal almak istediğini yaz. Toplam FN tutarını ve ödeme kaynağını onaylamadan işlem yapılmaz.'
+        : 'Kaç kristal satmak istediğini yaz. Satıştan alacağın FN doğrudan ana cüzdanına eklenir.' }),
+      form,
+      h('p', { class: 'trade-footnote', text: 'Bu, FOREVYE NEXUS içindeki sanal oyun piyasasıdır; gerçek para veya gerçek yatırım değildir.' }),
+    );
+    updateQuote();
   };
-  paint();
+  render();
   return box;
 }
 

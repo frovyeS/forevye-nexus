@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { makeEnv, register, fund, sql, one, PW } from './helpers.mjs';
 
 const key = () => 'card_' + crypto.randomUUID().replaceAll('-', '').slice(0, 24);
@@ -124,4 +125,33 @@ test('yüksek tutarlı kart ödemesi yeniden parola ister; korumalı kart bakiye
   assert.equal(tamper.status, 400, 'kart bakiyesi API üzerinden değiştirilememeli');
   const nonOwner = receiver.cl.get(`/api/cards/${card.id}/transactions`);
   assert.equal((await nonOwner).status, 404);
+});
+
+test('kart bakiyesi migration eksikse anlaşılır 503 verir; migration sonrası yükleme çalışır', async () => {
+  const env = makeEnv();
+  const a = await register(env, 'cardledger-repair@example.com', 'cardledger_fix');
+  await fund(env, a.me.user.id, 10000);
+  const card = await getDefaultCard(a.cl);
+
+  // Yüklenen eski kaynakta bulunan durum: balance sütunu ve card_ledger tablosu henüz yok.
+  env.DB.raw.exec('DROP TABLE card_ledger');
+  env.DB.raw.exec('ALTER TABLE cards DROP COLUMN balance');
+  const historyBefore = await a.cl.get(`/api/cards/${card.id}/transactions`);
+  assert.equal(historyBefore.status, 503);
+  assert.equal(historyBefore.data.error.code, 'card_schema_missing');
+  const fundBefore = await a.cl.post(`/api/cards/${card.id}/fund`, {
+    amount: '31.00', direction: 'load', idempotency_key: key(),
+  });
+  assert.equal(fundBefore.status, 503);
+  assert.match(fundBefore.data.error.message, /db:migrate:remote/);
+
+  env.DB.raw.exec(readFileSync(new URL('../migrations/0010_card_balances.sql', import.meta.url), 'utf8'));
+  const historyAfter = await a.cl.get(`/api/cards/${card.id}/transactions`);
+  assert.equal(historyAfter.status, 200, JSON.stringify(historyAfter.data));
+  const loaded = await a.cl.post(`/api/cards/${card.id}/fund`, {
+    amount: '31.00', direction: 'load', idempotency_key: key(),
+  });
+  assert.equal(loaded.status, 201, JSON.stringify(loaded.data));
+  assert.equal(loaded.data.card_balance, 3100);
+  assert.equal((await a.cl.get(`/api/cards/${card.id}/transactions`)).data.items.length, 1);
 });
