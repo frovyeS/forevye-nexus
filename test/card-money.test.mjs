@@ -127,40 +127,29 @@ test('yüksek tutarlı kart ödemesi yeniden parola ister; korumalı kart bakiye
   assert.equal((await nonOwner).status, 404);
 });
 
-test('kart bakiyesi migration eksikse anlaşılır 503 verir; migration sonrası yükleme çalışır', async () => {
+test('eski D1 kart şeması ilk kart isteğinde otomatik onarılır; veri kaybı olmaz', async () => {
   const env = makeEnv();
   const a = await register(env, 'cardledger-repair@example.com', 'cardledger_fix');
   await fund(env, a.me.user.id, 10000);
   const card = await getDefaultCard(a.cl);
 
-  // Yüklenen eski kaynakta bulunan durum: balance sütunu ve card_ledger tablosu henüz yok.
+  // Canlıdaki eski durum: cards.balance ve card_ledger henüz yok.
   env.DB.raw.exec('DROP TABLE card_ledger');
   env.DB.raw.exec('ALTER TABLE cards DROP COLUMN balance');
-  const listBefore = await a.cl.get('/api/cards');
-  assert.equal(listBefore.status, 503);
-  assert.equal(listBefore.data.error.code, 'card_schema_missing');
-  const detailBefore = await a.cl.get(`/api/cards/${card.id}`);
-  assert.equal(detailBefore.status, 503);
-  assert.equal(detailBefore.data.error.code, 'card_schema_missing');
-  const createBefore = await a.cl.post('/api/cards', { label: 'Yeni kart' });
-  assert.equal(createBefore.status, 503);
-  assert.equal(createBefore.data.error.code, 'card_schema_missing');
-  const historyBefore = await a.cl.get(`/api/cards/${card.id}/transactions`);
-  assert.equal(historyBefore.status, 503);
-  assert.equal(historyBefore.data.error.code, 'card_schema_missing');
-  const fundBefore = await a.cl.post(`/api/cards/${card.id}/fund`, {
-    amount: '31.00', direction: 'load', idempotency_key: key(),
-  });
-  assert.equal(fundBefore.status, 503);
-  assert.match(fundBefore.data.error.message, /db:migrate:remote/);
 
-  env.DB.raw.exec(readFileSync(new URL('../migrations/0010_card_balances.sql', import.meta.url), 'utf8'));
-  const historyAfter = await a.cl.get(`/api/cards/${card.id}/transactions`);
-  assert.equal(historyAfter.status, 200, JSON.stringify(historyAfter.data));
-  const loaded = await a.cl.post(`/api/cards/${card.id}/fund`, {
+  const repairedList = await a.cl.get('/api/cards');
+  assert.equal(repairedList.status, 200, JSON.stringify(repairedList.data));
+  assert.equal(repairedList.data.cards.find((x) => x.id === card.id).balance, 0);
+
+  const schema = await sql(env, 'PRAGMA table_info(cards)');
+  assert.ok(schema.some((column) => column.name === 'balance'));
+  const ledger = await one(env, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'card_ledger'");
+  assert.ok(ledger, 'kart defteri otomatik oluşturulmalı');
+
+  const load = await a.cl.post(`/api/cards/${card.id}/fund`, {
     amount: '31.00', direction: 'load', idempotency_key: key(),
   });
-  assert.equal(loaded.status, 201, JSON.stringify(loaded.data));
-  assert.equal(loaded.data.card_balance, 3100);
+  assert.equal(load.status, 201, JSON.stringify(load.data));
+  assert.equal(load.data.card_balance, 3100);
   assert.equal((await a.cl.get(`/api/cards/${card.id}/transactions`)).data.items.length, 1);
 });

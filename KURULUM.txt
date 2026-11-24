@@ -1,25 +1,25 @@
-FOREVYE NEXUS – GITHUB ÜZERİNDEN OTOMATİK KART VERİTABANI DÜZELTMESİ
+FOREVYE NEXUS – KART BAKİYESİ OTOMATİK DÜZELTME
 
-BU GÜNCELLEME NEYİ ÇÖZER?
-Market'te görülen card_schema_missing hatasının nedeni, Worker kodu dağıtılırken kart bakiyesi için gereken D1 migration'larının canlı veritabanına uygulanmamasıdır.
+NE DEĞİŞTİ?
+- Kart bakiyesi şeması artık eski D1 migration geçmişine bağımlı değildir.
+- Worker'ın ilk kart isteğinde cards.balance sütunu eksikse güvenli biçimde eklenir.
+- card_ledger tablosu, indeksleri ve append-only tetikleyicileri eksikse oluşturulur.
+- Mevcut kullanıcılar, kartlar, cüzdanlar ve satın alımlar silinmez.
+- Aynı anda gelen ilk isteklerde yinelenen sütun ekleme yarışı güvenli şekilde ele alınır.
 
-GITHUB DAĞITIM AKIŞI
-- .github/workflows/deploy-worker.yml, main/master dalına ilgili dosya değişikliği geldiğinde otomatik çalışır.
-- Önce DB binding'ine bağlı canlı D1 veritabanındaki bekleyen migration'ları uygular.
-- cards.balance, card_ledger ve shop_card_deliveries yapılarını doğrular.
-- Yalnızca bütün kontroller başarılıysa Worker deploy eder.
-- Aynı akış Actions > Deploy FOREVYE NEXUS Worker > Run workflow ile elle de başlatılabilir.
+GITHUB'A UYGULAMA
+1. Bu paketteki forevye-nexus-main klasörü içindeki dosyaları, wrangler.toml ve src/worker.js bulunan Worker deposunun köküne koyun.
+2. GitHub'da main dalına commit edin. Actions > Deploy FOREVYE NEXUS Worker işi otomatik başlar.
+3. İşin yeşil tamamlandığını doğrulayın. Ardından Market ve banka sayfasını Ctrl+Shift+R ile yenileyin.
 
-BİR KERELİK GITHUB AYARI
-forevye-nexus GitHub deposunda Settings > Secrets and variables > Actions bölümüne şu iki Repository secret eklenmelidir:
-- CLOUDFLARE_API_TOKEN: Worker ve D1 için yazma yetkili Cloudflare API token'ı.
-- CLOUDFLARE_ACCOUNT_ID: forevye-nexus D1 veritabanının bulunduğu Cloudflare hesap kimliği.
+GEREKLİ GITHUB SECRET'LARI
+Worker deposu > Settings > Secrets and variables > Actions:
+- CLOUDFLARE_API_TOKEN
+- CLOUDFLARE_ACCOUNT_ID
 
-Bu iki secret zaten varsa tekrar eklemeyin. Secret değerleri kaynak koda veya bu ZIP'e yazılmaz.
+Bu iki secret zaten kayıtlıysa tekrar eklemeyin. Değerleri kaynak dosyalarına yazmayın.
 
 ÖNEMLİ
-- D1 verileri silinmez veya sıfırlanmaz.
-- Migration işlemi doğrulanmadan Worker yayını yapılmaz.
-- Worker dağıtımı başarısızsa GitHub deposundaki Actions günlüğünde ilk hata görünür.
-- package.json içindeki deploy komutu da migration + şema kontrolü + Worker deploy sırasını izler; Cloudflare Git entegrasyonunda npm run deploy kullanılırsa aynı koruma devrededir.
-- Bu ortamda GitHub deposuna doğrudan commit veya canlı Cloudflare deploy yapılamadı. ZIP, ilgili repository dosyalarının yerine konması için hazırlanmıştır.
+- Bu paket Market Pages deposuna değil, wrangler.toml ve src/worker.js dosyalarının bulunduğu Cloudflare Worker deposuna uygulanır.
+- Artık deploy öncesi npm run db:migrate:remote çalıştırılması gerekmez. Eski migration geçmişi nedeniyle deploy'un durması engellenmiştir.
+- GitHub Actions dağıtımı yapamazsa sayfa eski Worker kodunu göstermeye devam eder. Actions günlüğündeki ilk hata gerçek dağıtım engelini gösterir.
