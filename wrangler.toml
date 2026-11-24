@@ -34,6 +34,7 @@ crons = ["*/5 * * * *"]
 ENVIRONMENT = "production"
 CURRENCY_CODE = "FN"
 EDITOR_URL = "https://mhaforevye.github.io/forevye_nexus_bank/"
+BANK_URL = "https://mhaforevye.github.io/forevye_nexus_bank/"
 SHOP_URL = "https://mhaforevye.github.io/nexus-market/"
 MAX_TRANSFER_MINOR = "500000"
 DAILY_TRANSFER_LIMIT_MINOR = "1500000"

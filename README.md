@@ -72,6 +72,12 @@ yönetici paneli (kullanıcı ara, askı, duyuru, şablon, rol, ters kayıt/düz
 - Kart tasarımı banka kart editöründe yapılır (sözleşme sürüm 2, 856×540); eski v1 kartlar okunurken çevrilir. Ayrıntı: docs/INTEGRATION_NOTES.md §3.
 
 
+## 280 kartlık sınırlı koleksiyon
+
+`docs/catalog-280/` altında 280 ürünün kaynak JSON/CSV kataloğu, ekip şartnamesi ve varlık kılavuzu bulunur. Ürünler `migrations/0012_nexus_280_catalog.sql` ile mevcut mağaza tablosuna eklenebilir; Worker katalog tohumu da `INSERT OR IGNORE` ile bu ürünleri yeni veritabanlarına hazırlar. Her ürünün stoğu 2, kullanıcı başına satın alma sınırı 1 ve seri numarası `001/002`–`002/002` olur.
+
+280 ürünün her biri için ortak SVG renderer'da ayrı renk/motif kompozisyonu ve yatay/dikey önizleme üretildi. Bu görsel katman, nihai karakter çizimi veya lisanslı kulüp arması yerine geçmez; `asset_status` alanı beklenen özgün/lisanslı varlığı açıkça belirtir. Ayrıntılar: `docs/NEXUS_280_INTEGRATION.md`.
+
 ## FOREVYE ID bağlantısı
 
 - Banka gezinmesindeki **FOREVYE ID** öğesi `https://mhaforevye.github.io/forevye-id/` hesabını yeni sekmede açar.
