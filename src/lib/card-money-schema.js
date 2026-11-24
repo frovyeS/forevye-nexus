@@ -1,6 +1,6 @@
 import { HttpError } from './util.js';
 
-const CARD_SCHEMA_HINT = 'Kart bakiyesi veritabanı güncellemesi eksik. Nexus ana proje klasöründe npm run db:migrate:remote komutunu, ardından npm run deploy komutunu çalıştırın.';
+const CARD_SCHEMA_HINT = `Kart veritabanı henüz güncel değil. GitHub deposundaki Actions bölümünden “Deploy FOREVYE NEXUS Worker” işini çalıştırın. GitHub dağıtım iş akışı npm run db:migrate:remote adımını, canlı D1 şema doğrulamasını ve ardından Worker yayınını otomatik yapar. İş başarısızsa Actions günlüğündeki ilk hatayı kontrol edin.`;
 
 // Kart listesi/detayı da bu kontrolü kullanır: eski D1 şemasında balance alanı
 // bulunmuyorsa Number(undefined || 0) ile kullanıcıya sahte 0 FN gösterilmez.

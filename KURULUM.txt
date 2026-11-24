@@ -1,27 +1,25 @@
-FOREVYE NEXUS - KART BAKIYESI / D1 BAGLANTI DUZELTMESI
+FOREVYE NEXUS – GITHUB ÜZERİNDEN OTOMATİK KART VERİTABANI DÜZELTMESİ
 
-EKRANDAKI HATANIN NEDENI
-Kart bakiyesi ve kart hareketleri icin gereken canli D1 semasi eksik veya Worker, guncel semaya sahip olmayan bir surume bagli. Gerekli migration dosyasi:
-  migrations/0010_card_balances.sql ve migrations/0011_shop_card_deliveries.sql
+BU GÜNCELLEME NEYİ ÇÖZER?
+Market'te görülen card_schema_missing hatasının nedeni, Worker kodu dağıtılırken kart bakiyesi için gereken D1 migration'larının canlı veritabanına uygulanmamasıdır.
 
-UYGULAMA (WINDOWS)
-1. ZIP'i Nexus ana proje klasorune cikartin. KART_BAKIYESI_FIX_CALISTIR.bat, package.json ve wrangler.toml ayni klasorde olmalidir.
-2. KART_BAKIYESI_FIX_CALISTIR.bat dosyasina cift tiklayin.
-3. Ekranda listelenen D1 veritabani adini ve ID'sini kontrol edin. Dogru Cloudflare hesabi ile giris yapin.
-4. Script uzaktaki migration durumunu okur, bekleyen migration'lari uygular, cards.balance, card_ledger ve shop_card_deliveries semalarini sorgulayarak dogrular. Yalnizca dogrulamadan sonra Worker deploy edilir.
-5. [BASARILI] mesajindan sonra Nexus'u Ctrl+Shift+R ile yenileyin.
+GITHUB DAĞITIM AKIŞI
+- .github/workflows/deploy-worker.yml, main/master dalına ilgili dosya değişikliği geldiğinde otomatik çalışır.
+- Önce DB binding'ine bağlı canlı D1 veritabanındaki bekleyen migration'ları uygular.
+- cards.balance, card_ledger ve shop_card_deliveries yapılarını doğrular.
+- Yalnızca bütün kontroller başarılıysa Worker deploy eder.
+- Aynı akış Actions > Deploy FOREVYE NEXUS Worker > Run workflow ile elle de başlatılabilir.
 
-ONEMLI
-- Script wrangler.toml icindeki production D1 baglamini (forevye-nexus) kullanir.
-- Mevcut kullanici, cüzdan veya kart verilerini silmez; D1'i sifirlamaz.
-- Migration veya sema kontrolu basarisizsa Worker deploy edilmez.
-- Migration listesinde 0010_card_balances.sql uygulanmis gorundugu halde cards.balance / card_ledger sorgulari basarisizsa migration kaydi ile gercek sema uyusmuyor olabilir. Migration kayitlarini ya da tablolarini elle silmeyin; BAT ciktisini paylasin.
-- Bu islem Cloudflare hesabina sizin oturumunuzla baglanir. Bu ortamdan canli Cloudflare veritabanina erisim veya deploy yapilmaz.
+BİR KERELİK GITHUB AYARI
+forevye-nexus GitHub deposunda Settings > Secrets and variables > Actions bölümüne şu iki Repository secret eklenmelidir:
+- CLOUDFLARE_API_TOKEN: Worker ve D1 için yazma yetkili Cloudflare API token'ı.
+- CLOUDFLARE_ACCOUNT_ID: forevye-nexus D1 veritabanının bulunduğu Cloudflare hesap kimliği.
 
-KOD TARAFI
-Kart listesi ve detay API'leri kart bakiyesi semasini dogrular. Eski sema durumunda yanlislikla 0 FN gostermek yerine acik 503 sema hatasi doner.
+Bu iki secret zaten varsa tekrar eklemeyin. Secret değerleri kaynak koda veya bu ZIP'e yazılmaz.
 
-OTOMATIK MARKET KART TESLIMI
-- Market'ten Nexus Black, Platin veya Titanyum gibi skin iceren fonksiyonel bir kart satin alindiginda, odeme/urun sahipligi/gercek banka karti/otomatik kart yuzeyi tek D1 islemiyle kaydedilir.
-- Satin alma tamamlaninca Market, tam banka arayuzundeki ilgili kart detayina (/#/cards/<kart-id>) yonlendirir. GitHub Pages uzerindeki forevye_nexus_bank yalnizca tasarim editorudur; satin alma akisi artik oraya gitmez.
-- Daha once satin alinmis ancak banka karti olusturulmamis fonksiyonel kartlar, Market hesabi veya bankanin Kartlarim listesi acildiginda geriye donuk olarak teslim edilir. Tekrarlanan listeleme ikinci kart olusturmaz.
+ÖNEMLİ
+- D1 verileri silinmez veya sıfırlanmaz.
+- Migration işlemi doğrulanmadan Worker yayını yapılmaz.
+- Worker dağıtımı başarısızsa GitHub deposundaki Actions günlüğünde ilk hata görünür.
+- package.json içindeki deploy komutu da migration + şema kontrolü + Worker deploy sırasını izler; Cloudflare Git entegrasyonunda npm run deploy kullanılırsa aynı koruma devrededir.
+- Bu ortamda GitHub deposuna doğrudan commit veya canlı Cloudflare deploy yapılamadı. ZIP, ilgili repository dosyalarının yerine konması için hazırlanmıştır.
