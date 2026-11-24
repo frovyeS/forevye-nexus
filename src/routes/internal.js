@@ -6,6 +6,7 @@ import { grantAchievement } from './misc.js';
 import { balanceOf } from './wallet.js';
 import { auditStmt } from './admin.js';
 import { shopRevokeStmts } from '../lib/shop.js';
+import { requireCardMoneySchema } from '../lib/card-money-schema.js';
 
 function requireKey(req, env) {
   const h = req.headers.get('authorization') || '';
@@ -33,6 +34,7 @@ export const internalRoutes = {
 
     // Market alışverişi kart bakiyesinden ödenmişse iade aynı karta döner.
     const marketPurchase = await env.DB.prepare(`SELECT user_id, price, status FROM shop_purchases WHERE id = ?`).bind(ref).first();
+    if (marketPurchase) await requireCardMoneySchema(env);
     const cardPayment = marketPurchase && await env.DB.prepare(`SELECT card_id FROM card_ledger WHERE tx_ref = ? AND user_id = ? AND type = 'payment' AND amount < 0`).bind(ref, marketPurchase.user_id).first();
     if (marketPurchase && marketPurchase.status === 'success' && cardPayment) {
       const rref = newRef('NXR'), t = now(env), refundKey = `shop_refund_${ref}`;

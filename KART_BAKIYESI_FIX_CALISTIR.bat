@@ -4,14 +4,12 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 echo.
-echo  FOREVYE NEXUS - KART BAKIYESI VERITABANI DUZELTMESI
-echo  =====================================================
+echo  FOREVYE NEXUS - CANLI KART VERITABANI BAGLANTI DUZELTMESI
+echo  ==========================================================
 echo.
 
 if not exist "wrangler.toml" (
-  echo [HATA] wrangler.toml bulunamadi.
-  echo Bu ZIP'in icerigini forevye-nexus-main klasorunun icine cikartin.
-  echo Bu BAT dosyasi package.json ve wrangler.toml ile ayni klasorde olmali.
+  echo [HATA] wrangler.toml bulunamadi. Bu dosyayi Nexus ana proje klasorunde calistirin.
   goto :fail
 )
 if not exist "package.json" (
@@ -20,7 +18,6 @@ if not exist "package.json" (
 )
 if not exist "migrations\0010_card_balances.sql" (
   echo [HATA] migrations\0010_card_balances.sql bulunamadi.
-  echo ZIP icerigini proje kokune dogru cikartin.
   goto :fail
 )
 
@@ -35,15 +32,24 @@ if errorlevel 1 (
   goto :fail
 )
 
-echo [1/5] Proje bagimliliklari hazirlaniyor...
-call npm install
-if errorlevel 1 (
-  echo [HATA] npm install basarisiz. Yukaridaki hatayi kontrol edin.
-  goto :fail
+echo [HEDEF] forevye-nexus (production D1)
+echo Database ID, wrangler.toml icindeki production [[d1_databases]] bolumunden okunur.
+echo DIKKAT: Devam etmeden once Cloudflare hesabinizin dogru oldugunu kontrol edin.
+echo.
+
+if not exist "node_modules\wrangler\bin\wrangler.js" (
+  echo [1/6] Proje bagimliliklari hazirlaniyor...
+  call npm install
+  if errorlevel 1 (
+    echo [HATA] npm install basarisiz. Yukaridaki hatayi kontrol edin.
+    goto :fail
+  )
+) else (
+  echo [1/6] Wrangler bagimliligi mevcut; kurulum atlaniyor.
 )
 
 echo.
-echo [2/5] Cloudflare oturumu kontrol ediliyor...
+echo [2/6] Cloudflare oturumu kontrol ediliyor...
 call npx wrangler whoami
 if errorlevel 1 (
   echo.
@@ -55,47 +61,56 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/5] Uzak forevye-nexus D1 veritabanina migration uygulaniyor...
-call npx wrangler d1 migrations apply forevye-nexus --remote
+echo [3/6] Uzak D1 migration durumlari okunuyor...
+call npx wrangler d1 migrations list forevye-nexus --remote
 if errorlevel 1 (
-  echo.
-  echo [HATA] Migration uygulanamadi. Hata metnini silmeyin veya veritabanini sifirlamayin.
-  echo Yanlis Cloudflare hesabi, D1 yetkisi veya mevcut migration kaydi soz konusu olabilir.
+  echo [HATA] Uzak D1 migration listesi okunamadi. Hesap, yetki veya veritabani baglantisini kontrol edin.
   goto :fail
 )
 
 echo.
-echo [4/5] Canli D1 semasi dogrulaniyor...
+echo [4/6] Bekleyen veritabani guncellemeleri uygulanuyor...
+call npm run db:migrate:remote
+if errorlevel 1 (
+  echo [HATA] Uzak migration uygulanamadi. Veritabani sifirlanmadi; mevcut veriler korunuyor.
+  goto :fail
+)
+
+echo.
+echo [5/6] Canli D1 semasi dogrulaniyor...
 call npx wrangler d1 execute forevye-nexus --remote --command "SELECT balance FROM cards LIMIT 0" --json
 if errorlevel 1 (
-  echo [HATA] cards.balance sutunu dogrulanamadi. Deploy yapilmadi.
+  echo [HATA] cards.balance sutunu yok veya okunamiyor. Worker deploy edilmeyecek.
+  echo Migration listesinde 0010_card_balances.sql uygulanmis gorunuyor ama bu kontrol basarisizsa migration kaydi ile gercek sema uyusmuyor olabilir.
+  echo Migration kayitlarini veya tablolarini elle silmeyin; terminal ciktisini destek icin saklayin.
   goto :fail
 )
 call npx wrangler d1 execute forevye-nexus --remote --command "SELECT id, tx_ref, user_id, card_id, type, amount, balance_after, counterparty_id, idempotency_key, description, created_at FROM card_ledger LIMIT 0" --json
 if errorlevel 1 (
-  echo [HATA] card_ledger tablosu dogrulanamadi. Deploy yapilmadi.
+  echo [HATA] card_ledger tablosu veya sutunlari yok. Worker deploy edilmeyecek.
+  echo Migration kaydini elle silmeyin; terminal ciktisini destek icin saklayin.
   goto :fail
 )
 
 echo.
-echo [5/5] Nexus Worker yayinlaniyor...
+echo [6/6] Nexus Worker yayinlaniyor...
 call npm run deploy
 if errorlevel 1 (
-  echo [HATA] Migration tamamlandi ancak Worker deploy basarisiz oldu.
+  echo [HATA] Veritabani guncellendi ancak Worker deploy basarisiz oldu.
   goto :fail
 )
 
 echo.
-echo [BASARILI] Kart bakiyesi semasi canli D1 uzerinde dogrulandi ve Worker deploy edildi.
-echo Tarayiciyi Ctrl+Shift+R ile yenileyip karta tekrar para yuklemeyi deneyin.
+echo [BASARILI] Canli D1 semasi dogrulandi ve Worker deploy edildi.
+echo Nexus sayfasini Ctrl+Shift+R ile yenileyip kart detayini kontrol edin.
 echo.
 pause
 exit /b 0
 
 :fail
 echo.
-echo Islem tamamlanamadi. Yukaridaki ilk [HATA] mesajini ve terminal ciktisini paylasin.
-echo Veritabanini silmeyin, sifirlamayin ve migration dosyasinin numarasini degistirmeyin.
+echo Islem tamamlanamadi. Yukaridaki ilk [HATA] mesajini ve tum terminal ciktisini saklayin.
+echo Veritabanini silmeyin, sifirlamayin veya migration kayitlarini elle degistirmeyin.
 echo.
 pause
 exit /b 1

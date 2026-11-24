@@ -3,6 +3,7 @@ import { rateLimit } from '../lib/rate.js';
 import { notifyStmt } from '../lib/auth.js';
 import { randomBase32 } from '../lib/util.js';
 import { limitsFor, skinsOf } from '../lib/shop.js';
+import { requireCardMoneySchema } from '../lib/card-money-schema.js';
 import { validateDesign, validateDisplayName, validateLabel, defaultDesign, readStoredDesign } from '../../shared/card-contract.js';
 
 // Veritabanındaki tasarım (eski sürüm 1 dahil) her zaman sürüm 2 olarak sunulur.
@@ -79,12 +80,14 @@ export async function updateCard(env, user, card, { label, display_name, design 
 
 export const cardRoutes = {
   async list(req, env, ctx, { user }) {
+    await requireCardMoneySchema(env);
     const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY is_default DESC, created_at ASC').bind(user.id).all()).results;
     const skins = await skinsOf(env, user.id);
     return json({ cards: rows.map((c) => ({ ...shape(c), skin: skins[c.id] || null })), max_cards: (await limitsFor(env, user.id)).max_cards });
   },
 
   async get(req, env, ctx, { user }, params) {
+    await requireCardMoneySchema(env);
     const c = await ownCard(env, user.id, params.id);
     return json({ ...shape(c), skin: (await skinsOf(env, user.id))[c.id] || null });
   },
@@ -103,6 +106,7 @@ export const cardRoutes = {
   },
 
   async create(req, env, ctx, { user }) {
+    await requireCardMoneySchema(env);
     const b = await readJson(req, 96 * 1024);
     await rateLimit(env, `cardnew:${user.id}`, 20, 60 * MIN);
     const card = await createCard(env, user, { label: b.label, design: b.design, displayName: b.display_name });
@@ -111,6 +115,7 @@ export const cardRoutes = {
 
   // card_token/durum gibi sistem alanları yok sayılmaz, REDDEDİLİR.
   async update(req, env, ctx, { user }, params) {
+    await requireCardMoneySchema(env);
     const b = await readJson(req, 96 * 1024);
     const card = await ownCard(env, user.id, params.id);
     const allowed = new Set(['label', 'display_name', 'design']);
@@ -151,6 +156,7 @@ export const cardRoutes = {
   },
 
   async revert(req, env, ctx, { user }, params) {
+    await requireCardMoneySchema(env);
     const b = await readJson(req);
     const card = await ownCard(env, user.id, params.id);
     const h = await env.DB.prepare('SELECT display_name, design_json FROM card_design_history WHERE card_id = ? AND version = ?').bind(card.id, Number(b.version)).first();

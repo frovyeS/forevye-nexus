@@ -1,21 +1,22 @@
-FOREVYE NEXUS - KART BAKIYESI KESIN DUZELTME PAKETI
+FOREVYE NEXUS - KART BAKIYESI / D1 BAGLANTI DUZELTMESI
 
-BU PAKET NE YAPIYOR?
-Ekrandaki hata, canli D1 veritabaninda cards.balance sutunu ve/veya card_ledger tablosu olmadigini gosteriyor. Bu paket migration'i dogru proje kokunde uygular, iki sema parcasini uzaktan sorgulayarak dogrular ve ancak dogrulamadan sonra Worker deploy eder.
+EKRANDAKI HATANIN NEDENI
+Kart bakiyesi ve kart hareketleri icin gereken canli D1 semasi eksik veya Worker, guncel semaya sahip olmayan bir surume bagli. Gerekli migration dosyasi:
+  migrations/0010_card_balances.sql
 
-KURULUM (WINDOWS)
-1. Bu ZIP'in icerigini Nexus ana proje klasorunun ICINE cikartin. Bu klasorde package.json ve wrangler.toml zaten bulunmali. Dosya birlestirmesine izin verin.
+UYGULAMA (WINDOWS)
+1. ZIP'i Nexus ana proje klasorune cikartin. KART_BAKIYESI_FIX_CALISTIR.bat, package.json ve wrangler.toml ayni klasorde olmalidir.
 2. KART_BAKIYESI_FIX_CALISTIR.bat dosyasina cift tiklayin.
-3. Cloudflare girisi sorarsa tarayicida dogru Cloudflare hesabiyla oturum acin.
-4. Ekranda [BASARILI] yazisini gorene kadar pencereyi kapatmayin.
-5. Nexus sitesini Ctrl+Shift+R ile yenileyin.
+3. Ekranda listelenen D1 veritabani adini ve ID'sini kontrol edin. Dogru Cloudflare hesabi ile giris yapin.
+4. Script uzaktaki migration durumunu okur, bekleyen migration'lari uygular, cards.balance ve card_ledger semasini sorgulayarak dogrular. Yalnizca dogrulamadan sonra Worker deploy edilir.
+5. [BASARILI] mesajindan sonra Nexus'u Ctrl+Shift+R ile yenileyin.
 
 ONEMLI
-- Script varsayilan production D1 baglamini (wrangler.toml icindeki forevye-nexus) kullanir.
-- Migration yalnizca kart bakiyesi sutununu, kart hareket tablosunu, indeksleri ve salt-okunur/silme koruma trigger'larini ekler; mevcut kullanici veya cüzdan verilerini silmez.
-- Migration veya D1 dogrulamasi basarisizsa Worker deploy edilmez.
-- Migration komutu "No migrations to apply" derse bile sonrasinda iki SQL kontrolu gercek semayi dogrular.
-- Bu paket uzaktaki Cloudflare hesabina otomatik erisemez; BAT dosyasinin calistirilmasi kullanicinin kendi Cloudflare oturumunu kullanir.
+- Script wrangler.toml icindeki production D1 baglamini (forevye-nexus) kullanir.
+- Mevcut kullanici, cüzdan veya kart verilerini silmez; D1'i sifirlamaz.
+- Migration veya sema kontrolu basarisizsa Worker deploy edilmez.
+- Migration listesinde 0010_card_balances.sql uygulanmis gorundugu halde cards.balance / card_ledger sorgulari basarisizsa migration kaydi ile gercek sema uyusmuyor olabilir. Migration kayitlarini ya da tablolarini elle silmeyin; BAT ciktisini paylasin.
+- Bu islem Cloudflare hesabina sizin oturumunuzla baglanir. Bu ortamdan canli Cloudflare veritabanina erisim veya deploy yapilmaz.
 
-TEKNIK DOSYA
-migrations/0010_card_balances.sql
+KOD TARAFI
+Kart listesi ve detay API'leri de artik kart bakiyesi semasini dogrular. Eski sema durumunda kullaniciya yanlislikla 0 FN gostermek yerine acik 503 sema hatasi doner.

@@ -136,6 +136,15 @@ test('kart bakiyesi migration eksikse anlaşılır 503 verir; migration sonrası
   // Yüklenen eski kaynakta bulunan durum: balance sütunu ve card_ledger tablosu henüz yok.
   env.DB.raw.exec('DROP TABLE card_ledger');
   env.DB.raw.exec('ALTER TABLE cards DROP COLUMN balance');
+  const listBefore = await a.cl.get('/api/cards');
+  assert.equal(listBefore.status, 503);
+  assert.equal(listBefore.data.error.code, 'card_schema_missing');
+  const detailBefore = await a.cl.get(`/api/cards/${card.id}`);
+  assert.equal(detailBefore.status, 503);
+  assert.equal(detailBefore.data.error.code, 'card_schema_missing');
+  const createBefore = await a.cl.post('/api/cards', { label: 'Yeni kart' });
+  assert.equal(createBefore.status, 503);
+  assert.equal(createBefore.data.error.code, 'card_schema_missing');
   const historyBefore = await a.cl.get(`/api/cards/${card.id}/transactions`);
   assert.equal(historyBefore.status, 503);
   assert.equal(historyBefore.data.error.code, 'card_schema_missing');

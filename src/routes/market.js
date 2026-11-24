@@ -4,7 +4,7 @@ import { currentPrice, stats24h, history, holdingOf, parseQty, trade, getTradeBy
 import { balanceOf } from './wallet.js';
 import { grantAchievement } from './misc.js';
 import { perksOf, spreadFor } from '../lib/shop.js';
-import { requireCardMoneySchema } from './card-money.js';
+import { requireCardMoneySchema } from '../lib/card-money-schema.js';
 
 const publicPrice = (env, p) => ({
   price_micro: p.mid_micro, buy_micro: p.buy_micro, sell_micro: p.sell_micro, spread_bps: p.spread_bps,
@@ -47,7 +47,7 @@ export const marketRoutes = {
     if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(key)) throw new HttpError(400, 'invalid_key', 'İşlem anahtarı eksik veya geçersiz.');
     if (b.side !== 'buy' && b.side !== 'sell') throw new HttpError(400, 'invalid_side', 'İşlem yönü geçersiz.');
     const cardId = b.card_id ? str(b.card_id, { min: 8, max: 64, name: 'card_id' }) : null;
-    if (cardId) await requireCardMoneySchema(env);
+    await requireCardMoneySchema(env);
     if (cardId && b.side !== 'buy') throw new HttpError(400, 'invalid_card_source', 'Kart yalnızca kristal alımında ödeme kaynağı olabilir.');
     if ((b.qty === undefined) === (b.amount === undefined)) throw new HttpError(400, 'invalid', 'Miktar (qty) ya da tutar (amount) girin; ikisini birden değil.');
     const args = { side: b.side, key };

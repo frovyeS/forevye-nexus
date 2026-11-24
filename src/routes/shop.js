@@ -13,6 +13,7 @@ import { auditStmt } from './admin.js';
 import { grantAchievement } from './misc.js';
 import { ownCard, shape as cardShape } from './cards.js';
 import { ensureShopSchema, parseData, cleanData, limitsFor, skinsOf, RARITIES, KINDS } from '../lib/shop.js';
+import { requireCardMoneySchema } from '../lib/card-money-schema.js';
 
 const TICKET_TTL = 5 * MIN, TOKEN_SLIDE = 30 * MIN, TOKEN_MAX = 8 * HOUR;
 export const shopUrl = (env) => String(env.SHOP_URL || '').trim();
@@ -60,12 +61,14 @@ async function entitlementsOf(env, userId) {
   return rows.map((e) => shapeEnt(e, e));
 }
 async function cardsOf(env, userId) {
+  await requireCardMoneySchema(env);
   const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY is_default DESC, created_at ASC').bind(userId).all()).results;
   const skins = await skinsOf(env, userId);
   return rows.map((c) => { const s = cardShape(c); return { id: s.id, label: s.label, display_name: s.display_name, card_token: s.card_token, status: s.status, balance: s.balance, is_default: s.is_default, design: s.design, skin: skins[c.id] || null }; });
 }
 
 async function purchaseResult(env, ref, replayed) {
+  await requireCardMoneySchema(env);
   const x = await env.DB.prepare('SELECT * FROM shop_purchases WHERE id = ?').bind(ref).first();
   if (!x) return { ok: true, replayed: true };
   const p = await env.DB.prepare('SELECT * FROM shop_products WHERE id = ?').bind(x.product_id).first();
@@ -186,6 +189,7 @@ export const shopRoutes = {
     const idem = str(b.idem, { min: 8, max: 80, name: 'idem' });
     if (!/^[A-Za-z0-9_-]+$/.test(idem)) throw new HttpError(400, 'invalid_idem', 'Geçersiz işlem anahtarı.');
     const cardId = b.card_id ? str(b.card_id, { min: 8, max: 64, name: 'card_id' }) : null;
+    if (cardId) await requireCardMoneySchema(env);
     await rateLimit(env, `shopbuy:${user.id}`, 20, 10 * MIN);
     const externalRef = `shop:${user.id}:${idem}`;
     const prior = await env.DB.prepare('SELECT tx_ref FROM external_ops WHERE external_ref = ?').bind(externalRef).first();

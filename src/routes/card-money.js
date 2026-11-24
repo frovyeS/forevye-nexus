@@ -7,30 +7,9 @@ import { entryStmts, guardActiveStmt } from '../lib/ledger.js';
 import { notifyStmt } from '../lib/auth.js';
 import { ownCard } from './cards.js';
 import { limitsFor } from '../lib/shop.js';
+import { requireCardMoneySchema } from '../lib/card-money-schema.js';
 
 const money = (minor) => (minor / 100).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-// Kart bakiyesi ve hareket defteri migration ile kurulmalıdır. Eksik DB şemasını
-// sessizce 0 bakiye gibi göstermeyelim; kullanıcıya doğrudan uygulanacak komutu verelim.
-export async function requireCardMoneySchema(env) {
-  const hint = 'Kart bakiyesi veritabanı güncellemesi eksik. Nexus ana proje klasöründe npm run db:migrate:remote komutunu, ardından npm run deploy komutunu çalıştırın.';
-  try {
-    await env.DB.prepare('SELECT balance FROM cards LIMIT 0').all();
-  } catch (err) {
-    if (/no such column: balance/i.test(String(err.message || err))) {
-      throw new HttpError(503, 'card_schema_missing', hint);
-    }
-    throw err;
-  }
-  try {
-    await env.DB.prepare('SELECT id, tx_ref, user_id, card_id, type, amount, balance_after, counterparty_id, idempotency_key, description, created_at FROM card_ledger LIMIT 0').all();
-  } catch (err) {
-    if (/no such table: card_ledger/i.test(String(err.message || err))) {
-      throw new HttpError(503, 'card_schema_missing', hint);
-    }
-    throw err;
-  }
-}
 
 async function priorOperation(env, userId, key, { cardId, type, amount, counterpartyId = null }) {
   const old = await env.DB.prepare('SELECT tx_ref, card_id, type, amount, counterparty_id, balance_after FROM card_ledger WHERE user_id = ? AND idempotency_key = ?').bind(userId, key).first();
