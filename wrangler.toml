@@ -60,6 +60,11 @@ EMAIL_PROVIDER = "relay"
 MAIL_RELAY_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
 ID_URL = "https://mhaforevye.github.io/forevye-id"
 ID_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
+# Panelde elle girilen ve kaybolmasın istenen değerler (dosya her deploy'da panel değerini ezer, bu yüzden burada sabit):
+PASS_URL = "https://mhaforevye.github.io/nexus-pass/"
+EDITOR_ORIGINS = "https://mhaforevye.github.io"
+GIFTCARD_MINOR_PER_KRISTAL = "100"
+# NOT: ID_REDIRECTS Nexus'ta KULLANILMAZ; "FOREVYE ID ile giriş" adresleri Mikro-Klima Worker'ında (wrangler.toml + worker/identity.js) tutulur.
 # Aşağıdakileri panelde elle girdiysen bırak (keep_vars korur); dosyada tutmak istersen açıp kendi adreslerini yaz:
 # EDITOR_URL = "https://..."    # Kart editörü
 # PASS_URL = "https://..."      # Nexus Pass
