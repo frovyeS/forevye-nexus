@@ -112,11 +112,11 @@ function authView(initialMode = 'login') {
 }
 
 // ---------- Kabuk + gezinme ----------
-const NAV = [['#/home', 'home', 'Ana Sayfa'], ['#/ops', 'transfer', 'İşlemler'], ['#/market', 'market', 'Borsa'], ['#/cards', 'cards', 'Kartlarım'], ['#/profile', 'profile', 'Profil']];
+const NAV = [['#/home', 'home', 'Ana Sayfa'], ['#/ops', 'transfer', 'İşlemler'], ['#/market', 'market', 'Borsa'], ['#/cards', 'cards', 'Kartlarım'], ['#/profile', 'profile', 'Profil'], ['https://mhaforevye.github.io/forevye-id/', 'profile', 'FOREVYE ID', true]];
 function shell(activeHash) {
   const screen = h('main', { class: 'screen', id: 'screen' });
-  const nav = h('nav', { class: 'nav', 'aria-label': 'Ana gezinme' }, h('div', { class: 'nav-in' }, h('div', { class: 'nav-brand' }, h('img', { src: LOGO, alt: 'FOREVYE NEXUS' })), NAV.map(([href, ic, label]) =>
-    h('a', { href, 'aria-current': activeHash === href ? 'page' : null }, icon(ic, 22), h('span', { text: label })))));
+  const nav = h('nav', { class: 'nav', 'aria-label': 'Ana gezinme' }, h('div', { class: 'nav-in' }, h('div', { class: 'nav-brand' }, h('img', { src: LOGO, alt: 'FOREVYE NEXUS' })), NAV.map(([href, ic, label, external]) =>
+    h('a', { href, 'aria-current': !external && activeHash === href ? 'page' : null, target: external ? '_blank' : null, rel: external ? 'noopener noreferrer' : null, title: external ? 'FOREVYE ID hesabını yeni sekmede aç' : null, class: external ? 'nav-id-link' : null }, icon(ic, 22), h('span', { text: label })))));
   mount(root, h('div', { class: 'shell' }, screen), nav);
   return screen;
 }

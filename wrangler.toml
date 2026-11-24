@@ -57,9 +57,9 @@ GIFTCARD_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
 # E-posta: Mikro-Klima'daki ortak posta servisi (Brevo); adresi Mikro-Klima Worker'ının herkese açık URL'sidir. Gönderen adresi orada ayarlıdır; EMAIL_FROM gerekmez.
 EMAIL_PROVIDER = "relay"
 MAIL_RELAY_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
+ID_URL = "https://mhaforevye.github.io/forevye-id"
+ID_API_URL = "https://mikroklimakontrolmerkezi.forevye.workers.dev"
 # Aşağıdakileri panelde elle girdiysen bırak (keep_vars korur); dosyada tutmak istersen açıp kendi adreslerini yaz:
-# ID_URL = "https://..."        # FOREVYE ID arayüz adresi
-# ID_API_URL = "https://..."    # FOREVYE ID API adresi
 # EDITOR_URL = "https://..."    # Kart editörü
 # PASS_URL = "https://..."      # Nexus Pass
 # SHOP_URL = "https://..."      # Nexus Market

@@ -53,11 +53,12 @@ a{color:var(--text);text-underline-offset:3px}
 
 /* ---------- Gezinme: mobilde alt çubuk, masaüstünde yan ray ---------- */
 .nav{position:fixed;left:0;right:0;bottom:0;z-index:20;background:rgba(16,18,21,.97);border-top:1px solid var(--line-2);padding-bottom:var(--safe-b);backdrop-filter:blur(12px)}
-.nav-in{max-width:620px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);height:var(--nav-h)}
+.nav-in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(6,1fr);height:var(--nav-h)}
 .nav-brand{display:none}
 .nav a{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--muted);text-decoration:none;font-size:.7rem;letter-spacing:.04em;min-height:48px;transition:color var(--t-fast),background var(--t-fast)}
 .nav a:active{background:var(--surface-2)}
 .nav a[aria-current=page]{color:var(--text);font-weight:700}
+.nav a.nav-id-link{color:var(--gold)}.nav a.nav-id-link:hover{color:var(--text)}
 .nav a[aria-current=page]::before{content:"";position:absolute;top:0;left:22%;right:22%;height:2px;background:var(--prime)}
 
 /* ---------- Paneller ---------- */
@@ -243,7 +244,8 @@ th{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--sil
 .gem{width:44px;height:44px;border-radius:var(--r);display:grid;place-items:center;background:var(--surface-3);border:1px solid var(--line-2);color:var(--silver);flex:none}
 
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
-@media (max-width:360px){.nav a{font-size:.64rem}.grid4{gap:6px}}
+@media (max-width:420px){.nav a{font-size:.62rem;letter-spacing:0}.nav a .ic{width:19px;height:19px}}
+@media (max-width:360px){.nav a{font-size:.58rem}.grid4{gap:6px}}
 @media (min-width:700px){.cards-grid{grid-template-columns:1fr 1fr}}
 
 /* ---------- Masaüstü: yan ray + çok sütunlu yerleşim (mobilin büyütülmüşü değil) ---------- */

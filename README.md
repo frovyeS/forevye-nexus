@@ -70,3 +70,11 @@ yönetici paneli (kullanıcı ara, askı, duyuru, şablon, rol, ters kayıt/düz
 - Parola özeti PBKDF2-SHA256 100k tur (Workers sınırı); ileride Argon2 destekli servise geçilebilir.
 - Rozetler 6 tanımlı rozetle sınırlıdır (ilk kristal eklendi).
 - Kart tasarımı banka kart editöründe yapılır (sözleşme sürüm 2, 856×540); eski v1 kartlar okunurken çevrilir. Ayrıntı: docs/INTEGRATION_NOTES.md §3.
+
+
+## FOREVYE ID bağlantısı
+
+- Banka gezinmesindeki **FOREVYE ID** öğesi `https://mhaforevye.github.io/forevye-id/` hesabını yeni sekmede açar.
+- Giriş/kayıt ekranındaki **FOREVYE ID ile giriş** akışı OAuth benzeri tek kullanımlık kod + PKCE kullanır; parola Nexus'a gönderilmez.
+- `wrangler.toml` içinde `ID_URL` ve `ID_API_URL` üretim adresleri tanımlıdır. `ID_URL` web arayüzüne, `ID_API_URL` Identity API Worker'ına işaret eder.
+- Banka tarafındaki `idStart` → FOREVYE ID izin ekranı → `idCallback` → `/identity/token/exchange` akışı `test/id-auth.test.mjs` ile doğrulanır.
