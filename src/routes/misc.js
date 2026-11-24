@@ -10,9 +10,11 @@ import { readStoredDesign } from '../../shared/card-contract.js';
 
 // Rozet tanımları. Koşullar SUNUCUDA değerlendirilir; kullanıcı kendine rozet atayamaz.
 export const ACHIEVEMENTS = {
+  account_created: { title: 'Nexus’a hoş geldin', desc: 'Hesabını oluşturdun.', reward: 20 },
+  first_card_design: { title: 'İlk tasarım kartım', desc: 'İlk kart tasarımını kaydettin.', reward: 10 },
   first_transfer_sent: { title: 'İlk transfer', desc: 'İlk sanal bakiye transferini gönderdin.' },
   first_transfer_received: { title: 'İlk alım', desc: 'İlk transferini aldın.' },
-  first_purchase: { title: 'İlk alışveriş', desc: 'Oyun içi ilk alışverişini yaptın.' },
+  first_purchase: { title: 'İlk harcama', desc: 'Nexus Market’te ilk harcamanı yaptın.', reward: 10 },
   first_topup: { title: 'İlk yükleme', desc: 'Hediye koduyla ilk bakiye yüklemeni yaptın.' },
   first_crystal: { title: 'İlk kristal', desc: 'Borsadan ilk kristalini aldın.' },
   anniversary_1y: { title: 'Bir yıllık üye', desc: 'Üyeliğinin 1. yılını tamamladın.' },
@@ -20,7 +22,11 @@ export const ACHIEVEMENTS = {
 
 export async function grantAchievement(env, userId, key) {
   const r = await env.DB.prepare('INSERT OR IGNORE INTO user_achievements (user_id, key, earned_at) VALUES (?,?,?)').bind(userId, key, now(env)).run();
-  if (r.meta?.changes) await notify(env, userId, 'achievement', 'Yeni rozet', ACHIEVEMENTS[key].title);
+  if (r.meta?.changes) {
+    await notify(env, userId, 'achievement', 'Yeni rozet', ACHIEVEMENTS[key].title);
+    const reward = Number(ACHIEVEMENTS[key].reward || 0);
+    if (reward > 0) await creditGiftCrystals(env, { userId, kristal: reward, ref: `achievement:${key}:${userId}` });
+  }
 }
 
 export async function meSummary(env, user) {
@@ -74,7 +80,7 @@ export const miscRoutes = {
 
   async vault(req, env, ctx, { user }) {
     const t = now(env);
-    if (t >= user.created_at + 365 * DAY) await grantAchievement(env, user.id, 'anniversary_1y');
+    // Başarımlar yalnızca gerçek olay gerçekleştiğinde verilir; profil ekranı eski hesaplara geriye dönük ödül dağıtmaz.
     const earned = (await env.DB.prepare('SELECT key, earned_at FROM user_achievements WHERE user_id = ?').bind(user.id).all()).results;
     const designs = (await env.DB.prepare(
       'SELECT h.id, h.card_id, h.version, h.display_name, h.design_json, h.created_at FROM card_design_history h WHERE h.user_id = ? ORDER BY h.created_at DESC LIMIT 20',

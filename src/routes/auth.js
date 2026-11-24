@@ -7,7 +7,7 @@ import { createSession, clearCookie, notify, notifyStmt } from '../lib/auth.js';
 import { validateDisplayName, defaultDesign } from '../../shared/card-contract.js';
 import { newRef, randomBase32 } from '../lib/util.js';
 import { usernameTaken } from './profile.js';
-import { meSummary } from './misc.js';
+import { meSummary, grantAchievement } from './misc.js';
 
 // LEGACY_LOGIN=off → e-posta kodu/şifre ile kayıt ve giriş kapanır; yalnızca FOREVYE ID ile giriş kalır.
 function legacyGuard(env) {
@@ -140,6 +140,7 @@ export const authRoutes = {
       if (isConstraint(err, 'users.email')) throw new HttpError(409, 'register_failed', 'Kayıt tamamlanamadı. Baştan başlayın.');
       throw err;
     }
+    await grantAchievement(env, id, 'account_created');
     const s = await createSession(env, req, id);
     const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
     return json({ ok: true, ...(await meSummary(env, user)) }, 201, { 'set-cookie': s.cookie });
@@ -296,6 +297,7 @@ export const authRoutes = {
       if (isConstraint(err, 'users.email') || isConstraint(err, 'id_links')) throw new HttpError(409, 'register_failed', 'Kayıt tamamlanamadı. ID ile yeniden giriş yapın.');
       throw err;
     }
+    await grantAchievement(env, id, 'account_created');
     const s = await createSession(env, req, id);
     const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
     return json({ ok: true, ...(await meSummary(env, user)) }, 201, { 'set-cookie': s.cookie });

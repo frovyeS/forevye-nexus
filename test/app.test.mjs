@@ -456,6 +456,7 @@ test('bildirimler okundu durumu ve rozetler sunucuda hesaplanır', async () => {
   const vault = await b.cl.get('/api/vault');
   assert.ok(vault.data.badges.find((x) => x.key === 'first_transfer_received').earned_at);
   assert.equal(vault.data.badges.find((x) => x.key === 'anniversary_1y').earned_at, null);
+  // Anniversary is not retroactively granted by opening the vault; existing accounts receive no legacy reward.
   env.__NOW = T0 + 366 * D;
-  assert.ok((await b.cl.get('/api/vault')).data.badges.find((x) => x.key === 'anniversary_1y').earned_at);
+  assert.equal((await b.cl.get('/api/vault')).data.badges.find((x) => x.key === 'anniversary_1y').earned_at, null);
 });

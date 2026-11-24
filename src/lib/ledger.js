@@ -33,7 +33,7 @@ export async function getTransferByKey(env, senderId, key) {
     .bind(senderId, key).first();
 }
 
-export async function transfer(env, sender, recipient, amount, idempotencyKey) {
+export async function transfer(env, sender, recipient, amount, idempotencyKey, description = '') {
   const t = now(env);
   // Fonksiyonel Market kartları (ör. Titanyum) işlem ve günlük limiti artırır; hesap sunucuda yapılır.
   const lim = await limitsFor(env, sender.id);
@@ -52,16 +52,16 @@ export async function transfer(env, sender, recipient, amount, idempotencyKey) {
   const ref = newRef('NXT');
   const stmts = [
     guardActiveStmt(env, sender.id, recipient.id),
-    env.DB.prepare('INSERT INTO transfers (id, ref, sender_id, recipient_id, amount, idempotency_key, status, created_at) VALUES (?,?,?,?,?,?,?,?)')
-      .bind(crypto.randomUUID(), ref, sender.id, recipient.id, amount, idempotencyKey, 'success', t),
+    env.DB.prepare('INSERT INTO transfers (id, ref, sender_id, recipient_id, amount, idempotency_key, status, created_at, description) VALUES (?,?,?,?,?,?,?,?,?)')
+      .bind(crypto.randomUUID(), ref, sender.id, recipient.id, amount, idempotencyKey, 'success', t, description),
     env.DB.prepare(
       `INSERT INTO daily_usage (user_id, day, total, cap) VALUES (?,?,?,?)
        ON CONFLICT(user_id, day) DO UPDATE SET total = total + excluded.total, cap = excluded.cap`,
     ).bind(sender.id, day, amount, dailyCap),
-    ...entryStmts(env, { ref, userId: sender.id, type: 'transfer_out', amount: -amount, counterparty: recipient.id, desc: 'Kullanıcıya transfer' }),
-    ...entryStmts(env, { ref, userId: recipient.id, type: 'transfer_in', amount, counterparty: sender.id, desc: 'Kullanıcıdan transfer' }),
-    notifyStmt(env, sender.id, 'transfer_sent', 'Transfer gönderildi', `${fmt(amount)} gönderildi. Ref: ${ref}`),
-    notifyStmt(env, recipient.id, 'transfer_received', 'Transfer alındı', `${fmt(amount)} aldınız. Ref: ${ref}`),
+    ...entryStmts(env, { ref, userId: sender.id, type: 'transfer_out', amount: -amount, counterparty: recipient.id, desc: description || 'Kullanıcıya transfer' }),
+    ...entryStmts(env, { ref, userId: recipient.id, type: 'transfer_in', amount, counterparty: sender.id, desc: description || 'Kullanıcıdan transfer' }),
+    notifyStmt(env, sender.id, 'transfer_sent', 'Transfer gönderildi', `${fmt(amount)} gönderildi. Alıcı: @${recipient.username}.${description ? ` Açıklama: ${description}` : ''} Ref: ${ref}`),
+    notifyStmt(env, recipient.id, 'transfer_received', 'Transfer alındı', `${fmt(amount)} aldınız. Gönderen: @${sender.username}.${description ? ` Açıklama: ${description}` : ''} Ref: ${ref}`),
   ];
   try {
     await env.DB.batch(stmts);

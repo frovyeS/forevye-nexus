@@ -13,6 +13,7 @@ import { validateLabel, suggestDisplayName, defaultDesign } from '../../shared/c
 import { shape, ownCard, createCard, updateCard } from './cards.js';
 import { ownedSkinsOf, skinsOf } from '../lib/shop.js';
 import { equipSkin, createShopTicket } from './shop.js';
+import { grantAchievement } from './misc.js';
 
 const TICKET_TTL = 5 * MIN, TOKEN_SLIDE = 30 * MIN, TOKEN_MAX = 4 * HOUR;
 
@@ -135,6 +136,7 @@ export const editorRoutes = {
       created = true;
       await env.DB.prepare('UPDATE editor_tokens SET card_id = ? WHERE token_hash = ?').bind(card.id, th).run();   // sonraki kayıtlar aynı kartı günceller
     }
+    await grantAchievement(env, user.id, 'first_card_design');
     let skin = undefined;
     if (Object.prototype.hasOwnProperty.call(b, 'skin_product_id')) skin = await equipSkin(env, user, card.id, b.skin_product_id === null || b.skin_product_id === '' ? null : b.skin_product_id);
     return json({ ok: true, created, card: shape(card), skin: skin === undefined ? (await skinsOf(env, user.id))[card.id] || null : skin, return_path: `/#/cards/${card.id}` }, created ? 201 : 200);

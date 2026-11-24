@@ -27,6 +27,7 @@ async function signedCall(env, path, body, { secret = SECRET, timestamp = env.__
 async function bankWithLinkedId() {
   const env = makeEnv({ GIFTCARD_API_SECRET: SECRET });
   const { me } = await register(env, EMAIL, 'timer_reward');
+  await env.DB.prepare('UPDATE crystal_holdings SET qty=0,cost_basis=0 WHERE user_id=?').bind(me.user.id).run();
   await env.DB.prepare('INSERT INTO id_links(user_id,id_user_id,linked_at) VALUES(?,?,?)')
     .bind(me.user.id, ID_UID, env.__NOW).run();
   return { env, userId: me.user.id };
@@ -34,8 +35,8 @@ async function bankWithLinkedId() {
 
 test('timer reward: FOREVYE ID finds existing Nexus bank account and reads live crystal balance', async () => {
   const { env, userId } = await bankWithLinkedId();
-  await env.DB.prepare('INSERT INTO crystal_holdings(user_id,qty,cost_basis,updated_at) VALUES(?,?,?,?)')
-    .bind(userId, 123456, 777, env.__NOW).run();
+  await env.DB.prepare('UPDATE crystal_holdings SET qty=?,cost_basis=?,updated_at=? WHERE user_id=?')
+    .bind(123456, 777, env.__NOW, userId).run();
   const r = await signedCall(env, '/api/ext/timer-reward/account', {
     id_user_id: ID_UID, email: EMAIL, email_verified: true,
   });

@@ -14,6 +14,7 @@ import { passRoutes, passInternalRoutes, passAdminRoutes, passOrigins } from './
 import { shopRoutes, shopAdminRoutes, shopOrigins, cardSkinRoute } from './routes/shop.js';
 import { cronTick } from './lib/market.js';
 import { externalCrystalRoutes } from './routes/external-crystal.js';
+import { bankRoutes, bankOrigins, useBankToken } from './routes/bank.js';
 
 // [yöntem, yol, işleyici, erişim]  erişim: 'public' | 'user' | 'admin' | 'super' | 'internal' | 'editor'
 // 'shop': Nexus Market sitesi (ayrı site), 'pass' ile aynı yöntem: Bearer jeton, CORS yalnızca SHOP_URL kaynağına açık.
@@ -33,11 +34,14 @@ add('POST', '/api/auth/login', authRoutes.login, 'public');
 add('POST', '/api/auth/forgot', authRoutes.forgot, 'public');
 add('POST', '/api/auth/reset', authRoutes.reset, 'public');
 add('POST', '/api/auth/logout', authRoutes.logout);
+add('POST', '/api/bank/ticket', bankRoutes.ticket);
+add('POST', '/api/bank/exchange', bankRoutes.exchange, 'bank-public');
+add('POST', '/api/bank/market-ticket', bankRoutes.marketTicket, 'bank');
 
-add('GET', '/api/me', miscRoutes.me);
-add('GET', '/api/notifications', miscRoutes.notifications);
-add('POST', '/api/notifications/read', miscRoutes.markRead);
-add('GET', '/api/vault', miscRoutes.vault);
+add('GET', '/api/me', miscRoutes.me, 'bank');
+add('GET', '/api/notifications', miscRoutes.notifications, 'bank');
+add('POST', '/api/notifications/read', miscRoutes.markRead, 'bank');
+add('GET', '/api/vault', miscRoutes.vault, 'bank');
 add('GET', '/api/giftcard/status', miscRoutes.giftcardStatus);
 add('POST', '/api/giftcard/redeem', miscRoutes.giftcardRedeem);
 
@@ -50,17 +54,17 @@ add('PUT', '/api/profile/avatar', profileRoutes.putAvatar);
 add('GET', '/api/profile/avatar', profileRoutes.getAvatar);
 add('DELETE', '/api/profile/avatar', profileRoutes.deleteAvatar);
 
-add('GET', '/api/wallet', walletRoutes.balance);
-add('GET', '/api/transactions', walletRoutes.transactions);
-add('POST', '/api/transfers/lookup', walletRoutes.lookup);
-add('POST', '/api/transfers', walletRoutes.transfer);
+add('GET', '/api/wallet', walletRoutes.balance, 'bank');
+add('GET', '/api/transactions', walletRoutes.transactions, 'bank');
+add('POST', '/api/transfers/lookup', walletRoutes.lookup, 'bank');
+add('POST', '/api/transfers', walletRoutes.transfer, 'bank');
 
-add('GET', '/api/transfers/recent', walletRoutes.recent);
+add('GET', '/api/transfers/recent', walletRoutes.recent, 'bank');
 
-add('GET', '/api/market', marketRoutes.overview);
-add('GET', '/api/market/history', marketRoutes.history);
-add('GET', '/api/market/trades', marketRoutes.trades);
-add('POST', '/api/market/trade', marketRoutes.trade);
+add('GET', '/api/market', marketRoutes.overview, 'bank');
+add('GET', '/api/market/history', marketRoutes.history, 'bank');
+add('GET', '/api/market/trades', marketRoutes.trades, 'bank');
+add('POST', '/api/market/trade', marketRoutes.trade, 'bank');
 
 add('GET', '/api/cards', cardRoutes.list);
 add('GET', '/api/cards/resolve', cardRoutes.resolve);
@@ -84,6 +88,7 @@ add('POST', '/api/cards/:id/revert', cardRoutes.revert);
 add('POST', '/api/shop/ticket', shopRoutes.ticket);
 add('GET', '/api/shop/mine', shopRoutes.mine);
 add('POST', '/api/shop/exchange', shopRoutes.exchange, 'shop');
+add('POST', '/api/shop/bank-ticket', shopRoutes.bankTicket, 'shop');
 add('GET', '/api/shop/me', shopRoutes.me, 'shop');
 add('GET', '/api/shop/products', shopRoutes.products, 'shop');
 add('GET', '/api/shop/product', shopRoutes.product, 'shop');
@@ -142,7 +147,7 @@ async function handleApi(req, env) {
     throw new HttpError(404, 'not_found', 'Bulunamadı.');
   }
   // CSRF: durum değiştiren isteklerde özel başlık + aynı kaynak (Origin) zorunlu. Çerez ayrıca SameSite=Strict'tir.
-  if (method !== 'GET' && route.access !== 'internal' && route.access !== 'editor' && route.access !== 'pass' && route.access !== 'shop') {
+  if (method !== 'GET' && route.access !== 'internal' && route.access !== 'editor' && route.access !== 'pass' && route.access !== 'shop' && route.access !== 'bank' && route.access !== 'bank-public') {
     if (req.headers.get('x-nx-csrf') !== '1') throw new HttpError(403, 'csrf', 'Geçersiz istek.');
     const origin = req.headers.get('origin');
     if (origin && origin !== url.origin) throw new HttpError(403, 'csrf', 'Geçersiz istek.');
@@ -154,6 +159,10 @@ async function handleApi(req, env) {
     if (!auth) throw new HttpError(401, 'unauthenticated', 'Oturum gerekli.');
   } else if (route.access === 'admin' || route.access === 'super') {
     auth = await requireAdmin(env, req, { superOnly: route.access === 'super' });
+  } else if (route.access === 'bank') {
+    auth = await authenticate(env, req).catch(() => null) || await useBankToken(env, req);
+  } else if (route.access === 'bank-public') {
+    auth = null;
   } else if (route.access === 'public') {
     auth = await authenticate(env, req).catch(() => null); // logout için gerekli olabilir
   }
@@ -162,14 +171,15 @@ async function handleApi(req, env) {
 }
 
 // Ayrı siteler (kart editörü, Nexus Pass) için CORS: yalnızca EDITOR_URL / PASS_URL (+ *_ORIGINS) kaynağına izin verilir. Çerez gönderilmez; kimlik bilet/Bearer jetondadır.
+const BANK_PATHS = new Set(['/api/bank/exchange', '/api/bank/market-ticket', '/api/me', '/api/notifications', '/api/notifications/read', '/api/vault', '/api/wallet', '/api/transactions', '/api/transfers/lookup', '/api/transfers', '/api/transfers/recent', '/api/market', '/api/market/history', '/api/market/trades', '/api/market/trade']);
 const EDITOR_PATHS = new Set(['/api/editor/exchange', '/api/editor/card']);
 const EDITOR_SHOP_PATHS = new Set(['/api/editor/shop-ticket']);
 const PASS_PATHS = new Set(['/api/pass/exchange', '/api/pass/me', '/api/pass/products', '/api/pass/product', '/api/pass/purchases', '/api/pass/purchase']);
-const SHOP_PATHS = new Set(['/api/shop/exchange', '/api/shop/me', '/api/shop/products', '/api/shop/product', '/api/shop/purchases', '/api/shop/purchase', '/api/shop/wishlist', '/api/shop/equip']);
-const CORS_PATHS = new Set([...EDITOR_PATHS, ...EDITOR_SHOP_PATHS, ...PASS_PATHS, ...SHOP_PATHS]);
+const SHOP_PATHS = new Set(['/api/shop/exchange', '/api/shop/bank-ticket', '/api/shop/me', '/api/shop/products', '/api/shop/product', '/api/shop/purchases', '/api/shop/purchase', '/api/shop/wishlist', '/api/shop/equip']);
+const CORS_PATHS = new Set([...BANK_PATHS, ...EDITOR_PATHS, ...EDITOR_SHOP_PATHS, ...PASS_PATHS, ...SHOP_PATHS]);
 function siteCors(req, env, url) {
   if (!CORS_PATHS.has(url.pathname)) return null;
-  const allowed = SHOP_PATHS.has(url.pathname) ? shopOrigins(env) : PASS_PATHS.has(url.pathname) ? passOrigins(env) : editorOrigins(env);
+  const allowed = BANK_PATHS.has(url.pathname) ? bankOrigins(env) : SHOP_PATHS.has(url.pathname) ? shopOrigins(env) : PASS_PATHS.has(url.pathname) ? passOrigins(env) : editorOrigins(env);
   const o = req.headers.get('origin') || '';
   if (!o || !allowed.includes(o)) return null;
   return { 'access-control-allow-origin': o, 'access-control-allow-methods': 'GET, POST, PUT, OPTIONS', 'access-control-allow-headers': 'content-type, authorization', 'access-control-max-age': '86400', vary: 'Origin', 'cross-origin-resource-policy': 'cross-origin' };

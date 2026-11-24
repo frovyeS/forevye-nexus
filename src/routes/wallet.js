@@ -87,6 +87,7 @@ export const walletRoutes = {
     const amount = parseAmount(b.amount);
     if (typeof b.recipient !== 'string' || !/^[A-Za-z0-9_.]{3,20}$/.test(b.recipient.trim())) throw new HttpError(400, 'invalid_username', 'Geçerli bir alıcı kullanıcı adı girin.');
     const recipient = await env.DB.prepare('SELECT * FROM users WHERE username_lower = ?').bind(b.recipient.trim().toLowerCase()).first();
+    const description = typeof b.description === 'string' ? b.description.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 180) : '';
 
     // Tekrar isteği: aynı anahtar aynı sonucu döndürür, çift işlem oluşturmaz.
     const prior = await getTransferByKey(env, user.id, key);
@@ -100,7 +101,7 @@ export const walletRoutes = {
     if (amount >= cfgNum(env, 'REAUTH_THRESHOLD_MINOR', 100000)) {
       if (typeof b.password !== 'string' || !(await verifyPassword(b.password, user.password_hash))) throw new HttpError(403, 'reauth_required', 'Bu tutar için şifrenizi yeniden girmelisiniz.');
     }
-    const r = await transfer(env, user, recipient, amount, key);
+    const r = await transfer(env, user, recipient, amount, key, description);
     await grantAchievement(env, user.id, 'first_transfer_sent');
     await grantAchievement(env, recipient.id, 'first_transfer_received');
     return json({ ok: true, ref: r.ref, amount: r.amount, replayed: r.replayed, balance: await balanceOf(env, user.id) }, r.replayed ? 200 : 201);

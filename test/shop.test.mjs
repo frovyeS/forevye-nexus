@@ -8,7 +8,7 @@ import '../shared/card-skins.js';
 import '../shared/card-rules.js';
 import '../public/js/qrcode.js';
 import '../public/js/card-render.js';
-import { defaultDesign } from '../shared/card-contract.js';
+import { defaultDesign, defaultPortraitDesign } from '../shared/card-contract.js';
 
 const SHOP = 'https://shop.example/nexus-market/';
 const ORIGIN = 'https://shop.example';
@@ -71,7 +71,11 @@ test('market: SHOP_URL yoksa bilet 503; katalog tohumu ve fiyatlar sunucudan gel
   const black = list.find((p) => p.id === 'card_black');
   assert.equal(black.price, FN(40000)); assert.equal(black.stock_left, 50); assert.equal(black.skin, 'royal'); assert.equal(black.perks.limit_mult, 3);
   assert.ok(list.some((p) => p.kind === 'design') && list.some((p) => p.kind === 'function'));
-  assert.equal(list.filter((p) => p.kind === 'design').length, 45, 'Market vitrini 45 satın alınabilir tasarım sunar');
+  assert.equal(list.filter((p) => p.kind === 'design').length, 325, '45 mevcut yüzey + 280 sınırlı koleksiyon ürünü sunulur');
+  const limited = list.filter((p) => p.id.startsWith('nx250_') || p.id.startsWith('nx280_'));
+  assert.equal(limited.length, 280);
+  assert.ok(limited.every((p) => p.stock_total === 2 && p.max_qty === 1 && p.collection && ['portrait','landscape'].includes(p.orientation)));
+  assert.equal(new Set(limited.map((p) => p.id)).size, 280);
   const imperial = list.find((p) => p.id === 'skin_imperial');
   assert.equal(imperial.skin, 'imperial'); assert.equal(imperial.price, FN(16500));
   assert.equal(imperial.stock_left, 28); assert.equal(imperial.stock_total, 28);
@@ -162,6 +166,41 @@ test('market: sınırlı seri numaralanır, tükenince satılmaz, son adet için
   const res = await Promise.all([buy(env, d.token, 'skin_prism'), buy(env, e.token, 'skin_prism')]);
   assert.equal(res.filter((r) => r.data.ok).length, 1); assert.equal(res.filter((r) => r.data.code === 'sold_out').length, 1);
   assert.equal(await one(env, 'SELECT COUNT(*) AS c FROM shop_entitlements WHERE product_id = ?', 'skin_prism').then((r) => r.c), 3);
+});
+
+test('280 koleksiyon: dikey ürün yalnızca dikey karta uygulanır', async () => {
+  const { env, u, token, uid } = await setup({}, 'nx280_orientation');
+  await fund(env, uid, FN(7000));
+  const bought = await buy(env, token, 'nx250_001');
+  assert.equal(bought.data.ok, true);
+  const horizontal = (await u.cl.post('/api/cards', { display_name: 'HORIZONTAL' })).data;
+  const mismatch = await asShop(env, 'POST', '/api/shop/equip', { token, body: { card_id: horizontal.id, product_id: 'nx250_001' } });
+  assert.equal(mismatch.status, 400);
+  assert.equal(mismatch.data.error?.code, 'orientation_mismatch');
+  const vertical = await u.cl.post('/api/cards', { design: defaultPortraitDesign('VERTICAL') });
+  assert.equal(vertical.status, 201);
+  const applied = await asShop(env, 'POST', '/api/shop/equip', { token, body: { card_id: vertical.data.id, product_id: 'nx250_001' } });
+  assert.equal(applied.status, 200);
+  assert.equal(applied.data.skin.skin, 'nx250_001');
+});
+
+test('280 koleksiyon: iki farklı kullanıcı birer adet alır; aynı kullanıcı ve üçüncü alıcı engellenir', async () => {
+  const a = await setup({}, 'nx280_a');
+  const b = await mk(a.env, 'nx280_b');
+  const c = await mk(a.env, 'nx280_c');
+  for (const u of [a.u, b, c]) await fund(a.env, u.uid, FN(7000));
+  const first = await buy(a.env, a.token, 'nx250_001');
+  assert.equal(first.data.ok, true);
+  assert.equal(first.data.purchase.serial, '001/002');
+  assert.equal((await buy(a.env, a.token, 'nx250_001')).data.code, 'already_owned');
+  const second = await buy(a.env, b.token, 'nx250_001');
+  assert.equal(second.data.ok, true);
+  assert.equal(second.data.purchase.serial, '002/002');
+  const third = await buy(a.env, c.token, 'nx250_001');
+  assert.equal(third.data.code, 'sold_out');
+  assert.equal(await bal(a.env, c.uid), FN(7000), 'stok kalmadığında FN kesilmez');
+  const row = await one(a.env, 'SELECT stock_total, stock_sold, max_qty FROM shop_products WHERE id = ?', 'nx250_001');
+  assert.deepEqual(row, { stock_total: 2, stock_sold: 2, max_qty: 1 });
 });
 
 test('market: kart yüzeyi takılır/çıkarılır; sahip olunmayan, başkasının kartı ve iade sonrası düşer', async () => {
@@ -294,8 +333,8 @@ test('market yönetimi: katalog yazma yalnızca süper yönetici; skin/perk/stok
 
 test('kart yüzeyleri: tohum ürünleri geçerli skin kullanır, yazı rengi okunaklı, kullanıcı katmanları gizlenir', () => {
   const S = globalThis.FNXSkins, X = globalThis.FNXRender;
-  assert.equal(S.IDS.length, 48, '45 tasarım yüzeyi + 3 fonksiyonel kart yüzeyi');
-  assert.equal(SEED.filter((p) => p.kind === 'design').length, 45);
+  assert.equal(S.IDS.length, 328, '45 mevcut yüzey + 280 koleksiyon yüzeyi + 3 fonksiyonel kart yüzeyi');
+  assert.equal(SEED.filter((p) => p.kind === 'design').length, 325);
   for (const p of SEED.filter((x) => x.kind === 'design')) {
     const item = S.list.find((x) => x.productId === p.id);
     assert.ok(item, `${p.id}: editör ve Market kataloğunda görünmeli`);
@@ -311,6 +350,10 @@ test('kart yüzeyleri: tohum ürünleri geçerli skin kullanır, yazı rengi oku
     const svg = X.cardSvg(defaultDesign('MARKET TEST'), { last4: 'NX01', cardToken: 'NXC-TEST-NX01', skin: id, skinSerial: '001/028' }, { prefix: 'test' + id, animate: false });
     assert.ok(svg.includes(`data-skin=\"${id}\"`), `${id}: tam kart SVG önizlemesi çizilmeli`);
   }
+  const portrait = { ...defaultDesign('PORTRAIT TEST'), orientation: 'portrait' };
+  const portraitSvg = X.cardSvg(portrait, { last4: '2801', cardToken: 'NXC-TEST-2801', skin: 'nx250_001' }, { prefix: 'portrait280', animate: false });
+  assert.match(portraitSvg, /viewBox="0 0 540 856"/, 'dikey ürün yüzeyi dikey kart tuvalinde çizilmeli');
+  assert.ok(portraitSvg.includes('data-skin="nx250_001"'));
   const R = globalThis.FNXRules;
   const design = { designId: 'd', ownerId: 'o', template: 'classic', canvas: { width: 856, height: 540 }, userDisplayName: 'ALI VELI', nameStyle: { color: 'auto' }, chipStyle: 'rose', version: 1,
     layers: [{ id: 'bg', type: 'background', name: 'z', locked: true, visible: true, zIndex: 0, properties: { mode: 'solid', colors: ['#334455'], angle: 0, finish: 'matte' } },

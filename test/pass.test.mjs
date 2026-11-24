@@ -72,7 +72,7 @@ test('pass: jeton yalnızca /api/pass/* için geçerli (para, profil, kart açı
   assert.equal((await asPass(env, 'GET', '/api/pass/products')).status, 401);
   assert.equal((await asPass(env, 'GET', '/api/pass/products', { token: 'b'.repeat(43) })).status, 401);
   for (const p of ['/api/wallet', '/api/profile', '/api/cards', '/api/me']) assert.equal((await asPass(env, 'GET', p, { token: tok })).status, 401, p);
-  assert.equal((await asPass(env, 'POST', '/api/transfers', { token: tok, body: {} })).status, 403);
+  assert.equal((await asPass(env, 'POST', '/api/transfers', { token: tok, body: {} })).status, 401);
 });
 
 test('pass: katalog, satın alma → bakiye düşer, üyelik açılır, defter ve geçmiş doğru', async () => {

@@ -1,0 +1,56 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { makeEnv, client, register, fund, one } from './helpers.mjs';
+import { grantAchievement } from '../src/routes/misc.js';
+
+test('banka tek kullanımlık bileti kapsamlı banka oturumuna çevirir; Market bileti üretebilir', async () => {
+  const env = makeEnv({ BANK_URL: 'https://mhaforevye.github.io/forevye_nexus_bank/', SHOP_URL: 'https://mhaforevye.github.io/nexus-market/' });
+  const { cl, me } = await register(env, 'bank-access@example.com', 'bank_access', { keepWelcomeCrystals: true });
+  const ticket = await cl.post('/api/bank/ticket');
+  assert.equal(ticket.status, 200);
+  assert.match(ticket.data.url, /#bank=/);
+  const raw = ticket.data.url.split('#bank=')[1];
+  const exchange = await cl.post('/api/bank/exchange', { ticket: raw }, { origin: 'https://mhaforevye.github.io' });
+  assert.equal(exchange.status, 200);
+  const headers = { authorization: `Bearer ${exchange.data.token}`, origin: 'https://mhaforevye.github.io' };
+  const balance = await cl.get('/api/wallet', headers);
+  assert.equal(balance.status, 200);
+  assert.equal(balance.data.balance, 0);
+  const market = await cl.post('/api/bank/market-ticket', {}, headers);
+  assert.equal(market.status, 200);
+  assert.match(market.data.url, /nexus-market/);
+  const shopTicket = await cl.post('/api/shop/exchange', { ticket: market.data.url.split('#t=')[1] }, { origin: 'https://mhaforevye.github.io' });
+  assert.equal(shopTicket.status, 200);
+  const shopHeaders = { authorization: `Bearer ${shopTicket.data.token}`, origin: 'https://mhaforevye.github.io' };
+  const back = await cl.post('/api/shop/bank-ticket', {}, shopHeaders);
+  assert.equal(back.status, 200);
+  assert.match(back.data.url, /#bank=/, 'Market oturumu Bankaya tek kullanımlık dönüş bileti üretir');
+  assert.equal((await client(env).get('/api/profile', headers)).status, 401, 'banka jetonu profil API erişimi vermemeli');
+  assert.equal((await cl.post('/api/bank/exchange', { ticket: raw }, headers)).status, 401, 'bilet ikinci kez kullanılamamalı');
+  const holding = await one(env, 'SELECT qty FROM crystal_holdings WHERE user_id = ?', me.user.id);
+  assert.equal(holding.qty, 200000, 'hesap açılış ödülü 20 kristal');
+  const achievement = await one(env, "SELECT key FROM user_achievements WHERE user_id = ? AND key = 'account_created'", me.user.id);
+  assert.ok(achievement);
+  await grantAchievement(env, me.user.id, 'first_purchase');
+  await grantAchievement(env, me.user.id, 'first_purchase');
+  let reward = await one(env, 'SELECT qty FROM crystal_holdings WHERE user_id = ?', me.user.id);
+  assert.equal(reward.qty, 300000, 'ilk harcama 10 kristal verir ve tekrar verilmez');
+  await grantAchievement(env, me.user.id, 'first_card_design');
+  reward = await one(env, 'SELECT qty FROM crystal_holdings WHERE user_id = ?', me.user.id);
+  assert.equal(reward.qty, 400000, 'ilk tasarım kartım 10 kristal verir');
+});
+
+test('transfer açıklaması her iki tarafın hareketlerinde ve bildiriminde korunur', async () => {
+  const env = makeEnv();
+  const a = await register(env, 'memo-a@example.com', 'memo_sender');
+  const b = await register(env, 'memo-b@example.com', 'memo_receiver');
+  await fund(env, a.me.user.id, 5000);
+  const sent = await a.cl.post('/api/transfers', { recipient: 'memo_receiver', amount: '12.50', description: 'İlk tasarım kartım için', idempotency_key: 'memo_test_12345678' });
+  assert.equal(sent.status, 201);
+  const out = await a.cl.get('/api/transactions?kind=transfer');
+  const incoming = await b.cl.get('/api/transactions?kind=transfer');
+  assert.equal(out.data.items[0].description, 'İlk tasarım kartım için');
+  assert.equal(incoming.data.items[0].description, 'İlk tasarım kartım için');
+  const n = await b.cl.get('/api/notifications');
+  assert.ok(n.data.items.some(x => x.type === 'transfer_received' && x.body.includes('İlk tasarım kartım için')));
+});

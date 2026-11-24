@@ -101,11 +101,12 @@ export const SEED = [
 
 // Yeni kart yüzeyleri doğrudan ortak FNXSkins kataloğundan tohumlanır; editör, Market ve sunucu ürün kimlikleri eşleşir.
 for (const item of (SKINS().catalog || [])) {
-  SEED.push({ id: item.productId, kind: 'design', rarity: item.rarity, name: item.name, tagline: item.tagline, descr: item.desc, price: item.price, stock_total: item.stock, max_qty: 1, sort: item.sort, is_new: 1, data: { skin: item.id } });
+  const collectionData = item.collection ? { collection: item.collection, collection_id: item.collectionId, collection_type: item.collectionType, orientation: item.orientation, art_direction: item.artDirection, asset_status: item.assetStatus } : {};
+  SEED.push({ id: item.productId, kind: 'design', rarity: item.rarity, name: item.name, tagline: item.tagline, descr: item.desc, price: item.price, stock_total: item.stock, max_qty: 1, sort: item.sort, is_new: item.collection ? 1 : 0, data: { skin: item.id, ...collectionData } });
 }
 
 const seedSql = () => `INSERT OR IGNORE INTO shop_products (id, kind, rarity, name, tagline, descr, price, stock_total, stock_sold, max_qty, data, status, is_new, sort, created_at, updated_at) VALUES\n` +
-  SEED.map((p) => `  ('${p.id}', '${p.kind}', '${p.rarity}', '${p.name.replace(/'/g, "''")}', '${p.tagline.replace(/'/g, "''")}', '${p.descr.replace(/'/g, "''")}', ${p.price}, ${p.stock_total ?? 'NULL'}, 0, ${p.max_qty}, '${JSON.stringify(p.data)}', 'on', ${p.is_new}, ${p.sort}, 0, 0)`).join(',\n');
+  SEED.map((p) => `  ('${p.id}', '${p.kind}', '${p.rarity}', '${p.name.replace(/'/g, "''")}', '${p.tagline.replace(/'/g, "''")}', '${p.descr.replace(/'/g, "''")}', ${p.price}, ${p.stock_total ?? 'NULL'}, 0, ${p.max_qty}, '${JSON.stringify(p.data).replace(/'/g, "''")}', 'on', ${p.is_new}, ${p.sort}, 0, 0)`).join(',\n');
 export const MIGRATION_SQL = () => `-- Nexus Market: FN ile satılan tasarım ve fonksiyonel kartlar (stok, seri no, kalıcı sahiplik).\n-- Bu dosya scripts/gen-shop-migration.mjs ile src/lib/shop.js'ten üretilir.\n${SCHEMA.join(';\n')};\n${seedSql()};\n`;
 
 const CARD_DELIVERY_SCHEMA = [
@@ -143,6 +144,31 @@ export function cleanData(d) {
     if (d.perks.spread_discount_pct !== undefined) p.spread_discount_pct = Math.round(clamp(d.perks.spread_discount_pct, 0, 95, 0));
     if (d.perks.extra_cards !== undefined) p.extra_cards = Math.round(clamp(d.perks.extra_cards, 0, 5, 0));
     if (Object.keys(p).length) out.perks = p;
+  }
+  // 280-card catalogue metadata is server-owned, bounded and retained through admin edits.
+  if (d && d.collection !== undefined) {
+    if (typeof d.collection !== 'string' || d.collection.length < 1 || d.collection.length > 100) return { error: 'Geçersiz koleksiyon adı.' };
+    out.collection = d.collection;
+  }
+  if (d && d.collection_id !== undefined) {
+    if (typeof d.collection_id !== 'string' || !/^[a-z0-9-]{2,80}$/.test(d.collection_id)) return { error: 'Geçersiz koleksiyon kimliği.' };
+    out.collection_id = d.collection_id;
+  }
+  if (d && d.collection_type !== undefined) {
+    if (!['character','material','club_crest','turkish_rug_motif'].includes(d.collection_type)) return { error: 'Geçersiz koleksiyon ürün türü.' };
+    out.collection_type = d.collection_type;
+  }
+  if (d && d.orientation !== undefined) {
+    if (!['landscape','portrait'].includes(d.orientation)) return { error: 'Geçersiz kart yönü.' };
+    out.orientation = d.orientation;
+  }
+  if (d && d.art_direction !== undefined) {
+    if (typeof d.art_direction !== 'string' || d.art_direction.length > 1200) return { error: 'Geçersiz sanat yönlendirmesi.' };
+    out.art_direction = d.art_direction;
+  }
+  if (d && d.asset_status !== undefined) {
+    if (!['commission_or_original_art_required','licensed_or_original_art_required','procedural_or_original_material_art'].includes(d.asset_status)) return { error: 'Geçersiz görsel varlık durumu.' };
+    out.asset_status = d.asset_status;
   }
   if (!out.skin && !out.perks) return { error: 'Ürün bir kart yüzeyi veya perk içermeli.' };
   return { data: out };

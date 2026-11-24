@@ -32,6 +32,8 @@ const shapeProduct = (p) => {
     id: p.id, kind: p.kind, rarity: p.rarity, name: p.name, tagline: p.tagline, desc: p.descr, price: p.price,
     stock_total: p.stock_total, stock_left: p.stock_total == null ? null : Math.max(0, p.stock_total - p.stock_sold),
     max_qty: p.max_qty, skin: d.skin || null, perks: d.perks || null, is_new: !!p.is_new, status: p.status,
+    collection: d.collection || null, collection_id: d.collection_id || null, collection_type: d.collection_type || null,
+    orientation: d.orientation || null, art_direction: d.art_direction || null, asset_status: d.asset_status || null,
   };
 };
 const serialText = (e, p) => (p.stock_total && e.serial ? `${String(e.serial).padStart(3, '0')}/${String(p.stock_total).padStart(3, '0')}` : '');
@@ -104,7 +106,15 @@ export async function equipSkin(env, user, cardId, productId) {
   const own = await env.DB.prepare('SELECT 1 AS x FROM shop_entitlements WHERE user_id = ? AND product_id = ?').bind(user.id, pid).first();
   const p = await env.DB.prepare('SELECT * FROM shop_products WHERE id = ?').bind(pid).first();
   if (!own || !p) throw new HttpError(403, 'not_owned', 'Bu kart tasarımına sahip değilsin.');
-  if (!parseData(p.data).skin) throw new HttpError(400, 'no_skin', 'Bu ürün bir kart yüzeyi içermiyor.');
+  const productData = parseData(p.data);
+  if (!productData.skin) throw new HttpError(400, 'no_skin', 'Bu ürün bir kart yüzeyi içermiyor.');
+  if (productData.orientation) {
+    let cardDesign = {};
+    try { cardDesign = JSON.parse(card.design_json || '{}'); } catch {}
+    if (cardDesign.orientation && cardDesign.orientation !== productData.orientation) {
+      throw new HttpError(400, 'orientation_mismatch', `Bu koleksiyon kartı ${productData.orientation === 'portrait' ? 'dikey' : 'yatay'} yönünde tasarlandı. Kartının yönünü aynı şekilde ayarlayıp tekrar dene.`);
+    }
+  }
   await env.DB.prepare('INSERT INTO shop_card_skins (card_id, user_id, product_id, equipped_at) VALUES (?,?,?,?) ON CONFLICT(card_id) DO UPDATE SET product_id = excluded.product_id, equipped_at = excluded.equipped_at')
     .bind(card.id, user.id, pid, now(env)).run();
   return (await skinsOf(env, user.id))[card.id] || null;
@@ -128,6 +138,28 @@ export async function createShopTicket(env, user, productId = null) {
 }
 
 export const shopRoutes = {
+  // Market jetonuyla tek kullanımlık, kapsamı sınırlı Banka dönüş bileti üretir.
+  async bankTicket(req, env) {
+    const { user } = await useToken(env, req);
+    const base = String(env.BANK_URL || '').trim();
+    if (!base) throw new HttpError(503, 'bank_unavailable', 'Banka uygulaması adresi sunucuda ayarlı değil.');
+    await env.DB.batch([
+      env.DB.prepare('CREATE TABLE IF NOT EXISTS bank_tickets (token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,consumed_at INTEGER)'),
+      env.DB.prepare('CREATE TABLE IF NOT EXISTS bank_tokens (token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_bank_tickets_exp ON bank_tickets(expires_at)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_bank_tokens_exp ON bank_tokens(expires_at)'),
+    ]);
+    await rateLimit(env, `bankticket:${user.id}`, 20, 10 * MIN);
+    const t = now(env), ticket = randomToken(32);
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM bank_tickets WHERE expires_at < ?').bind(t - HOUR),
+      env.DB.prepare('DELETE FROM bank_tokens WHERE expires_at < ?').bind(t - HOUR),
+      env.DB.prepare('INSERT INTO bank_tickets (token_hash,user_id,created_at,expires_at) VALUES (?,?,?,?)').bind(await sha256hex(ticket), user.id, t, t + 5 * MIN),
+    ]);
+    const target = new URL(base); target.hash = `bank=${ticket}`;
+    return json({ url: target.toString(), expires_in: 5 * MIN / 1000 });
+  },
+
   // Nexus oturumuyla çağrılır.
   async ticket(req, env, ctx, { user }) {
     const b = await readJson(req).catch(() => ({}));

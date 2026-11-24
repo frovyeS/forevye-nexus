@@ -46,7 +46,7 @@ export function client(env, { ua = 'TestAgent/1.0', ip } = {}) {
 
 export const PW = 'Sup3rSecretPw!';
 
-export async function register(env, email, username, { card = 'Test Kişi', pw = PW, c } = {}) {
+export async function register(env, email, username, { card = 'Test Kişi', pw = PW, c, keepWelcomeCrystals = false } = {}) {
   const cl = c || client(env);
   const s = await cl.post('/api/auth/register/start', { email });
   if (s.status !== 200) throw new Error('start failed ' + JSON.stringify(s.data));
@@ -54,6 +54,8 @@ export async function register(env, email, username, { card = 'Test Kişi', pw =
   if (v.status !== 200) throw new Error('verify failed ' + JSON.stringify(v.data));
   const r = await cl.post('/api/auth/register/complete', { token: v.data.token, username, password: pw, card_display_name: card });
   if (r.status !== 201) throw new Error('complete failed ' + JSON.stringify(r.data));
+  // Çoğu test başlangıç ekonomisini sıfırdan sınar; hoş geldin ödülü ayrı testte korunur.
+  if (!keepWelcomeCrystals) await env.DB.prepare('UPDATE crystal_holdings SET qty=0,cost_basis=0 WHERE user_id=?').bind(r.data.user.id).run();
   return { cl, me: r.data };
 }
 
