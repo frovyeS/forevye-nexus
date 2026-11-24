@@ -84,7 +84,7 @@ export function txList(screen, { moves }) {
 
 // Para gönder: alıcı → tutar → onay → sonuç
 export function sendFlow(screen) {
-  const s = { step: 1, recipient: '', amountStr: '', key: null, result: null };
+  const s = { step: 1, recipient: '', amountStr: '', description: '', key: null, result: null };
   const step = (n) => { s.step = n; draw(); };
   const c = state.me.config;
   let info = { recipients: [], daily_left: c.daily_limit, daily_limit: c.daily_limit };
@@ -117,6 +117,7 @@ export function sendFlow(screen) {
 
   function drawAmount() {
     const inp = h('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: '0,00', value: s.amountStr });
+    const note = h('textarea', { maxlength: '180', rows: '3', placeholder: 'Örn. Kart tasarımı için teşekkürler…', value: s.description });
     const err = h('p', { class: 'err-text', role: 'alert' });
     const form = h('form', { onSubmit: (e) => { e.preventDefault();
       const v = inp.value.trim().replace(',', '.');
@@ -125,10 +126,11 @@ export function sendFlow(screen) {
       if (minor > c.max_transfer) { err.textContent = `İşlem başına en fazla ${money(c.max_transfer, cur())} gönderebilirsiniz.`; return; }
       if (minor > state.me.balance) { err.textContent = 'Yetersiz bakiye.'; return; }
       if (minor > info.daily_left) { err.textContent = `Bugün en fazla ${money(info.daily_left, cur())} daha gönderebilirsiniz.`; return; }
-      s.amountStr = v; s.key = null; step(3);
+      s.amountStr = v; s.description = note.value.trim(); s.key = null; step(3);
     } },
       h('div', { class: 'panel row' }, h('div', { class: 'avatar', text: initial(s.recipient) }), h('div', { class: 'grow' }, h('div', { class: 'muted small', text: 'Alıcı' }), h('div', { class: 'strong', text: `@${s.recipient}` }))),
       field(`Tutar (${cur()})`, inp, `Kullanılabilir: ${money(state.me.balance, cur())} • Bugün kalan limit: ${money(info.daily_left, cur())}`),
+      field('Açıklama (isteğe bağlı)', note, 'Alıcı, transfer ayrıntılarında bu notu görebilir.'),
       h('div', { class: 'chips' }, [['10', 1000], ['50', 5000], ['100', 10000], ['Maks', Math.min(state.me.balance, c.max_transfer, info.daily_left)]].map(([l, minor]) => h('button', { type: 'button', text: l === 'Maks' ? 'Maks' : `${l} FN`, onClick: () => { inp.value = (minor / 100).toFixed(2).replace('.', ','); } }))), err,
       h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', text: 'Geri', onClick: () => step(1) }), h('button', { class: 'btn primary grow', type: 'submit', text: 'Devam' })));
     mount(screen, head('Tutar'), form);
@@ -145,7 +147,7 @@ export function sendFlow(screen) {
     btn.addEventListener('click', () => busy(btn, async () => {
       err.textContent = '';
       try {
-        const r = await api.post('/api/transfers', { recipient: s.recipient, amount: s.amountStr, idempotency_key: s.key, ...(pw ? { password: pw.value } : {}) });
+        const r = await api.post('/api/transfers', { recipient: s.recipient, amount: s.amountStr, description: s.description, idempotency_key: s.key, ...(pw ? { password: pw.value } : {}) });
         s.result = r; await refreshMe().catch(() => {}); step(4);
       } catch (ex) { err.textContent = ex.message; }
     }));

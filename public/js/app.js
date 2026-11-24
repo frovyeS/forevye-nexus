@@ -2,7 +2,7 @@ import { api, onUnauth } from './api.js';
 import { h, mount, toast, money, dt, load, field, pwField, busy, empty, icon, back } from './ui.js';
 import { state, refreshMe, setHide, cur, initial } from './state.js';
 import { renderCard } from './cardview.js';
-import { opsMenu, txList, txRow, sendFlow, giftFlow } from './views-ops.js';
+import { opsMenu, txList, txRow, sendFlow, giftFlow } from './views-ops.js?v=20261124-v6';
 import { cardsList, cardNew, cardDetail, cardPayView, editorLaunch, vaultView, scanView } from './views-cards.js';
 import { marketView, marketMini } from './views-market.js';
 import { passView } from './views-pass.js';
@@ -112,11 +112,11 @@ function authView(initialMode = 'login') {
 }
 
 // ---------- Kabuk + gezinme ----------
-const NAV = [['#/home', 'home', 'Ana Sayfa'], ['#/ops', 'transfer', 'İşlemler'], ['#/market', 'market', 'Borsa'], ['#/cards', 'cards', 'Kartlarım'], ['#/profile', 'profile', 'Profil'], ['https://mhaforevye.github.io/forevye-id/', 'profile', 'FOREVYE ID', true]];
+const NAV = [['#/home', 'home', 'Ana Sayfa'], ['#/ops', 'transfer', 'İşlemler'], ['#/market', 'market', 'Borsa'], ['#/cards', 'cards', 'Kartlarım'], ['#/profile', 'profile', 'Profil'], ['#bank-launch', 'wallet', 'Sanal Banka', false, true], ['https://mhaforevye.github.io/forevye-id/', 'profile', 'FOREVYE ID', true]];
 function shell(activeHash) {
   const screen = h('main', { class: 'screen', id: 'screen' });
-  const nav = h('nav', { class: 'nav', 'aria-label': 'Ana gezinme' }, h('div', { class: 'nav-in' }, h('div', { class: 'nav-brand' }, h('img', { src: LOGO, alt: 'FOREVYE NEXUS' })), NAV.map(([href, ic, label, external]) =>
-    h('a', { href, 'aria-current': !external && activeHash === href ? 'page' : null, target: external ? '_blank' : null, rel: external ? 'noopener noreferrer' : null, title: external ? 'FOREVYE ID hesabını yeni sekmede aç' : null, class: external ? 'nav-id-link' : null }, icon(ic, 22), h('span', { text: label })))));
+  const nav = h('nav', { class: 'nav', 'aria-label': 'Ana gezinme' }, h('div', { class: 'nav-in' }, h('div', { class: 'nav-brand' }, h('img', { src: LOGO, alt: 'FOREVYE NEXUS' })), NAV.map(([href, ic, label, external, bank]) =>
+    h('a', { href, 'aria-current': !external && activeHash === href ? 'page' : null, target: external ? '_blank' : null, rel: external ? 'noopener noreferrer' : null, title: external ? 'FOREVYE ID hesabını yeni sekmede aç' : null, class: external ? 'nav-id-link' : null, onClick: bank ? async (e) => { e.preventDefault(); try { const r = await api.post('/api/bank/ticket'); location.href = r.url; } catch (err) { toast(err.message, 'error'); } } : null }, icon(ic, 22), h('span', { text: label })))));
   mount(root, h('div', { class: 'shell' }, screen), nav);
   return screen;
 }
@@ -154,12 +154,24 @@ function profileView(screen) {
   const holder = h('div');
   mount(screen, topbar(), holder);
   load(holder, () => api.get('/api/profile'), (p) => {
+    const AVATAR_KEY = 'fnx.profile.avatar.v1';
     const av = h('div', { class: 'avatar big', text: initial(p.username) });
-    if (p.has_avatar) api.blob('/api/profile/avatar').then((b) => { av.replaceChildren(h('img', { src: URL.createObjectURL(b), alt: 'Profil fotoğrafı' })); }).catch(() => {});
+    // Profil fotoğrafı yalnızca bu tarayıcının localStorage alanında tutulur; API'ye gönderilmez.
+    try { const saved = localStorage.getItem(AVATAR_KEY); if (saved && /^data:image\/(jpeg|png|webp);base64,/.test(saved)) av.replaceChildren(h('img', { src: saved, alt: 'Profil fotoğrafı' })); } catch (_) {}
     const file = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', hidden: true, onChange: async (e) => {
       const f = e.target.files[0]; if (!f) return;
-      if (f.size > 512 * 1024) return toast('Görsel 512 KB’tan küçük olmalı', 'error');
-      try { await api.putRaw('/api/profile/avatar', await f.arrayBuffer(), f.type); toast('Fotoğraf güncellendi', 'ok'); route(); } catch (er) { toast(er.message, 'error'); }
+      if (!/^image\/(png|jpeg|webp)$/.test(f.type)) return toast('Yalnızca PNG, JPEG veya WebP seçebilirsin', 'error');
+      if (f.size > 8 * 1024 * 1024) return toast('Görsel 8 MB’tan küçük olmalı', 'error');
+      try {
+        const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = reject; reader.onload = () => resolve(reader.result); reader.readAsDataURL(f); });
+        const img = new Image(); img.onerror = () => toast('Görsel okunamadı', 'error'); img.onload = () => {
+          const scale = Math.min(1, 640 / Math.max(img.width, img.height)); const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(img.width * scale)); canvas.height = Math.max(1, Math.round(img.height * scale));
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          try { const compact = canvas.toDataURL('image/jpeg', 0.82); localStorage.setItem(AVATAR_KEY, compact); toast('Profil fotoğrafı bu tarayıcıya kaydedildi', 'ok'); route(); }
+          catch (_) { toast('Tarayıcı depolama alanı yetersiz', 'error'); }
+        }; img.src = data;
+      } catch (_) { toast('Fotoğraf okunamadı', 'error'); }
+      e.target.value = '';
     } });
     const uc = p.username_change;
     const ucText = uc.allowed ? (uc.phase === 'initial' ? `İlk 48 saatte ${uc.initial_left} değiştirme hakkın kaldı.` : 'Kullanıcı adını şimdi değiştirebilirsin; sonrasında 15 gün beklemen gerekir.') : `Bir sonraki değiştirme: ${dt(uc.next_change_at)}`;
@@ -169,7 +181,7 @@ function profileView(screen) {
     const unForm = h('form', { onSubmit: (e) => { e.preventDefault(); if (!confirm('Kullanıcı adını değiştirmek istediğine emin misin?')) return; busy(ubtn, async () => { uerr.textContent = ''; try { await api.post('/api/profile/username', { username: un.value }); await refreshMe(); toast('Kullanıcı adı değişti', 'ok'); route(); } catch (ex) { uerr.textContent = ex.message; } }); } }, field('Yeni kullanıcı adı', un, ucText), uerr, ubtn);
     return h('div', {},
       h('div', { class: 'panel center' }, h('div', { class: 'row', style: { justifyContent: 'center' } }, av), h('h2', { text: `@${p.username}` }),
-        h('div', { class: 'row wrap', style: { justifyContent: 'center' } }, h('button', { class: 'btn small', type: 'button', onClick: () => file.click() }, icon('edit', 18), 'Fotoğraf'), p.has_avatar ? h('button', { class: 'btn small danger', type: 'button', onClick: async () => { await api.del('/api/profile/avatar'); route(); } }, icon('trash', 18), 'Kaldır') : null), file),
+        h('div', { class: 'row wrap', style: { justifyContent: 'center' } }, h('button', { class: 'btn small', type: 'button', onClick: () => file.click() }, icon('edit', 18), 'Fotoğraf'), h('button', { class: 'btn small danger', type: 'button', onClick: () => { try { localStorage.removeItem(AVATAR_KEY); } catch (_) {} toast('Bu tarayıcıdaki fotoğraf kaldırıldı', 'ok'); route(); } }, icon('trash', 18), 'Kaldır')), file),
       h('div', { class: 'panel' }, h('dl', { class: 'kv' },
         h('dt', { text: 'Hesap ID' }), h('dd', { text: p.id }), h('dt', { text: 'Üyelik' }), h('dd', { text: dt(p.created_at) }),
         h('dt', { text: 'E-posta' }), h('dd', {}, p.email, ' ', h('span', { class: `chip ${p.email_verified ? 'ok' : 'warn'}`, text: p.email_verified ? 'Doğrulandı' : 'Doğrulanmadı' })),

@@ -184,7 +184,7 @@
     var P = o.prefix || 'c', t = tone(d), bg = bgLayer(d), bp = bg.properties;
     // Market kart yüzeyi (skin): takılıysa kullanıcının katmanları/yüzeyi yerine skin çizilir; yazı rengi skin'e kilitlenir.
     var sk = sys && sys.skin && root.FNXSkins ? root.FNXSkins.get(sys.skin) : null;
-    var sp = sk ? sk.build(P, { animate: o.animate !== false, serial: sys.skinSerial ? String(sys.skinSerial).replace(/[^0-9\/]/g, '') : '' }) : null;
+    var sp = sk ? sk.build(P, { animate: o.animate !== false, serial: sys.skinSerial ? String(sys.skinSerial).replace(/[^0-9\/]/g, '') : '', width: W, height: H, orientation: d && d.orientation }) : null;
     if (sp) { t.brand = sk.brand; t.name = sk.brand; t.plate = false; t.nameFallback = false; }
     var zonePath = 'M0 0H' + W + 'V' + H + 'H0Z';
     var chips = Object.keys(CHIP_STOPS).map(function (k) {

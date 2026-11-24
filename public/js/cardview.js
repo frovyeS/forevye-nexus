@@ -1,9 +1,9 @@
 // Kartı çizer. Çizim kodu banka kart editörüyle AYNI dosyadır (card-render.js + card-rules.js); Nexus'ta bir kart editörde göründüğü gibi görünür.
 // Marka, çip ve kart kimliği çizimde sistemden eklenir; kullanıcının tasarımında yer almaz. Bu dosya yalnızca görüntüler; doğrulama sunucudadır.
 import './card-rules.js';
-import './card-skins.js';
+import './card-skins.js?v=20261124-nexus280';
 import './qrcode.js';
-import './card-render.js';
+import './card-render.js?v=20261124-nexus280';
 
 const X = window.FNXRender;
 let uid = 0;
