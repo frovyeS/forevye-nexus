@@ -12,8 +12,11 @@ function parseCookies(req) {
   return out;
 }
 
+// SameSite=Lax (Strict DEĞİL): "FOREVYE ID ile giriş" dönüşü başka siteden (github.io) gelen bir yönlendirmedir; Strict çerez bu zincirde
+// kaydedilmez/gönderilmez ve kullanıcı giriş sayfasına geri düşerdi. Lax, çapraz-site POST/fetch isteklerinde yine gönderilmez (CSRF koruması
+// ayrıca src/worker.js'de özel başlık + Origin denetimiyle sürer).
 export function cookieHeader(token, maxAgeSec) {
-  return `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAgeSec}`;
+  return `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSec}`;
 }
 export const clearCookie = () => cookieHeader('', 0);
 

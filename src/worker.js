@@ -146,7 +146,7 @@ async function handleApi(req, env) {
     if (R.some((r) => r.re.test(url.pathname))) throw new HttpError(405, 'method_not_allowed', 'Yöntem desteklenmiyor.');
     throw new HttpError(404, 'not_found', 'Bulunamadı.');
   }
-  // CSRF: durum değiştiren isteklerde özel başlık + aynı kaynak (Origin) zorunlu. Çerez ayrıca SameSite=Strict'tir.
+  // CSRF: durum değiştiren isteklerde özel başlık + aynı kaynak (Origin) zorunlu. Çerez ayrıca SameSite=Lax'tır (çapraz-site istekte gönderilmez).
   if (method !== 'GET' && route.access !== 'internal' && route.access !== 'editor' && route.access !== 'pass' && route.access !== 'shop' && route.access !== 'bank' && route.access !== 'bank-public') {
     if (req.headers.get('x-nx-csrf') !== '1') throw new HttpError(403, 'csrf', 'Geçersiz istek.');
     const origin = req.headers.get('origin');
