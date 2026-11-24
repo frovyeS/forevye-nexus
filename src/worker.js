@@ -13,6 +13,7 @@ import { editorRoutes, editorOrigins } from './routes/editor.js';
 import { passRoutes, passInternalRoutes, passAdminRoutes, passOrigins } from './routes/pass.js';
 import { shopRoutes, shopAdminRoutes, shopOrigins, cardSkinRoute } from './routes/shop.js';
 import { cronTick } from './lib/market.js';
+import { externalCrystalRoutes } from './routes/external-crystal.js';
 
 // [yöntem, yol, işleyici, erişim]  erişim: 'public' | 'user' | 'admin' | 'super' | 'internal' | 'editor'
 // 'shop': Nexus Market sitesi (ayrı site), 'pass' ile aynı yöntem: Bearer jeton, CORS yalnızca SHOP_URL kaynağına açık.
@@ -183,7 +184,9 @@ export default {
     const cors = siteCors(req, env, url);
     if (req.method === 'OPTIONS' && CORS_PATHS.has(url.pathname)) return new Response(null, { status: cors ? 204 : 403, headers: cors || {} });
     try {
-      const res = await handleApi(req, env);
+      const res = url.pathname.startsWith('/api/ext/timer-reward/')
+        ? await externalCrystalRoutes.handle(req, env, url)
+        : await handleApi(req, env);
       const out = new Response(res.body, res);
       for (const [k, v] of Object.entries(SEC)) out.headers.set(k, v);
       if (cors) for (const [k, v] of Object.entries(cors)) out.headers.set(k, v);
