@@ -1,5 +1,5 @@
-// Kristal borsası: bağımsız oyun içi piyasa simülasyonu. Harici emtia/altın fiyatı kullanılmaz.
-// Fiyat her piyasa güncellemesinde sınırlı volatiliteyle değişir; geçmiş D1 snapshot'larından çizilir.
+// Kristal borsası: çeyrek altın endeksi + döviz/gram/premium + oyun içi arz-talep.
+// Harici veri referans olarak kullanılır; baz fiyatı ve geçiş hızı yumuşatılarak ani sıçramalar önlenir.
 import { HttpError, now, newRef, cfgNum, isConstraint, MIN } from './util.js';
 import { notifyStmt } from './auth.js';
 import { entryStmts, guardActiveStmt, fmtMinor } from './ledger.js';
@@ -19,47 +19,181 @@ export const cfg = (env) => ({
   slipBps: cfgNum(env, 'MARKET_SLIPPAGE_BPS', 100),           // istemcinin gördüğü fiyattan en fazla %1 sapma
   volatilityBps: cfgNum(env, 'MARKET_VOLATILITY_BPS', 45),   // güncelleme başına azami ±%0,45
   initialPriceMicro: cfgNum(env, 'MARKET_INITIAL_PRICE_MICRO', 25000000), // başlangıç: 25,0000 FN/KRS
-  reversionBps: cfgNum(env, 'MARKET_REVERSION_BPS', 200),    // başlangıç fiyatından sapmanın güncelleme başına %2'si geri çekilir (fiyat sonsuza kaçmaz)
+  reversionBps: cfgNum(env, 'MARKET_REVERSION_BPS', 200),    // eski simülasyon için geri çekim
+  goldApiUrl: env.MARKET_GOLD_API_URL || '',
+  goldRefreshMs: cfgNum(env, 'MARKET_GOLD_REFRESH_SEC', 300) * 1000,
+  maxStepBps: cfgNum(env, 'MARKET_MAX_STEP_BPS', 150),      // normalde en fazla %1,50; BIST şoklarında dinamik yükselir
+  shockStepBps: cfgNum(env, 'MARKET_SHOCK_STEP_BPS', 500),  // sert piyasa hareketlerinde en fazla %5
+  bistApiUrl: env.MARKET_BIST_API_URL || (env.MARKET_GOLD_API_URL ? 'https://query1.finance.yahoo.com/v8/finance/chart/' : ''),
   retentionDays: cfgNum(env, 'MARKET_RETENTION_DAYS', 35),
 });
 
-// ---------- Oyun içi fiyat modeli ----------
-function randomInt(max) {
-  const bytes = new Uint32Array(1);
-  crypto.getRandomValues(bytes);
-  return bytes[0] % (max + 1);
-}
+// ---------- Altın + BIST verileriyle deterministik fiyat modeli ----------
 
 const stateGet = async (env, key) => (await env.DB.prepare('SELECT value FROM market_state WHERE key = ?').bind(key).first())?.value ?? null;
 const stateSet = (env, key, value, t) => env.DB.prepare(
   'INSERT INTO market_state (key, value, updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
 ).bind(key, String(value), t).run();
 
-// Her güncellemede önceki fiyata küçük ve sınırlı bir piyasa hareketi uygulanır.
-// İlk fiyat sabit ve açıkça tanımlıdır; 1 FN varsayımı veya dış fiyat referansı yoktur.
-export async function refreshPrice(env) {
-  const c = cfg(env);
-  const t = now(env);
-  const prev = await readLast(env);
-  const validPrev = prev && prev.model === 'nexus-market-v2' && Number.isSafeInteger(prev.price_micro) && prev.price_micro > 0;
-  const previous = validPrev ? prev.price_micro : c.initialPriceMicro;
-  const maxBps = Math.max(1, Math.min(500, c.volatilityBps));
-  const base = Math.max(10000, c.initialPriceMicro);
-  // Rastgele adım + başlangıç fiyatına doğru hafif geri çekim: fiyat serbestçe dolaşır ama sonsuza kaçmaz.
-  let moveBps = validPrev ? randomInt(maxBps * 2) - maxBps : 0;
-  if (validPrev) {
-    const gapBps = ((base - previous) / previous) * 10000;
-    moveBps += Math.max(-maxBps, Math.min(maxBps, Math.round((gapBps * Math.max(0, c.reversionBps)) / 10000)));
+function num(v) { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null; }
+function extractGoldQuote(json) {
+  const k = json?.kurlar || {}, z = json?.ziynet_ve_diger || {};
+  const quarter = num(z['Çeyrek (Yeni)']?.satis ?? z['Yeni Çeyrek']?.satis ?? z['Çeyrek']?.satis);
+  const gram = num(k.ALTIN?.satis ?? k.GRAM?.satis ?? k['GRAM ALTIN']?.satis);
+  const usd = num(k.USD?.satis ?? k['USD/TRY']?.satis ?? k.DOLAR?.satis);
+  const silver = num(k.GUMUS?.satis ?? k.GÜMÜŞ?.satis ?? z['Gram Gümüş']?.satis);
+  if (!quarter || !gram) return null;
+  return { quarter, gram, usd, silver, ts: Date.now(), provider: json?.meta?.yayin_sahibi || 'Gramhane' };
+}
+async function getGoldQuote(env, c, t) {
+  let cached = null;
+  try { cached = JSON.parse(await stateGet(env, 'gold_quote') || 'null'); } catch {}
+  if (c.goldApiUrl && (!cached || t - (cached.ts || 0) >= c.goldRefreshMs)) {
+    try {
+      const res = await fetch(c.goldApiUrl, { headers: { 'Accept': 'application/json', 'User-Agent': 'ForevyeNexus/1.0' }, signal: AbortSignal.timeout(6000) });
+      if (res.ok) {
+        const quote = extractGoldQuote(await res.json());
+        if (quote) { quote.ts = t; cached = quote; await stateSet(env, 'gold_quote', JSON.stringify(quote), t); }
+      }
+    } catch (e) { console.warn('gold quote fetch failed', e?.message || e); }
   }
-  // Sürekli aynı değere takılmaması için sıfır hareket nadiren küçük bir adımla değiştirilir.
-  if (validPrev && moveBps === 0) moveBps = randomInt(1) ? 1 : -1;
-  const floor = Math.max(10000, Math.round(base / 10)), ceil = Math.min(1000000000000, base * 10);
-  const price_micro = Math.max(floor, Math.min(ceil, Math.round(previous * (10000 + moveBps) / 10000)));
-  const last = { model: 'nexus-market-v2', ts: t, price_micro, source: 'Nexus oyun piyasası', move_bps: moveBps };
+  return cached && cached.quarter && cached.gram ? cached : null;
+}
+async function getYahooDaily(symbol, c) {
+  try {
+    const url = `${c.bistApiUrl}${encodeURIComponent(symbol)}?range=5d&interval=1d`;
+    const res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'ForevyeNexus/1.0' }, signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return null;
+    const j = await res.json(), result = j?.chart?.result?.[0], q = result?.indicators?.quote?.[0];
+    const closes = (q?.close || []).filter((x) => Number.isFinite(x) && x > 0);
+    const volumes = (q?.volume || []).filter((x) => Number.isFinite(x) && x > 0);
+    if (closes.length < 2) return null;
+    const ret = closes[closes.length - 1] / closes[closes.length - 2] - 1;
+    const volumeRatio = volumes.length >= 2 ? volumes[volumes.length - 1] / volumes[volumes.length - 2] : 1;
+    return { ret, volumeRatio, symbol, last: closes.at(-1) };
+  } catch { return null; }
+}
+async function getBistSignals(env, c, t) {
+  if (!c.bistApiUrl) return null;
+  let cached = null;
+  try { cached = JSON.parse(await stateGet(env, 'bist_signals') || 'null'); } catch {}
+  if (!cached || t - (cached.ts || 0) >= c.goldRefreshMs) {
+    const symbols = ['XU100.IS', 'XU030.IS', 'XBANK.IS', 'XUSIN.IS', 'USDTRY=X'];
+    const data = await Promise.all(symbols.map((symbol) => getYahooDaily(symbol, c)));
+    if (data.some(Boolean)) {
+      cached = { ts: t, xu100: data[0], xu030: data[1], xbank: data[2], xusin: data[3], usdtry: data[4] };
+      await stateSet(env, 'bist_signals', JSON.stringify(cached), t);
+    }
+  }
+  return cached && t - cached.ts <= 24 * 60 * MIN ? cached : null;
+}
+function bistFactor(signals) {
+  if (!signals) return { factor: 1, shockBps: 0, detail: 'BIST verisi bulunamadı' };
+  const ret = (x) => Math.max(-0.12, Math.min(0.12, Number(x?.ret || 0)));
+  const vol = (x) => Math.max(-0.5, Math.min(2, Number(x?.volumeRatio || 1) - 1));
+  // Endeks getirileri doğrudan etkiler: BIST100 20%, BIST30 12%, Banka 8%, Sanayi 6%.
+  // USD/TRY artışı altın/TL etkisi olarak +10%; hacim şişmesi yönlü hareketi güçlendirir.
+  const impact = ret(signals.xu100) * 0.20 + ret(signals.xu030) * 0.12
+    + ret(signals.xbank) * 0.08 + ret(signals.xusin) * 0.06
+    + ret(signals.usdtry) * 0.10 + vol(signals.xu100) * 0.015;
+  const shock = Math.max(Math.abs(ret(signals.xu100)), Math.abs(ret(signals.xbank)), Math.abs(ret(signals.xusin)));
+  return { factor: Math.max(0.90, Math.min(1.10, 1 + impact)), shockBps: Math.round(shock * 10000), detail: `BIST endeksleri: ${(impact * 100).toFixed(2)}%` };
+}
+
+async function marketFlowFactor(env, t) {
+  // Son 6 saatteki alış/satış miktarı; işlem yönü baskısı fiyat hedefine küçük etki eder.
+  const since = t - 6 * 60 * MIN;
+  try {
+    const r = await env.DB.prepare(`SELECT COALESCE(SUM(CASE WHEN side='buy' THEN qty ELSE 0 END),0) AS buys,
+      COALESCE(SUM(CASE WHEN side='sell' THEN qty ELSE 0 END),0) AS sells FROM crystal_trades WHERE created_at >= ?`).bind(since).first();
+    const buys = Number(r?.buys || 0), sells = Number(r?.sells || 0), total = buys + sells;
+    const imbalance = total ? Math.max(-1, Math.min(1, (buys - sells) / total)) : 0;
+    return 1 + imbalance * 0.025; // %2,5 maksimum hedef etkisi
+  } catch { return 1; }
+}
+function goldTargetMicro(quote, base, bist, supplyFactor = 1) {
+  // 25 FN yalnızca başlangıç ankrajıdır. Fiyatın 25'e dönmesi veya belirli aralıkta kalması zorlanmaz.
+  const q = quote.quarter / base.quarter;
+  const g = quote.gram / base.gram;
+  const usd = quote.usd && base.usd ? quote.usd / base.usd : 1;
+  const premiumNow = quote.quarter / (quote.gram * 1.75);
+  const premiumBase = base.quarter / (base.gram * 1.75);
+  const silverRatioNow = quote.silver ? quote.gram / quote.silver : 1;
+  const silverRatioBase = base.silver ? base.gram / base.silver : 1;
+  // Metal/FX kümülatif sinyali: toplam altın ağırlığı %55; BIST/FX eklenir.
+  const goldFactor = Math.pow(q, 0.35) * Math.pow(g, 0.15) * Math.pow(usd, 0.10)
+    * Math.pow(premiumNow / premiumBase, 0.05) * Math.pow(silverRatioNow / silverRatioBase, 0.05);
+  return Math.round(25000000 * goldFactor * (bist?.factor || 1) * supplyFactor);
+}
+
+async function giftEmissionFactor(env, t) {
+  // Dolaşımdaki KRS + hediye kodu/ödül kaynaklı mint. Hediye kaydı varsa; yoksa güvenli 1.0.
+  try {
+    const supplyRow = await env.DB.prepare('SELECT COALESCE(SUM(qty),0) AS supply FROM crystal_holdings').first();
+    const supply = Math.max(0, Number(supplyRow?.supply || 0));
+    const giftRow = await env.DB.prepare(`SELECT COALESCE(SUM(qty),0) AS minted FROM crystal_gifts WHERE created_at >= ?`).bind(t - 30 * 24 * 60 * MIN).first();
+    const rewardRow = await env.DB.prepare(`SELECT COALESCE(SUM(qty),0) AS minted FROM crystal_reward_credits WHERE created_at >= ? AND applied_at IS NOT NULL`).bind(t - 30 * 24 * 60 * MIN).first().catch(() => ({ minted: 0 }));
+    const minted = Math.max(0, Number(giftRow?.minted || 0) + Number(rewardRow?.minted || 0));
+    // 30 günlük yeni arzın mevcut dolaşıma oranı; logaritmik etki, büyük mint olayları hissedilir ama fiyat sıfırlanmaz.
+    const ratio = supply > 0 ? minted / supply : 0;
+    return Math.pow(1 + ratio, -0.65);
+  } catch { return 1; }
+}
+
+export async function refreshPrice(env) {
+  const c = cfg(env), t = now(env), prev = await readLast(env);
+  const validPrev = prev && Number.isSafeInteger(prev.price_micro) && prev.price_micro > 0;
+  const previous = validPrev ? prev.price_micro : c.initialPriceMicro;
+  const quote = await getGoldQuote(env, c, t);
+  const signals = await getBistSignals(env, c, t);
+  const bist = bistFactor(signals);
+  let moveBps = 0, price_micro = previous, source = 'Nexus piyasası: dış veri geçici olarak yok';
+  if (quote) {
+    let base = null;
+    try { base = JSON.parse(await stateGet(env, 'gold_baseline') || 'null'); } catch {}
+    if (!base || !base.quarter || !base.gram) {
+      base = { quarter: quote.quarter, gram: quote.gram, usd: quote.usd, silver: quote.silver, set_at: t };
+      await stateSet(env, 'gold_baseline', JSON.stringify(base), t);
+    }
+    let bistBase = null;
+    try { bistBase = JSON.parse(await stateGet(env, 'bist_baseline') || 'null'); } catch {}
+    if (signals && !bistBase) {
+      bistBase = { xu100: signals.xu100?.last, xu030: signals.xu030?.last, xbank: signals.xbank?.last, xusin: signals.xusin?.last, usdtry: signals.usdtry?.last, set_at: t };
+      await stateSet(env, 'bist_baseline', JSON.stringify(bistBase), t);
+    }
+    // Endeksleri başlangıçtan beri olan hareketleriyle hesaba kat; günlük getiri her yenilemede tekrar birikmez.
+    let bistCumulative = 1;
+    if (signals && bistBase) {
+      const ret = (x, b) => x?.last && b ? Math.max(0.05, x.last / b) : 1;
+      bistCumulative = Math.pow(ret(signals.xu100, bistBase.xu100), 0.30)
+        * Math.pow(ret(signals.xu030, bistBase.xu030), 0.18)
+        * Math.pow(ret(signals.xbank, bistBase.xbank), 0.12)
+        * Math.pow(ret(signals.xusin, bistBase.xusin), 0.10)
+        * Math.pow(ret(signals.usdtry, bistBase.usdtry), 0.15);
+    }
+    const flow = await marketFlowFactor(env, t);
+    const emission = await giftEmissionFactor(env, t);
+    const target = Math.round(goldTargetMicro(quote, base, { factor: bistCumulative }, emission) * flow);
+    // Dinamik fiyat keşfi: sabit 25'e geri dönüş, mutlak fiyat tavanı/tabanı yok. Hareket limiti yalnız tek adım içindir.
+    const diffBps = ((target - previous) / previous) * 10000;
+    const volatility = Math.max(150, Math.min(3000, Math.abs(diffBps)));
+    const stepCap = (bist.shockBps >= 250 || Math.abs(diffBps) >= 1200) ? 3000 : Math.max(c.maxStepBps, 1200);
+    moveBps = Math.round(diffBps * 0.45);
+    moveBps = Math.max(-stepCap, Math.min(stepCap, moveBps));
+    price_micro = Math.max(1, Math.round(previous * (10000 + moveBps) / 10000));
+    source = `Çeyrek altın + BIST100/30 + banka/sanayi + USD/TRY + hacim + Nexus arz/talep + hediye emisyonu (${quote.provider || 'altın verisi'})`;
+  } else if (signals && validPrev) {
+    // Altın servisi yokken de BIST/FX ve akış, fiyatı aşağı/yukarı taşıyabilir; kelepçe yok.
+    const impactBps = Math.round((bist.factor - 1) * 10000);
+    moveBps = Math.max(-3000, Math.min(3000, Math.round(impactBps * 0.45)));
+    price_micro = Math.max(1, Math.round(previous * (10000 + moveBps) / 10000));
+    source = 'BIST100/30 + banka/sanayi + USD/TRY + hacim + Nexus alım/satım akışı';
+  }
+  const last = { model: quote ? 'nexus-dynamic-market-v5' : signals ? 'nexus-dynamic-bist-v5' : 'nexus-market-stable-v3', ts: t, price_micro, source, move_bps: moveBps, gold_quote_ts: quote?.ts || null, bist_ts: signals?.ts || null };
   await stateSet(env, 'last_price', JSON.stringify(last), t);
   const lastSnap = await env.DB.prepare('SELECT ts FROM market_prices ORDER BY ts DESC LIMIT 1').first();
   if (!lastSnap || t - lastSnap.ts >= c.snapshotMs) {
-    await env.DB.prepare('INSERT INTO market_prices (ts, gold_usd, price_micro, source) VALUES (?,?,?,?)').bind(t, 0, price_micro, 'Nexus oyun piyasası').run();
+    await env.DB.prepare('INSERT INTO market_prices (ts, gold_usd, price_micro, source) VALUES (?,?,?,?)').bind(t, quote?.quarter || 0, price_micro, source).run();
   }
   return last;
 }

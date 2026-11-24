@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeEnv, register, fund, sql, one, D } from './helpers.mjs';
+import { refreshPrice } from '../src/lib/market.js';
 
 const key = () => 'k' + crypto.randomUUID().replaceAll('-', '').slice(0, 20);
 async function consistent(env) {
@@ -24,7 +25,7 @@ test('fiyat: Kristal bağımsız oyun piyasasında 25 FN başlangıç fiyatıyla
   assert.equal(r.data.buy_micro, 25125000);
   assert.equal(r.data.sell_micro, 24875000);
   assert.equal(r.data.tradable, true);
-  assert.equal(r.data.source, 'Nexus oyun piyasası');
+  assert.equal(r.data.source, 'Nexus piyasası: dış veri geçici olarak yok');
 });
 
 test('al/sat: atomik, defter tutarlı, spread uygulanır, ortalama maliyet', async () => {
@@ -108,44 +109,67 @@ test('tekrar isteği ve geçersiz girişler', async () => {
   await consistent(env);
 });
 
-test('fiyat hareketi: piyasa volatilitesi güncellemeyle uygulanır ve eski altın verisi okunmaz', async () => {
-  const { env, u } = await setup({ MARKET_VOLATILITY_BPS: '500' });
+test('fiyat: dış veri yoksa rastgele dalgalanma üretmez, son fiyatı korur', async () => {
+  const { env, u } = await setup();
   const first = (await u.cl.get('/api/market')).data.price_micro;
+  env.__NOW += 2 * 60 * 1000;
+  const next = (await u.cl.get('/api/market')).data;
   assert.equal(first, 25000000);
-  const original = crypto.getRandomValues;
+  assert.equal(next.price_micro, first);
+  assert.equal(next.move_bps, 0);
+  assert.match(next.source, /veri geçici olarak yok/i);
+});
+
+test('altın referansı: ilk canlı fiyat 25 FN baz alınır; sonraki hareketler dinamik fiyat keşfiyle uygulanır', async () => {
+  const { env } = await setup({ MARKET_GOLD_API_URL: 'https://mock.gold/prices', MARKET_MAX_STEP_BPS: '12' });
+  const originalFetch = globalThis.fetch;
+  let quarter = 10000, gram = 6000;
   try {
-    crypto.getRandomValues = (arr) => { arr[0] = 1000; return arr; }; // 1000 mod 1001 = +500 bps
-    env.__NOW += 2 * 60 * 1000;
-    const next = (await u.cl.get('/api/market')).data;
-    assert.equal(next.price_micro, 26250000);
-    assert.equal(next.source, 'Nexus oyun piyasası');
-    assert.equal(next.gold_usd, undefined);
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      meta: { yayin_sahibi: 'MockGold' },
+      kurlar: { ALTIN: { satis: gram }, USD: { satis: 35 }, GUMUS: { satis: 75 } },
+      ziynet_ve_diger: { 'Çeyrek (Yeni)': { satis: quarter } },
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+    const first = await refreshPrice(env);
+    assert.equal(first.price_micro, 25000000, 'ilk veri 25 FN bazına sabitlenir');
+    assert.match(first.source, /Çeyrek altın/i);
+    quarter = 12000; gram = 7200; // referans altın %20 artıyor
+    env.__NOW += 5 * 60 * 1000;
+    const second = await refreshPrice(env);
+    assert.ok(second.price_micro > first.price_micro, 'altın yükselişi fiyatı yukarı taşımalı');
+    assert.ok(second.move_bps <= 3000, 'tek güncellemede %30 güvenlik adım sınırını aşmamalı');
+    const baselineRows = await sql(env, `SELECT value FROM market_state WHERE key='gold_baseline'`);
+    const baseline = JSON.parse(baselineRows[0]?.value || '{}');
+    assert.equal(baseline.quarter, 10000);
   } finally {
-    crypto.getRandomValues = original;
+    globalThis.fetch = originalFetch;
   }
 });
 
-test('fiyat başlangıç değerine doğru hafif geri çekilir ve sınırlar içinde kalır', async () => {
-  const { env, u } = await setup({ MARKET_VOLATILITY_BPS: '500' });
-  await u.cl.get('/api/market');
-  const put = (price) => env.DB.prepare('INSERT OR REPLACE INTO market_state (key, value, updated_at) VALUES (?,?,?)')
-    .bind('last_price', JSON.stringify({ model: 'nexus-market-v2', ts: env.__NOW, price_micro: price, source: 'Nexus oyun piyasası', move_bps: 0 }), env.__NOW).run();
-  const original = crypto.getRandomValues;
+test('BIST verileri fiyatı deterministik etkiler ve piyasa şokunda adım limiti genişler', async () => {
+  const { env } = await setup({ MARKET_GOLD_API_URL: 'https://mock.gold/prices', MARKET_MAX_STEP_BPS: '100', MARKET_SHOCK_STEP_BPS: '500' });
+  const originalFetch = globalThis.fetch;
+  let spike = false;
   try {
-    crypto.getRandomValues = (arr) => { arr[0] = 500; return arr; }; // rastgele hareket = 0 bps
-    await put(50000000); // başlangıcın 2 katı: gap -5000 bps, %2 geri çekim = -100 bps
-    env.__NOW += 2 * 60 * 1000;
-    assert.equal((await u.cl.get('/api/market')).data.price_micro, 49500000);
-    await put(10000000); // başlangıcın altında: yukarı çekilir
-    env.__NOW += 2 * 60 * 1000;
-    assert.ok((await u.cl.get('/api/market')).data.price_micro > 10000000);
-    crypto.getRandomValues = (arr) => { arr[0] = 1000; return arr; }; // +500 bps
-    await put(250000000); // üst sınır = başlangıç x 10
-    env.__NOW += 2 * 60 * 1000;
-    assert.ok((await u.cl.get('/api/market')).data.price_micro <= 250000000);
-  } finally {
-    crypto.getRandomValues = original;
-  }
+    globalThis.fetch = async (url) => {
+      if (String(url).includes('mock.gold')) return new Response(JSON.stringify({
+        meta: { yayin_sahibi: 'MockGold' }, kurlar: { ALTIN: { satis: 6000 }, USD: { satis: 35 }, GUMUS: { satis: 75 } },
+        ziynet_ve_diger: { 'Çeyrek (Yeni)': { satis: 10000 } },
+      }), { status: 200 });
+      const symbol = decodeURIComponent(String(url).split('/').pop().split('?')[0]);
+      const move = spike ? (symbol === 'XU100.IS' ? 0.06 : symbol === 'XBANK.IS' ? 0.05 : 0.02) : 0.001;
+      const close = [100, 100 * (1 + move)];
+      const volume = [1000, spike ? 4000 : 1100];
+      return new Response(JSON.stringify({ chart: { result: [{ indicators: { quote: [{ close, volume }] } }] } }), { status: 200 });
+    };
+    await refreshPrice(env); // ilk referans noktası 25 FN
+    spike = true;
+    env.__NOW += 5 * 60 * 1000;
+    const moved = await refreshPrice(env);
+    assert.ok(moved.move_bps > 100, 'BIST sert hareketi dinamik adım limitini aşan normal piyasa hareketi oluşturmalı');
+    assert.ok(moved.move_bps <= 3000, 'şok hareketi %30 sınırını aşmamalı');
+    assert.match(moved.source, /BIST100\/30/);
+  } finally { globalThis.fetch = originalFetch; }
 });
 
 test('askıdaki hesap işlem yapamaz; borsa işlemleri ters kayıtla düzeltilemez', async () => {
