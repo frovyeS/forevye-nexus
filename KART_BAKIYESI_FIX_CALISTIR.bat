@@ -20,6 +20,10 @@ if not exist "migrations\0010_card_balances.sql" (
   echo [HATA] migrations\0010_card_balances.sql bulunamadi.
   goto :fail
 )
+if not exist "migrations\0011_shop_card_deliveries.sql" (
+  echo [HATA] migrations\0011_shop_card_deliveries.sql bulunamadi.
+  goto :fail
+)
 
 where node >nul 2>nul
 if errorlevel 1 (
@@ -91,6 +95,12 @@ if errorlevel 1 (
   echo Migration kaydini elle silmeyin; terminal ciktisini destek icin saklayin.
   goto :fail
 )
+call npx wrangler d1 execute forevye-nexus --remote --command "SELECT purchase_id, user_id, card_id, product_id, created_at FROM shop_card_deliveries LIMIT 0" --json
+if errorlevel 1 (
+  echo [HATA] shop_card_deliveries tablosu yok. Kart teslimati eksik kalacagi icin Worker deploy edilmeyecek.
+  echo migrations\0011_shop_card_deliveries.sql dosyasinin uygulandigini kontrol edin.
+  goto :fail
+)
 
 echo.
 echo [6/6] Nexus Worker yayinlaniyor...
@@ -101,7 +111,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [BASARILI] Canli D1 semasi dogrulandi ve Worker deploy edildi.
+echo [BASARILI] Canli D1 semasi ve otomatik kart teslimati dogrulandi; Worker deploy edildi.
 echo Nexus sayfasini Ctrl+Shift+R ile yenileyip kart detayini kontrol edin.
 echo.
 pause

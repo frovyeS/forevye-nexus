@@ -108,10 +108,21 @@ const seedSql = () => `INSERT OR IGNORE INTO shop_products (id, kind, rarity, na
   SEED.map((p) => `  ('${p.id}', '${p.kind}', '${p.rarity}', '${p.name.replace(/'/g, "''")}', '${p.tagline.replace(/'/g, "''")}', '${p.descr.replace(/'/g, "''")}', ${p.price}, ${p.stock_total ?? 'NULL'}, 0, ${p.max_qty}, '${JSON.stringify(p.data)}', 'on', ${p.is_new}, ${p.sort}, 0, 0)`).join(',\n');
 export const MIGRATION_SQL = () => `-- Nexus Market: FN ile satılan tasarım ve fonksiyonel kartlar (stok, seri no, kalıcı sahiplik).\n-- Bu dosya scripts/gen-shop-migration.mjs ile src/lib/shop.js'ten üretilir.\n${SCHEMA.join(';\n')};\n${seedSql()};\n`;
 
+const CARD_DELIVERY_SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS shop_card_deliveries (
+    purchase_id TEXT PRIMARY KEY REFERENCES shop_purchases(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    card_id TEXT NOT NULL REFERENCES cards(id),
+    product_id TEXT NOT NULL REFERENCES shop_products(id),
+    created_at INTEGER NOT NULL
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_shop_card_deliveries_user ON shop_card_deliveries(user_id, created_at DESC)',
+];
+
 const SCHEMA_OK = new WeakSet();
 export async function ensureShopSchema(env) {
   if (!env.DB || SCHEMA_OK.has(env.DB)) return;
-  await env.DB.batch([...SCHEMA.map((q) => env.DB.prepare(q)), env.DB.prepare(seedSql())]);
+  await env.DB.batch([...SCHEMA.map((q) => env.DB.prepare(q)), ...CARD_DELIVERY_SCHEMA.map((q) => env.DB.prepare(q)), env.DB.prepare(seedSql())]);
   SCHEMA_OK.add(env.DB);
 }
 

@@ -11,7 +11,8 @@ import { notifyStmt } from '../lib/auth.js';
 import { balanceOf } from './wallet.js';
 import { auditStmt } from './admin.js';
 import { grantAchievement } from './misc.js';
-import { ownCard, shape as cardShape } from './cards.js';
+import { ownCard, shape as cardShape, prepareCardCreation, ensureFunctionalCardDeliveries } from './cards.js';
+import { suggestDisplayName } from '../../shared/card-contract.js';
 import { ensureShopSchema, parseData, cleanData, limitsFor, skinsOf, RARITIES, KINDS } from '../lib/shop.js';
 import { requireCardMoneySchema } from '../lib/card-money-schema.js';
 
@@ -60,10 +61,11 @@ async function entitlementsOf(env, userId) {
   ).bind(userId).all()).results;
   return rows.map((e) => shapeEnt(e, e));
 }
-async function cardsOf(env, userId) {
+async function cardsOf(env, user) {
   await requireCardMoneySchema(env);
-  const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY is_default DESC, created_at ASC').bind(userId).all()).results;
-  const skins = await skinsOf(env, userId);
+  await ensureFunctionalCardDeliveries(env, user);
+  const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY is_default DESC, created_at ASC').bind(user.id).all()).results;
+  const skins = await skinsOf(env, user.id);
   return rows.map((c) => { const s = cardShape(c); return { id: s.id, label: s.label, display_name: s.display_name, card_token: s.card_token, status: s.status, balance: s.balance, is_default: s.is_default, design: s.design, skin: skins[c.id] || null }; });
 }
 
@@ -76,10 +78,15 @@ async function purchaseResult(env, ref, replayed) {
   const cardPayment = await env.DB.prepare(`SELECT l.card_id, l.balance_after, c.label, c.display_name
     FROM card_ledger l LEFT JOIN cards c ON c.id = l.card_id
     WHERE l.tx_ref = ? AND l.user_id = ? AND l.type = 'payment' AND l.amount < 0`).bind(ref, x.user_id).first();
+  const delivered = await env.DB.prepare(`SELECT c.* FROM shop_card_deliveries d
+    JOIN cards c ON c.id = d.card_id AND c.user_id = d.user_id
+    WHERE d.purchase_id = ? AND d.user_id = ?`).bind(ref, x.user_id).first();
+  const deliverySkin = delivered ? (await skinsOf(env, x.user_id))[delivered.id] || null : null;
   return {
     ok: true, replayed,
     purchase: { id: x.id, name: x.name, kind: x.kind, price: x.price, serial: p ? serialText(x, p) : '', status: x.status, at: x.created_at },
     entitlement: e && p ? shapeEnt(e, p) : null, balance: await balanceOf(env, x.user_id),
+    delivery: delivered ? { card: { ...cardShape(delivered), skin: deliverySkin } } : null,
     payment: cardPayment ? { method: 'card', card_id: cardPayment.card_id, card_label: cardPayment.label || cardPayment.display_name, card_balance: Number(cardPayment.balance_after || 0) }
       : { method: 'wallet' },
   };
@@ -155,7 +162,7 @@ export const shopRoutes = {
 
   async me(req, env) {
     const { user } = await useToken(env, req);
-    const [balance, entitlements, wishlist, cards, lim] = await Promise.all([balanceOf(env, user.id), entitlementsOf(env, user.id), wishlistOf(env, user.id), cardsOf(env, user.id), limitsFor(env, user.id)]);
+    const [balance, entitlements, wishlist, cards, lim] = await Promise.all([balanceOf(env, user.id), entitlementsOf(env, user.id), wishlistOf(env, user.id), cardsOf(env, user), limitsFor(env, user.id)]);
     return json({ balance, currency: env.CURRENCY_CODE || 'FN', user: { username: user.username }, entitlements, wishlist, cards, perks: lim.perks, limits: { max_transfer: lim.max_transfer, daily_limit: lim.daily_limit, max_cards: lim.max_cards } });
   },
 
@@ -212,6 +219,13 @@ export const shopRoutes = {
     }
 
     const t = now(env), ref = newRef('NXM');
+    const productData = parseData(p.data);
+    const isDeliverableCard = p.kind === 'function' && !!productData.skin;
+    const preparedCard = isDeliverableCard ? await prepareCardCreation(env, user, {
+      label: p.name,
+      displayName: suggestDisplayName(user.username),
+      additionalSlots: Number(productData.perks?.extra_cards || 0),
+    }) : null;
     const serialSql = '(SELECT CASE WHEN stock_total IS NOT NULL THEN stock_sold END FROM shop_products WHERE id = ?)';
     const stmts = [
       guardActiveStmt(env, user.id),
@@ -244,6 +258,13 @@ export const shopRoutes = {
       env.DB.prepare('DELETE FROM shop_wishlist WHERE user_id = ? AND product_id = ?').bind(user.id, p.id),
       notifyStmt(env, user.id, 'purchase', 'Market alışverişi tamamlandı', `${p.name} koleksiyonuna eklendi. Ref: ${ref}`),
     );
+    if (preparedCard) {
+      stmts.push(...preparedCard.statements);
+      stmts.push(
+        env.DB.prepare('INSERT INTO shop_card_skins (card_id, user_id, product_id, equipped_at) VALUES (?,?,?,?)').bind(preparedCard.id, user.id, p.id, t),
+        env.DB.prepare('INSERT INTO shop_card_deliveries (purchase_id, user_id, card_id, product_id, created_at) VALUES (?,?,?,?,?)').bind(ref, user.id, preparedCard.id, p.id, t),
+      );
+    }
     try {
       await env.DB.batch(stmts);
     } catch (err) {

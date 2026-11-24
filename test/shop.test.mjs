@@ -212,14 +212,19 @@ test('fonksiyonel kart: Platin borsa farkını daraltır, ek kart hakkı kart s�
   await fund(env, uid, FN(50000));
   const spread = async () => (await u.cl.get('/api/market')).data.spread_bps;
   assert.equal(await spread(), 50);
-  assert.equal((await buy(env, token, 'card_platinum')).data.ok, true);
+  const platinum = (await buy(env, token, 'card_platinum')).data;
+  assert.equal(platinum.ok, true);
+  assert.ok(platinum.delivery?.card?.id, 'fonksiyonel kart satın alımında banka kartı otomatik teslim edilir');
+  assert.equal(platinum.delivery.card.skin.skin, 'platinum');
   assert.equal(await spread(), 20, '%60 indirim: 50 → 20 baz puan');
-  assert.equal((await u.cl.get('/api/cards')).data.max_cards, 6, 'Platin +1 kart hakkı verir');
+  const afterPlatinum = (await u.cl.get('/api/cards')).data;
+  assert.equal(afterPlatinum.max_cards, 6, 'Platin +1 kart hakkı verir');
+  assert.ok(afterPlatinum.cards.some((c) => c.id === platinum.delivery.card.id && c.skin?.skin === 'platinum'), 'teslim edilen kart banka listesinde görünür');
   for (let i = 0; i < 5; i++) assert.equal((await buy(env, token, 'slot_extra')).data.ok, true);
   assert.equal((await buy(env, token, 'slot_extra')).data.code, 'already_owned', 'en çok 5 adet');
   assert.equal((await u.cl.get('/api/cards')).data.max_cards, 11);
-  // Kayıtta varsayılan kart zaten oluşur (1/11); 10 tane daha açılabilir.
-  for (let i = 0; i < 10; i++) assert.equal((await u.cl.post('/api/cards', { display_name: `KART ${i}A` })).status, 201);
+  // Varsayılan kart + otomatik teslim edilen Platin kart (2/11); 9 tane daha açılabilir.
+  for (let i = 0; i < 9; i++) assert.equal((await u.cl.post('/api/cards', { display_name: `KART ${i}A` })).status, 201);
   assert.equal((await u.cl.post('/api/cards', { display_name: 'FAZLA KART' })).data.error?.code, 'card_limit');
 });
 
@@ -227,8 +232,15 @@ test('fonksiyonel kart: Nexus Black tüm avantajları verir; iade yalnızca o sa
   const { env, u, token, uid } = await setup();
   await fund(env, uid, FN(60000));
   const slot = (await buy(env, token, 'slot_extra')).data;
-  const black = (await buy(env, token, 'card_black')).data;
+  const blackKey = 'idem-shop-black-replay-123';
+  const black = (await buy(env, token, 'card_black', blackKey)).data;
   assert.equal(black.purchase.serial, '001/050');
+  assert.ok(black.delivery?.card?.id, 'Nexus Black satın alımı doğrudan banka kartı üretmeli');
+  assert.equal(black.delivery.card.skin.skin, 'royal');
+  const delivered = (await u.cl.get('/api/cards')).data.cards.find((c) => c.id === black.delivery.card.id);
+  assert.equal(delivered?.skin?.product_id, 'card_black', 'kart bankanın Kartlarım listesinde otomatik görünmeli');
+  const replay = (await buy(env, token, 'card_black', blackKey)).data;
+  assert.equal(replay.delivery.card.id, black.delivery.card.id, 'aynı teslimat farklı idempotency anahtarıyla ikinci bir kart oluşturmamalı');
   const cfg = (await u.cl.get('/api/me')).data.config;
   assert.equal(cfg.max_transfer, FN(15000)); assert.equal(cfg.daily_limit, FN(45000)); assert.equal(cfg.max_cards, 8);
   assert.equal((await u.cl.get('/api/market')).data.spread_bps, 5, 'en az 5 baz puan');
@@ -238,6 +250,26 @@ test('fonksiyonel kart: Nexus Black tüm avantajları verir; iade yalnızca o sa
   assert.equal((await asShop(env, 'GET', '/api/shop/mine', { token })).status, 401, 'Nexus oturum ucu jetonla çağrılamaz');
   const mine = (await u.cl.get('/api/shop/mine')).data;
   assert.equal(mine.items.length, 1); assert.equal(mine.items[0].product_id, 'card_black'); assert.equal(mine.perks.limit_mult, 3);
+});
+
+test('eski fonksiyonel kart sahipliği: banka kart listesi açılınca otomatik teslimatı tamamlar', async () => {
+  const { env, u, uid } = await setup({}, 'legacycard');
+  const ref = 'NXM-LEGACY-CARD-DELIVERY';
+  const t = env.__NOW;
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO shop_purchases (id, user_id, product_id, name, kind, price, serial, status, created_at)
+      VALUES (?,?,?,?,?,?,1,'success',?)`).bind(ref, uid, 'card_black', 'Nexus Black', 'function', FN(40000), t),
+    env.DB.prepare(`INSERT INTO shop_entitlements (id, user_id, product_id, qty, serial, acquired_at, tx_ref)
+      VALUES (?,?,?,?,1,?,?)`).bind('legacy-entitlement', uid, 'card_black', 1, t, ref),
+    env.DB.prepare(`UPDATE shop_products SET stock_sold = stock_sold + 1 WHERE id = 'card_black'`),
+  ]);
+  const list = (await u.cl.get('/api/cards')).data;
+  const delivered = list.cards.find((c) => c.skin?.product_id === 'card_black');
+  assert.ok(delivered, 'eski satın alma banka kartına dönüşmeli');
+  assert.equal(delivered.skin.skin, 'royal');
+  assert.equal((await one(env, 'SELECT COUNT(*) AS c FROM shop_card_deliveries WHERE purchase_id = ?', ref)).c, 1);
+  await u.cl.get('/api/cards');
+  assert.equal((await one(env, 'SELECT COUNT(*) AS c FROM cards WHERE user_id = ?', uid)).c, 2, 'yeniden listeleme ikinci kart üretmemeli');
 });
 
 test('market yönetimi: katalog yazma yalnızca süper yönetici; skin/perk/stok doğrulanır', async () => {

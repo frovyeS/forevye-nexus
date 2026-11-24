@@ -2,9 +2,9 @@ import { HttpError, json, readJson, now, cfgNum, MIN } from '../lib/util.js';
 import { rateLimit } from '../lib/rate.js';
 import { notifyStmt } from '../lib/auth.js';
 import { randomBase32 } from '../lib/util.js';
-import { limitsFor, skinsOf } from '../lib/shop.js';
+import { ensureShopSchema, limitsFor, parseData, skinsOf } from '../lib/shop.js';
 import { requireCardMoneySchema } from '../lib/card-money-schema.js';
-import { validateDesign, validateDisplayName, validateLabel, defaultDesign, readStoredDesign } from '../../shared/card-contract.js';
+import { validateDesign, validateDisplayName, validateLabel, defaultDesign, readStoredDesign, suggestDisplayName } from '../../shared/card-contract.js';
 
 // Veritabanındaki tasarım (eski sürüm 1 dahil) her zaman sürüm 2 olarak sunulur.
 export const shape = (c) => ({
@@ -28,10 +28,14 @@ const stamp = (design, { cardId, userId, version }) => ({ ...design, designId: c
 // Aynı tasarım mı? (sürüm numarası ve kimlik alanları karşılaştırmaya girmez)
 const canon = (d) => JSON.stringify({ ...d, designId: '', ownerId: '', version: 0 });
 
-export async function createCard(env, user, { label = '', design, displayName }) {
-  const max = (await limitsFor(env, user.id)).max_cards;
-  const count = (await env.DB.prepare('SELECT COUNT(*) AS c FROM cards WHERE user_id = ?').bind(user.id).first()).c;
-  if (count >= max) throw new HttpError(400, 'card_limit', `En fazla ${max} sanal kart oluşturabilirsiniz.`);
+// Kart oluşturma SQL'ini tek bir hazırlık fonksiyonunda üretir. Market satın alımı,
+// ödeme/entitlement/kart teslimini aynı D1 batch içinde atomik olarak tamamlayabilir.
+export async function prepareCardCreation(env, user, { label = '', design, displayName, additionalSlots = 0 } = {}) {
+  await requireCardMoneySchema(env);
+  const bonus = Math.max(0, Math.min(10, Math.trunc(Number(additionalSlots) || 0)));
+  const max = (await limitsFor(env, user.id)).max_cards + bonus;
+  const count = Number((await env.DB.prepare('SELECT COUNT(*) AS c FROM cards WHERE user_id = ?').bind(user.id).first())?.c || 0);
+  if (count >= max) throw new HttpError(400, 'card_limit', `En fazla ${max} sanal kart oluşturabilirsiniz. Önce bir kart alanı açın.`);
   const lb = validateLabel(label);
   if (!lb.ok) throw new HttpError(400, 'invalid_label', lb.error);
   let d = design ? checkDesign(design) : defaultDesign(displayName || 'NEXUS');
@@ -40,17 +44,82 @@ export async function createCard(env, user, { label = '', design, displayName })
     if (!dn.ok) throw new HttpError(400, 'invalid_display_name', dn.error);
     d = { ...d, userDisplayName: dn.value };
   }
-  const t = now(env);
-  const id = crypto.randomUUID();
+  const t = now(env), id = crypto.randomUUID();
   const final = checkDesign(stamp(d, { cardId: id, userId: user.id, version: 1 }));
   const dj = JSON.stringify(final);
-  await env.DB.batch([
-    env.DB.prepare(`INSERT INTO cards (id, user_id, label, display_name, card_token, status, is_default, design_json, design_version, created_at, updated_at)
-      VALUES (?,?,?,?,?,'active',0,?,1,?,?)`).bind(id, user.id, lb.value, final.userDisplayName, `NXC-${randomBase32(4)}-${randomBase32(4)}`, dj, t, t),
-    env.DB.prepare('INSERT INTO card_design_history (id, card_id, user_id, version, display_name, design_json, created_at) VALUES (?,?,?,?,?,?,?)').bind(crypto.randomUUID(), id, user.id, 1, final.userDisplayName, dj, t),
-    notifyStmt(env, user.id, 'card_saved', 'Kart tasarımı kaydedildi', `${final.userDisplayName} kartı oluşturuldu.`),
-  ]);
-  return ownCard(env, user.id, id);
+  return {
+    id,
+    statements: [
+      env.DB.prepare(`INSERT INTO cards (id, user_id, label, display_name, card_token, status, is_default, design_json, design_version, created_at, updated_at)
+        VALUES (?,?,?,?,?,'active',0,?,1,?,?)`).bind(id, user.id, lb.value, final.userDisplayName, `NXC-${randomBase32(4)}-${randomBase32(4)}`, dj, t, t),
+      env.DB.prepare('INSERT INTO card_design_history (id, card_id, user_id, version, display_name, design_json, created_at) VALUES (?,?,?,?,?,?,?)').bind(crypto.randomUUID(), id, user.id, 1, final.userDisplayName, dj, t),
+      notifyStmt(env, user.id, 'card_saved', 'Kart tasarımı kaydedildi', `${final.userDisplayName} kartı oluşturuldu.`),
+    ],
+  };
+}
+
+export async function createCard(env, user, options = {}) {
+  const prepared = await prepareCardCreation(env, user, options);
+  await env.DB.batch(prepared.statements);
+  return ownCard(env, user.id, prepared.id);
+}
+
+// Eski Market satın alımlarını da banka kartına dönüştürür. Böylece daha önce alınan
+// fonksiyonel kartlar için tekrar satın alma veya tasarım editörüne uğrama gerekmez.
+export async function ensureFunctionalCardDeliveries(env, user) {
+  await ensureShopSchema(env);
+  const entitlements = (await env.DB.prepare(`
+    SELECT e.product_id, e.tx_ref AS purchase_id, p.name, p.data
+    FROM shop_entitlements e
+    JOIN shop_products p ON p.id = e.product_id AND p.kind = 'function'
+    JOIN shop_purchases x ON x.id = e.tx_ref AND x.user_id = e.user_id AND x.status = 'success'
+    WHERE e.user_id = ?
+    ORDER BY e.acquired_at ASC
+  `).bind(user.id).all()).results;
+
+  for (const item of entitlements) {
+    const skin = parseData(item.data).skin;
+    if (!skin) continue; // Ek Kart Hakkı gibi fiziksel kart vermeyen fonksiyonlar.
+    const exists = await env.DB.prepare('SELECT card_id FROM shop_card_deliveries WHERE purchase_id = ? AND user_id = ?').bind(item.purchase_id, user.id).first();
+    if (exists) continue;
+
+    // Kullanıcı yüzeyi daha önce bir kartına elle taktıysa aynı kartı teslim say;
+    // ikinci bir fiziksel kart üretme.
+    const equipped = await env.DB.prepare('SELECT card_id FROM shop_card_skins WHERE user_id = ? AND product_id = ? LIMIT 1').bind(user.id, item.product_id).first();
+    if (equipped) {
+      try {
+        await env.DB.prepare('INSERT OR IGNORE INTO shop_card_deliveries (purchase_id, user_id, card_id, product_id, created_at) VALUES (?,?,?,?,?)')
+          .bind(item.purchase_id, user.id, equipped.card_id, item.product_id, now(env)).run();
+      } catch (err) {
+        const raced = await env.DB.prepare('SELECT card_id FROM shop_card_deliveries WHERE purchase_id = ?').bind(item.purchase_id).first();
+        if (!raced) throw err;
+      }
+      continue;
+    }
+
+    const max = (await limitsFor(env, user.id)).max_cards;
+    const count = Number((await env.DB.prepare('SELECT COUNT(*) AS c FROM cards WHERE user_id = ?').bind(user.id).first())?.c || 0);
+    if (count >= max) continue; // Limit doluysa alışverişi etkilemeden kullanıcıya alan açma fırsatı bırak.
+
+    const prepared = await prepareCardCreation(env, user, {
+      label: item.name,
+      displayName: suggestDisplayName(user.username),
+    });
+    const t = now(env);
+    try {
+      await env.DB.batch([
+        ...prepared.statements,
+        env.DB.prepare('INSERT INTO shop_card_skins (card_id, user_id, product_id, equipped_at) VALUES (?,?,?,?)')
+          .bind(prepared.id, user.id, item.product_id, t),
+        env.DB.prepare('INSERT INTO shop_card_deliveries (purchase_id, user_id, card_id, product_id, created_at) VALUES (?,?,?,?,?)')
+          .bind(item.purchase_id, user.id, prepared.id, item.product_id, t),
+      ]);
+    } catch (err) {
+      // Aynı anda iki banka/Market isteği eski teslimatı onarmaya çalışırsa bir tanesi kazanır.
+      const raced = await env.DB.prepare('SELECT card_id FROM shop_card_deliveries WHERE purchase_id = ?').bind(item.purchase_id).first();
+      if (!raced) throw err;
+    }
+  }
 }
 
 // Yalnızca tasarım + kartta görünen ad + özel ad değişir. Kart adı her zaman tasarımın `userDisplayName` alanıyla aynıdır.
@@ -81,6 +150,7 @@ export async function updateCard(env, user, card, { label, display_name, design 
 export const cardRoutes = {
   async list(req, env, ctx, { user }) {
     await requireCardMoneySchema(env);
+    await ensureFunctionalCardDeliveries(env, user);
     const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY is_default DESC, created_at ASC').bind(user.id).all()).results;
     const skins = await skinsOf(env, user.id);
     return json({ cards: rows.map((c) => ({ ...shape(c), skin: skins[c.id] || null })), max_cards: (await limitsFor(env, user.id)).max_cards });

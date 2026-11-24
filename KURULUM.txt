@@ -2,13 +2,13 @@ FOREVYE NEXUS - KART BAKIYESI / D1 BAGLANTI DUZELTMESI
 
 EKRANDAKI HATANIN NEDENI
 Kart bakiyesi ve kart hareketleri icin gereken canli D1 semasi eksik veya Worker, guncel semaya sahip olmayan bir surume bagli. Gerekli migration dosyasi:
-  migrations/0010_card_balances.sql
+  migrations/0010_card_balances.sql ve migrations/0011_shop_card_deliveries.sql
 
 UYGULAMA (WINDOWS)
 1. ZIP'i Nexus ana proje klasorune cikartin. KART_BAKIYESI_FIX_CALISTIR.bat, package.json ve wrangler.toml ayni klasorde olmalidir.
 2. KART_BAKIYESI_FIX_CALISTIR.bat dosyasina cift tiklayin.
 3. Ekranda listelenen D1 veritabani adini ve ID'sini kontrol edin. Dogru Cloudflare hesabi ile giris yapin.
-4. Script uzaktaki migration durumunu okur, bekleyen migration'lari uygular, cards.balance ve card_ledger semasini sorgulayarak dogrular. Yalnizca dogrulamadan sonra Worker deploy edilir.
+4. Script uzaktaki migration durumunu okur, bekleyen migration'lari uygular, cards.balance, card_ledger ve shop_card_deliveries semalarini sorgulayarak dogrular. Yalnizca dogrulamadan sonra Worker deploy edilir.
 5. [BASARILI] mesajindan sonra Nexus'u Ctrl+Shift+R ile yenileyin.
 
 ONEMLI
@@ -19,4 +19,9 @@ ONEMLI
 - Bu islem Cloudflare hesabina sizin oturumunuzla baglanir. Bu ortamdan canli Cloudflare veritabanina erisim veya deploy yapilmaz.
 
 KOD TARAFI
-Kart listesi ve detay API'leri de artik kart bakiyesi semasini dogrular. Eski sema durumunda kullaniciya yanlislikla 0 FN gostermek yerine acik 503 sema hatasi doner.
+Kart listesi ve detay API'leri kart bakiyesi semasini dogrular. Eski sema durumunda yanlislikla 0 FN gostermek yerine acik 503 sema hatasi doner.
+
+OTOMATIK MARKET KART TESLIMI
+- Market'ten Nexus Black, Platin veya Titanyum gibi skin iceren fonksiyonel bir kart satin alindiginda, odeme/urun sahipligi/gercek banka karti/otomatik kart yuzeyi tek D1 islemiyle kaydedilir.
+- Satin alma tamamlaninca Market, tam banka arayuzundeki ilgili kart detayina (/#/cards/<kart-id>) yonlendirir. GitHub Pages uzerindeki forevye_nexus_bank yalnizca tasarim editorudur; satin alma akisi artik oraya gitmez.
+- Daha once satin alinmis ancak banka karti olusturulmamis fonksiyonel kartlar, Market hesabi veya bankanin Kartlarim listesi acildiginda geriye donuk olarak teslim edilir. Tekrarlanan listeleme ikinci kart olusturmaz.
