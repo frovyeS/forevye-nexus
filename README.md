@@ -78,3 +78,7 @@ yönetici paneli (kullanıcı ara, askı, duyuru, şablon, rol, ters kayıt/düz
 - Giriş/kayıt ekranındaki **FOREVYE ID ile giriş** akışı OAuth benzeri tek kullanımlık kod + PKCE kullanır; parola Nexus'a gönderilmez.
 - `wrangler.toml` içinde `ID_URL` ve `ID_API_URL` üretim adresleri tanımlıdır. `ID_URL` web arayüzüne, `ID_API_URL` Identity API Worker'ına işaret eder.
 - Banka tarafındaki `idStart` → FOREVYE ID izin ekranı → `idCallback` → `/identity/token/exchange` akışı `test/id-auth.test.mjs` ile doğrulanır.
+
+### Masaüstü uygulama ikonu
+
+PWA/masaüstüne yükleme ikonu artık koyu (#111827) yuvarlatılmış zemin üzerinde açık renk NEXUS işareti kullanır; şeffaf beyaz ikonun masaüstünde kaybolması önlenir. `public/manifest.webmanifest` ve PNG/SVG ikon varyantları bu amaçla eklenmiştir. İkonu daha önce yüklediyseniz tarayıcıdan uygulamayı kaldırıp yeniden yükleyin veya uygulama ikonunu/önbelleğini yenileyin.
