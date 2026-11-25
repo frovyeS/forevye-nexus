@@ -1,4 +1,4 @@
-BANKA YAMASI v2 — bankadan Nexus ana sayfasına dönüş düğmesi
-Bu yama ÖNCEKİ "banka-yama-seti" yamasının yerine geçer (onun Market-yeni-sekme değişikliğini içermez).
-Dosyaları forevye_nexus_bank deposunun köküne AYNI YOL ile üzerine yaz: index.html, css/style.css, js/bank-ui.js. Commit et.
-Sonra Ctrl+Shift+R ile yenile (telefonda sekmeyi kapatıp yeniden aç).
+NEXUS WORKER YAMASI v2 (önceki nexus-yama-seti.zip'in yerine geçer; içindekilerin hepsi + Borsa ekranına "Kristal cüzdanı (Sanal Banka)" dönüş butonu)
+Dosyaları Worker deposunun köküne AYNI YOL ile üzerine yaz, commit et (GitHub Actions deploy eder) ya da: npx wrangler deploy
+Kontrol: https://forevye-nexus.forevyenexus.workers.dev/api/health -> "ok": true
+Sonra Ctrl+Shift+R ile yenile.

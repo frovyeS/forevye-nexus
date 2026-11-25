@@ -27,7 +27,12 @@ function sparkline(points) {
 export function marketView(screen) {
   const holder = h('div');
   let range = '1d', timer;
-  mount(screen, h('div', { class: 'topbar' }, h('h1', { text: 'Kristal Borsası' })), holder);
+  // Bankadaki Kristal cüzdanından gelen kullanıcı için dönüş: tek kullanımlık banka bileti + r=wallet (banka cüzdan sekmesinde açılır).
+  const toBankWallet = h('a', { class: 'back', href: '#', onClick: async (e) => {
+    e.preventDefault();
+    try { const r = await api.post('/api/bank/ticket'); location.href = r.url + (r.url.includes('#') ? '&' : '#') + 'r=wallet'; } catch (err) { toast(err.message, 'error'); }
+  } }, icon('back', 18), 'Kristal cüzdanı (Sanal Banka)');
+  mount(screen, toBankWallet, h('div', { class: 'topbar' }, h('h1', { text: 'Kristal Borsası' })), holder);
 
   async function draw() {
     let m, hist, cardData;
