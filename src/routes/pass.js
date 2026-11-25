@@ -10,6 +10,7 @@
 import { HttpError, json, readJson, now, MIN, HOUR, clientIp, isConstraint, newRef, parseAmount, str } from '../lib/util.js';
 import { randomToken, sha256hex, safeEqual } from '../lib/crypto.js';
 import { rateLimit } from '../lib/rate.js';
+import { siteOrigins } from '../lib/origins.js';
 import { entryStmts, guardActiveStmt, fmtMinor } from '../lib/ledger.js';
 import { notifyStmt } from '../lib/auth.js';
 import { balanceOf } from './wallet.js';
@@ -36,13 +37,8 @@ async function ensurePassSchema(env) {
 }
 
 export const passUrl = (env) => String(env.PASS_URL || '').trim();
-export function passOrigins(env) {
-  const out = [];
-  for (const u of [passUrl(env), ...String(env.PASS_ORIGINS || '').split(',')]) {
-    try { if (u.trim()) out.push(new URL(u.trim()).origin); } catch { /* geçersiz adres yok sayılır */ }
-  }
-  return out;
-}
+// İki GitHub hesabı koda gömülü (src/lib/origins.js); PASS_URL / PASS_ORIGINS ek adres ekler.
+export const passOrigins = (env) => siteOrigins(passUrl(env), env.PASS_ORIGINS);
 
 // Üyelik "aktif" = süresi dolmamış VE ters kayıtla (iade/düzeltme) kapatılmamış.
 const NOT_REVERSED = 'NOT EXISTS (SELECT 1 FROM reversals r WHERE r.original_ref = p.id)';

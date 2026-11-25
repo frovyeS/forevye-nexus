@@ -3,16 +3,12 @@ import { HttpError, json, readJson, now, MIN, HOUR } from '../lib/util.js';
 import { randomToken, sha256hex } from '../lib/crypto.js';
 import { rateLimit } from '../lib/rate.js';
 import { createShopTicket } from './shop.js';
+import { siteOrigins } from '../lib/origins.js';
 
 const TICKET_TTL = 5 * MIN, TOKEN_SLIDE = 30 * MIN, TOKEN_MAX = 8 * HOUR;
 export const bankUrl = (env) => String(env.BANK_URL || '').trim();
-export function bankOrigins(env) {
-  const out = [];
-  for (const u of [bankUrl(env), ...String(env.BANK_ORIGINS || '').split(',')]) {
-    try { if (u.trim()) out.push(new URL(u.trim()).origin); } catch {}
-  }
-  return out;
-}
+// İki GitHub hesabı koda gömülü (src/lib/origins.js); BANK_URL / BANK_ORIGINS ek adres ekler.
+export const bankOrigins = (env) => siteOrigins(bankUrl(env), env.BANK_ORIGINS);
 async function ensureSchema(env) {
   await env.DB.batch([
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS bank_tickets (token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,consumed_at INTEGER)`),

@@ -9,6 +9,7 @@
 import { HttpError, json, readJson, now, cfgNum, MIN, HOUR, clientIp } from '../lib/util.js';
 import { randomToken, sha256hex } from '../lib/crypto.js';
 import { rateLimit } from '../lib/rate.js';
+import { siteOrigins } from '../lib/origins.js';
 import { validateLabel, suggestDisplayName, defaultDesign } from '../../shared/card-contract.js';
 import { shape, ownCard, createCard, updateCard } from './cards.js';
 import { ownedSkinsOf, skinsOf } from '../lib/shop.js';
@@ -36,13 +37,8 @@ async function ensureEditorSchema(env) {
 }
 
 export const editorUrl = (env) => String(env.EDITOR_URL || '').trim();
-export function editorOrigins(env) {
-  const out = [];
-  for (const u of [editorUrl(env), ...String(env.EDITOR_ORIGINS || '').split(',')]) {
-    try { if (u.trim()) out.push(new URL(u.trim()).origin); } catch { /* geçersiz adres yok sayılır */ }
-  }
-  return out;
-}
+// İki GitHub hesabı koda gömülü (src/lib/origins.js); EDITOR_URL / EDITOR_ORIGINS ek adres ekler.
+export const editorOrigins = (env) => siteOrigins(editorUrl(env), env.EDITOR_ORIGINS);
 
 async function sessionPayload(env, tok, user) {
   const card = tok.card_id ? shape(await ownCard(env, user.id, tok.card_id)) : null;

@@ -82,6 +82,7 @@ yönetici paneli (kullanıcı ara, askı, duyuru, şablon, rol, ters kayıt/düz
 
 - Banka gezinmesindeki **FOREVYE ID** öğesi `https://mhaforevye.github.io/forevye-id/` hesabını yeni sekmede açar.
 - Giriş/kayıt ekranındaki **FOREVYE ID ile giriş** akışı OAuth benzeri tek kullanımlık kod + PKCE kullanır; parola Nexus'a gönderilmez.
+- **İki GitHub hesabı (mhaforevye + frovyes) koda gömülüdür** (`src/lib/origins.js`): Banka / Kart editörü / Market / Pass CORS'u `BANK_URL`, `EDITOR_URL`, `SHOP_URL`, `PASS_URL` veya `*_ORIGINS` boş/yanlış olsa da çalışır; bu değişkenler yalnızca ek adres ekler. Ayrıntı: `docs/CHANGES_2026-11-25_iki-hesap-cors.md`.
 - `wrangler.toml` içinde `ID_URL` ve `ID_API_URL` üretim adresleri tanımlıdır. `ID_URL` web arayüzüne, `ID_API_URL` Identity API Worker'ına işaret eder.
 - Banka tarafındaki `idStart` → FOREVYE ID izin ekranı → `idCallback` → `/identity/token/exchange` akışı `test/id-auth.test.mjs` ile doğrulanır.
 

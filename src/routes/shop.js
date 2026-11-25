@@ -15,16 +15,12 @@ import { ownCard, shape as cardShape, prepareCardCreation, ensureFunctionalCardD
 import { suggestDisplayName } from '../../shared/card-contract.js';
 import { ensureShopSchema, parseData, cleanData, limitsFor, skinsOf, RARITIES, KINDS } from '../lib/shop.js';
 import { requireCardMoneySchema } from '../lib/card-money-schema.js';
+import { siteOrigins } from '../lib/origins.js';
 
 const TICKET_TTL = 5 * MIN, TOKEN_SLIDE = 30 * MIN, TOKEN_MAX = 8 * HOUR;
 export const shopUrl = (env) => String(env.SHOP_URL || '').trim();
-export function shopOrigins(env) {
-  const out = [];
-  for (const u of [shopUrl(env), ...String(env.SHOP_ORIGINS || '').split(',')]) {
-    try { if (u.trim()) out.push(new URL(u.trim()).origin); } catch { /* geçersiz adres yok sayılır */ }
-  }
-  return out;
-}
+// İki GitHub hesabı koda gömülü (src/lib/origins.js); SHOP_URL / SHOP_ORIGINS ek adres ekler.
+export const shopOrigins = (env) => siteOrigins(shopUrl(env), env.SHOP_ORIGINS);
 
 const shapeProduct = (p) => {
   const d = parseData(p.data);

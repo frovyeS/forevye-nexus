@@ -2,6 +2,16 @@ name = "forevye-nexus"
 main = "src/worker.js"
 compatibility_date = "2026-11-01"
 
+# --- İKİ CLOUDFLARE HESABI: YANLIŞ HESABA DEPLOY'U ENGELLE -------------------------------------------------
+# Bu Worker (workers.dev alt alanı: forevyenexus), Mikro-Klima'dan (forevye) FARKLI bir Cloudflare hesabındadır.
+# Aşağıdaki satırı kendi hesap kimliğinle aç: wrangler başka hesapta oturum açıkken bu Worker'ı yanlış yere deploy etmez.
+#   Hesap kimliği: Cloudflare paneli > Workers & Pages > sağ kenardaki "Account ID"   ya da   npx wrangler whoami
+# account_id = "BURAYA_NEXUS_CLOUDFLARE_HESAP_KIMLIGI"
+#
+# CORS / SİTE ADRESLERİ: İKİ GITHUB HESABI (mhaforevye + frovyes) KODA GÖMÜLÜDÜR (src/lib/origins.js).
+# Aşağıdaki BANK_URL / EDITOR_URL / SHOP_URL / PASS_URL ve *_ORIGINS değerleri yalnızca bağlantı adreslerini üretir ve
+# bu iki adrese EK origin ekler; panelde silinseler ya da yanlış olsalar bile iki GitHub hesabı HER ZAMAN izinli kalır.
+
 # ÖNEMLİ: Her deploy'da Cloudflare panelinden elle eklenen değişkenler (mail, ID adresi vb.) silinmesin.
 # Dosyada olmayan panel değişkenleri korunur. Sırlar (secret) zaten deploy'dan etkilenmez.
 keep_vars = true
