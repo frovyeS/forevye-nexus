@@ -13,7 +13,9 @@
     $('#view-gate').hidden = true; $('#view-editor').hidden = true; $('#view-app').hidden = false;
     document.body.classList.remove('in-editor');
     const nav = [['home','Ana sayfa'],['wallet','Kristal cüzdanı'],['activity','Hareketler'],['achievements','Başarımlar'],['notifications','Bildirimler'],['market','Market']];
-    $('#page').innerHTML = `<header class="page-h"><h1>FOREVYE NEXUS</h1><p class="muted">Sanal banka ve koleksiyon ekonomisi</p></header><nav class="bank-nav">${nav.map(([k,t])=>`<button type="button" data-bank-route="${k}" class="btn ${route===k?'primary':''}">${t}</button>`).join('')}</nav><div id="bank-content" aria-live="polite"></div><div id="bank-modal" class="bank-modal" hidden role="dialog" aria-modal="true"><div class="bank-modal-card"><button type="button" class="btn sm" data-close-modal>Kapat</button><div id="bank-modal-content"></div></div></div>`;
+    // Nexus ana sayfasına dönüş: Nexus'taki "Sanal Banka" bağlantısı bu sayfayı AYNI sekmede açar; eskiden buradan geri dönecek bağlantı yoktu.
+    const nexusHome = C && C.nexusUrl ? C.nexusUrl + '/#/home' : '';
+    $('#page').innerHTML = `${nexusHome ? `<a class="btn bank-back" href="${esc(nexusHome)}" data-nexus-home>‹ Nexus'a dön</a>` : ''}<header class="page-h"><h1>FOREVYE NEXUS</h1><p class="muted">Sanal banka ve koleksiyon ekonomisi</p></header><nav class="bank-nav">${nav.map(([k,t])=>`<button type="button" data-bank-route="${k}" class="btn ${route===k?'primary':''}">${t}</button>`).join('')}</nav><div id="bank-content" aria-live="polite"></div><div id="bank-modal" class="bank-modal" hidden role="dialog" aria-modal="true"><div class="bank-modal-card"><button type="button" class="btn sm" data-close-modal>Kapat</button><div id="bank-modal-content"></div></div></div>`;
     $('#page').onclick = onClick;
     paint();
   }
@@ -55,24 +57,7 @@
       detail(n.title,`<section class="transfer-receipt"><div class="receipt-kicker">${isTransfer?'TRANSFER MAKBUZU':'BİLDİRİM AYRINTISI'}</div><p class="receipt-body">${esc(n.body||'Ayrıntı bulunmuyor.')}</p><dl class="bank-detail"><dt>İşlem türü</dt><dd>${isTransfer?(n.type==='transfer_sent'?'Gönderilen transfer':'Alınan transfer'):esc(n.type||'Bildirim')}</dd><dt>Bildirim zamanı</dt><dd>${date(n.created_at)}</dd>${ref?`<dt>İşlem referansı</dt><dd>${esc(ref[1])}</dd>`:''}<dt>Durum</dt><dd>Başarılı bildirim</dd></dl><p class="note">Bu makbuz, transfer sırasında kaydedilen tutar, karşı taraf, açıklama ve referans bilgisini gösterir.</p></section>`);}return;}
     const cd=e.target.closest('[data-crystal-detail]');if(cd){const t=(cache.wallet?.tr?.items||[]).find(z=>z.ref===cd.dataset.crystalDetail);if(t)detail(t.side==='buy'?'Kristal alım ayrıntısı':'Kristal satış ayrıntısı',`<dl class="bank-detail"><dt>Miktar</dt><dd>${crystal(Number(t.qty)/(cache.wallet.m.qty_scale||10000))} KRS</dd><dt>İşlem fiyatı</dt><dd>${money(t.price_micro/10000)} FN</dd><dt>Toplam</dt><dd>${money(t.total)} FN</dd><dt>Tarih</dt><dd>${date(t.created_at)}</dd><dt>Referans</dt><dd>${esc(t.ref)}</dd></dl>`);}
   }
-  // Market AYRI bir site: eskiden aynı sekmede açılıyor, bankaya dönüş düğmesi olmadığı için kullanıcı bankadan kopuyordu.
-  // Şimdi Market YENİ sekmede açılır; banka sekmesi olduğu gibi kalır (kapatınca/sekme değiştirince banka karşında).
-  // Sekme, tıklamayla eşzamanlı açılır (aksi halde tarayıcı/telefon açılır pencereyi engeller); bilet gelince adrese yönlendirilir.
-  let marketBusy = false;
-  async function openMarket(){
-    if (marketBusy) return; marketBusy = true;
-    let w = null;
-    try { w = root.open('', '_blank'); } catch (e) { w = null; }
-    if (w) { try { w.document.title = 'Nexus Market'; w.document.body.style.cssText = 'margin:0;background:#07080B;color:#cfd3dc;font:16px system-ui;display:grid;place-items:center;height:100vh'; w.document.body.textContent = 'Nexus Market açılıyor…'; } catch (e) {} }
-    try {
-      const r = await req('POST','/api/bank/market-ticket',{});
-      if (w && !w.closed) { w.location.href = r.url; root.FNXToast && root.FNXToast('Market yeni sekmede açıldı. Bankaya dönmek için bu sekmeye geç.'); }
-      else root.location.href = r.url;   // açılır pencere engellendi: eski davranış (aynı sekme)
-    } catch(e) {
-      if (w) { try { w.close(); } catch (x) {} }
-      root.FNXToast(e.message);
-    } finally { marketBusy = false; }
-  }
+  async function openMarket(){try{const r=await req('POST','/api/bank/market-ticket',{});location.href=r.url;}catch(e){root.FNXToast(e.message);}}
   function start(data){me=data.me;root.FNXBankUI={refresh:paint,request:req};shell();window.addEventListener('hashchange',()=>{});}
   root.FNXBankUI={start};
 })(window);
