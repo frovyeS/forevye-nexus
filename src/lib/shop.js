@@ -105,9 +105,18 @@ for (const item of (SKINS().catalog || [])) {
   SEED.push({ id: item.productId, kind: 'design', rarity: item.rarity, name: item.name, tagline: item.tagline, descr: item.desc, price: item.price, stock_total: item.stock, max_qty: 1, sort: item.sort, is_new: item.collection ? 1 : 0, data: { skin: item.id, ...collectionData } });
 }
 
-const seedSql = () => `INSERT OR IGNORE INTO shop_products (id, kind, rarity, name, tagline, descr, price, stock_total, stock_sold, max_qty, data, status, is_new, sort, created_at, updated_at) VALUES\n` +
-  SEED.map((p) => `  ('${p.id}', '${p.kind}', '${p.rarity}', '${p.name.replace(/'/g, "''")}', '${p.tagline.replace(/'/g, "''")}', '${p.descr.replace(/'/g, "''")}', ${p.price}, ${p.stock_total ?? 'NULL'}, 0, ${p.max_qty}, '${JSON.stringify(p.data).replace(/'/g, "''")}', 'on', ${p.is_new}, ${p.sort}, 0, 0)`).join(',\n');
-export const MIGRATION_SQL = () => `-- Nexus Market: FN ile satılan tasarım ve fonksiyonel kartlar (stok, seri no, kalıcı sahiplik).\n-- Bu dosya scripts/gen-shop-migration.mjs ile src/lib/shop.js'ten üretilir.\n${SCHEMA.join(';\n')};\n${seedSql()};\n`;
+// D1 tek SQL ifadesini 100 KB ile sınırlar. Eskiden 329 ürünün tamamı TEK bir INSERT'teydi (~254 KB) → canlı D1'de "statement too long" hatası verir,
+// ensureShopSchema her çağrıda patlar ve bu yüzden /api/me, e-posta girişi ve FOREVYE ID girişi 500 "Beklenmeyen bir hata" dönerdi.
+// Artık tohum SEED_CHUNK satırlık küçük INSERT'lere bölünür (her biri ~20 KB). Test ortamının sahte D1'i de bu sınırı uygular (test/d1-shim.mjs).
+export const SEED_CHUNK = 25;
+const SEED_HEAD = 'INSERT OR IGNORE INTO shop_products (id, kind, rarity, name, tagline, descr, price, stock_total, stock_sold, max_qty, data, status, is_new, sort, created_at, updated_at) VALUES\n';
+const seedRow = (p) => `  ('${p.id}', '${p.kind}', '${p.rarity}', '${p.name.replace(/'/g, "''")}', '${p.tagline.replace(/'/g, "''")}', '${p.descr.replace(/'/g, "''")}', ${p.price}, ${p.stock_total ?? 'NULL'}, 0, ${p.max_qty}, '${JSON.stringify(p.data).replace(/'/g, "''")}', 'on', ${p.is_new}, ${p.sort}, 0, 0)`;
+export const seedStatements = () => {
+  const out = [];
+  for (let i = 0; i < SEED.length; i += SEED_CHUNK) out.push(SEED_HEAD + SEED.slice(i, i + SEED_CHUNK).map(seedRow).join(',\n'));
+  return out;
+};
+export const MIGRATION_SQL = () => `-- Nexus Market: FN ile satılan tasarım ve fonksiyonel kartlar (stok, seri no, kalıcı sahiplik).\n-- Bu dosya scripts/gen-shop-migration.mjs ile src/lib/shop.js'ten üretilir.\n-- Her INSERT 100 KB D1 ifade sınırının çok altındadır (parçalı tohum).\n${SCHEMA.join(';\n')};\n${seedStatements().join(';\n')};\n`;
 
 const CARD_DELIVERY_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS shop_card_deliveries (
@@ -121,10 +130,22 @@ const CARD_DELIVERY_SCHEMA = [
 ];
 
 const SCHEMA_OK = new WeakSet();
+const SEED_TRIED = new WeakSet();
 export async function ensureShopSchema(env) {
-  if (!env.DB || SCHEMA_OK.has(env.DB)) return;
-  await env.DB.batch([...SCHEMA.map((q) => env.DB.prepare(q)), ...CARD_DELIVERY_SCHEMA.map((q) => env.DB.prepare(q)), env.DB.prepare(seedSql())]);
-  SCHEMA_OK.add(env.DB);
+  if (!env.DB) return;
+  if (!SCHEMA_OK.has(env.DB)) {
+    await env.DB.batch([...SCHEMA.map((q) => env.DB.prepare(q)), ...CARD_DELIVERY_SCHEMA.map((q) => env.DB.prepare(q))]);
+    SCHEMA_OK.add(env.DB);
+  }
+  // Katalog tohumu en iyi çabayla yapılır: eksik/boş katalog GİRİŞİ ve banka ekranını asla düşürmemeli. İsolate başına bir kez denenir.
+  if (SEED_TRIED.has(env.DB)) return;
+  SEED_TRIED.add(env.DB);
+  try {
+    const have = (await env.DB.prepare('SELECT COUNT(*) AS c FROM shop_products').first())?.c || 0;
+    if (have < SEED.length) await env.DB.batch(seedStatements().map((q) => env.DB.prepare(q)));
+  } catch (err) {
+    console.error('[shop:seed] katalog tohumu uygulanamadı', err && err.message ? err.message : err);
+  }
 }
 
 export const parseData = (s) => { try { const o = JSON.parse(s); return o && typeof o === 'object' ? o : {}; } catch { return {}; } };

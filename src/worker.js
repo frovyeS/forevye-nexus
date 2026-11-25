@@ -38,6 +38,7 @@ add('POST', '/api/bank/ticket', bankRoutes.ticket);
 add('POST', '/api/bank/exchange', bankRoutes.exchange, 'bank-public');
 add('POST', '/api/bank/market-ticket', bankRoutes.marketTicket, 'bank');
 
+add('GET', '/api/health', miscRoutes.health, 'public');
 add('GET', '/api/me', miscRoutes.me, 'bank');
 add('GET', '/api/notifications', miscRoutes.notifications, 'bank');
 add('POST', '/api/notifications/read', miscRoutes.markRead, 'bank');

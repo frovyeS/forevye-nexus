@@ -21,7 +21,11 @@ export function makeD1() {
   }
   return {
     raw: db,
-    prepare: (sql) => new Stmt(sql),
+    // Gerçek D1 tek SQL ifadesini 100.000 bayt ile sınırlar ("statement too long"). Sınırı taklit etmezsek 254 KB'lık tohum INSERT'i testte geçer, canlıda patlar.
+    prepare: (sql) => {
+      if (Buffer.byteLength(sql) > 100000) throw new Error('D1_ERROR: statement too long: SQLITE_TOOBIG');
+      return new Stmt(sql);
+    },
     // D1 batch() gibi tek işlemdir; hata olursa hepsi geri alınır.
     async batch(stmts) {
       db.exec('BEGIN');

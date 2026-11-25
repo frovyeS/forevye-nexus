@@ -1,4 +1,4 @@
-import { limitsFor, skinsOf } from '../lib/shop.js';
+import { limitsFor, skinsOf, NO_PERKS } from '../lib/shop.js';
 import { HttpError, json, readJson, now, cfgNum, DAY, MIN, HOUR, isSuspended } from '../lib/util.js';
 import { rateLimit } from '../lib/rate.js';
 import { notify } from '../lib/auth.js';
@@ -38,8 +38,15 @@ export async function meSummary(env, user) {
     env.DB.prepare('SELECT id, display_name, card_token, status, design_json, design_version FROM cards WHERE user_id = ? AND is_default = 1').bind(user.id).first(),
     usernameChangeStatus(env, user),
   ]);
-  const lim = await limitsFor(env, user.id);
-  const skins = card ? await skinsOf(env, user.id) : {};
+  // Mağaza (perk/yüzey) verisi OPSİYONELDİR: şeması ya da tohumu bozuk olsa bile giriş ve banka açılışı 500 vermemeli.
+  // Perk okunamazsa en güvenli (temel) sınırlar, yüzey okunamazsa varsayılan görünüm kullanılır.
+  let lim;
+  try { lim = await limitsFor(env, user.id); } catch (err) {
+    console.error('[me] limitsFor başarısız, temel sınırlar kullanıldı', err && err.message ? err.message : err);
+    lim = { perks: { ...NO_PERKS }, max_transfer: cfgNum(env, 'MAX_TRANSFER_MINOR', 500000), daily_limit: cfgNum(env, 'DAILY_TRANSFER_LIMIT_MINOR', 1500000), max_cards: cfgNum(env, 'MAX_CARDS', 5) };
+  }
+  let skins = {};
+  if (card) { try { skins = await skinsOf(env, user.id); } catch (err) { console.error('[me] skinsOf başarısız', err && err.message ? err.message : err); } }
   return {
     user: {
       id: user.id, username: user.username, email: user.email, created_at: user.created_at,
@@ -60,7 +67,27 @@ export async function meSummary(env, user) {
   };
 }
 
+// Teşhis ucu (/api/health): hangi tablonun eksik olduğunu SIRRA/VERİYE dokunmadan söyler. Tarayıcıdan açıp bakılır; yalnızca tablo adı + ok/hata döner.
+const HEALTH_TABLES = ['users', 'sessions', 'wallets', 'cards', 'notifications', 'announcements', 'rate_limits', 'username_history', 'id_links', 'id_states', 'id_pending',
+  'shop_products', 'shop_entitlements', 'shop_card_skins', 'editor_tickets', 'bank_tickets', 'bank_tokens', 'crystal_gifts', 'card_ledger'];
+async function health(req, env) {
+  const checks = {};
+  let ok = true;
+  for (const tb of HEALTH_TABLES) {
+    try { await env.DB.prepare(`SELECT 1 FROM ${tb} LIMIT 1`).all(); checks[tb] = 'ok'; } catch (err) {
+      checks[tb] = /no such table/i.test(String(err && err.message)) ? 'eksik' : 'hata';
+      // Yalnızca isteğe bağlı/yan tablolar (kendiliğinden kurulanlar) eksikse sorun sayılmaz.
+      if (['users', 'sessions', 'wallets', 'cards', 'notifications', 'announcements', 'rate_limits', 'username_history'].includes(tb)) ok = false;
+    }
+  }
+  let products = null;
+  try { products = (await env.DB.prepare('SELECT COUNT(*) AS c FROM shop_products').first()).c; } catch { /* tablo yok */ }
+  const config = { id_login: Boolean(env.ID_URL && env.ID_API_URL), legacy_login: env.LEGACY_LOGIN !== 'off', mail: env.EMAIL_PROVIDER || null };
+  return json({ ok, db: Boolean(env.DB), checks, shop_products: products, config }, ok ? 200 : 503);
+}
+
 export const miscRoutes = {
+  health,
   async me(req, env, ctx, { user }) { return json(await meSummary(env, user)); },
 
   async notifications(req, env, url, { user }) {

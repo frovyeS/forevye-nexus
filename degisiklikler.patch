@@ -1,0 +1,240 @@
+diff -ruN -x node_modules -x 0007_shop.sql -x 0012_nexus_280_catalog.sql /home/claude/orig/forevye-nexus-main/docs/CHANGES_2026-11-25_giris-500-d1-limit.md /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/docs/CHANGES_2026-11-25_giris-500-d1-limit.md
+--- /home/claude/orig/forevye-nexus-main/docs/CHANGES_2026-11-25_giris-500-d1-limit.md	1970-01-01 00:00:00.000000000 +0000
++++ /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/docs/CHANGES_2026-11-25_giris-500-d1-limit.md	2026-11-25 06:58:33.961293332 +0000
+@@ -0,0 +1,25 @@
++# 2026-11-25 — "Beklenmeyen bir hata oluştu": e-posta ve FOREVYE ID girişi 500 veriyordu
++
++## Belirti
++Hem e-posta/şifre hem "FOREVYE ID ile giriş" çalışmıyordu; formda "Beklenmeyen/Beklenmedik bir hata oluştu" görünüyordu.
++FOREVYE ID tarafı sağlamdı: ID dönüşünde oturum açılıyor, ardından `/api/me` 500 verdiği için kullanıcı giriş ekranına geri düşüyordu.
++
++## Kök neden
++İki giriş yolu da `meSummary` → `limitsFor` → `perksOf` → **`ensureShopSchema`** zincirinden geçer.
++`ensureShopSchema`, 329 ürünlük Market kataloğunu **tek bir ~254 KB'lık `INSERT`** olarak çalıştırıyordu.
++Cloudflare D1 tek SQL ifadesini **100 KB** ile sınırlar → her soğuk başlangıçta hata → login ve `/api/me` 500.
++Testler geçiyordu çünkü sahte D1 (`test/d1-shim.mjs`) bu sınırı uygulamıyordu.
++Aynı sebeple `migrations/0007_shop.sql` (254 KB) ve `0012_nexus_280_catalog.sql` (237 KB) `wrangler d1 migrations apply` ile de uygulanamıyordu.
++
++## Düzeltme
++- `src/lib/shop.js`: tohum 25 satırlık parçalara bölündü (`seedStatements`, en büyük parça ~35 KB). Tohumlama "en iyi çaba"dır: başarısız olursa
++  loglanır, girişi düşürmez; yalnızca katalog eksikse (`COUNT(*) < SEED.length`) çalışır ve isolate başına bir kez denenir.
++- `migrations/0007_shop.sql`, `0012_nexus_280_catalog.sql`: aynı satırlar (280 + tohum), ama küçük INSERT'ler halinde. İçerik/ürün kimlikleri değişmedi.
++- `src/routes/misc.js`: `meSummary` içinde perk ve kart yüzeyi okuması try/catch içine alındı; mağaza verisi bozuksa temel limitlerle devam eder.
++- `GET /api/health` (yeni): tabloların `ok/eksik/hata` durumunu ve ID/mail yapılandırmasının var/yok bilgisini verir; sır ya da kullanıcı verisi içermez.
++- `test/d1-shim.mjs`: 100 KB ifade sınırı taklit edilir. `test/d1-limits.test.mjs` (yeni, `npm test`'e eklendi): migration ifade boyutu, parçalı tohum,
++  boş veritabanında ilk giriş, bozuk mağaza şemasında giriş, `/api/health`.
++
++## Dağıtım
++Kodu deploy etmek yeterlidir (GitHub Actions ya da `npx wrangler deploy`). Ardından
++`https://forevye-nexus.forevyenexus.workers.dev/api/health` açılıp `"ok": true` görülmelidir.
+diff -ruN -x node_modules -x 0007_shop.sql -x 0012_nexus_280_catalog.sql /home/claude/orig/forevye-nexus-main/package.json /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/package.json
+--- /home/claude/orig/forevye-nexus-main/package.json	2026-11-25 06:46:31.000000000 +0000
++++ /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/package.json	2026-11-25 06:58:16.866448629 +0000
+@@ -10,7 +10,7 @@
+     "db:migrate:local": "wrangler d1 migrations apply forevye-nexus --local",
+     "db:migrate:remote": "wrangler d1 migrations apply forevye-nexus --remote",
+     "sync-shared": "cp shared/card-contract.js public/js/card-contract.js && cp shared/card-rules.js public/js/card-rules.js && cp shared/card-skins.js public/js/card-skins.js",
+-    "test": "node --test test/app.test.mjs test/market.test.mjs test/editor.test.mjs test/pass.test.mjs test/shop.test.mjs test/card-money.test.mjs test/card-render.test.mjs test/timer-reward.test.mjs test/collection-assets.test.mjs test/bank-access.test.mjs test/origins.test.mjs"
++    "test": "node --test test/app.test.mjs test/market.test.mjs test/editor.test.mjs test/pass.test.mjs test/shop.test.mjs test/card-money.test.mjs test/card-render.test.mjs test/timer-reward.test.mjs test/collection-assets.test.mjs test/bank-access.test.mjs test/origins.test.mjs test/d1-limits.test.mjs"
+   },
+   "devDependencies": {
+     "wrangler": "^4.0.0"
+diff -ruN -x node_modules -x 0007_shop.sql -x 0012_nexus_280_catalog.sql /home/claude/orig/forevye-nexus-main/src/lib/shop.js /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/src/lib/shop.js
+--- /home/claude/orig/forevye-nexus-main/src/lib/shop.js	2026-11-25 06:46:31.000000000 +0000
++++ /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/src/lib/shop.js	2026-11-25 06:57:25.756262991 +0000
+@@ -105,9 +105,18 @@
+   SEED.push({ id: item.productId, kind: 'design', rarity: item.rarity, name: item.name, tagline: item.tagline, descr: item.desc, price: item.price, stock_total: item.stock, max_qty: 1, sort: item.sort, is_new: item.collection ? 1 : 0, data: { skin: item.id, ...collectionData } });
+ }
+ 
+-const seedSql = () => `INSERT OR IGNORE INTO shop_products (id, kind, rarity, name, tagline, descr, price, stock_total, stock_sold, max_qty, data, status, is_new, sort, created_at, updated_at) VALUES\n` +
+-  SEED.map((p) => `  ('${p.id}', '${p.kind}', '${p.rarity}', '${p.name.replace(/'/g, "''")}', '${p.tagline.replace(/'/g, "''")}', '${p.descr.replace(/'/g, "''")}', ${p.price}, ${p.stock_total ?? 'NULL'}, 0, ${p.max_qty}, '${JSON.stringify(p.data).replace(/'/g, "''")}', 'on', ${p.is_new}, ${p.sort}, 0, 0)`).join(',\n');
+-export const MIGRATION_SQL = () => `-- Nexus Market: FN ile satılan tasarım ve fonksiyonel kartlar (stok, seri no, kalıcı sahiplik).\n-- Bu dosya scripts/gen-shop-migration.mjs ile src/lib/shop.js'ten üretilir.\n${SCHEMA.join(';\n')};\n${seedSql()};\n`;
++// D1 tek SQL ifadesini 100 KB ile sınırlar. Eskiden 329 ürünün tamamı TEK bir INSERT'teydi (~254 KB) → canlı D1'de "statement too long" hatası verir,
++// ensureShopSchema her çağrıda patlar ve bu yüzden /api/me, e-posta girişi ve FOREVYE ID girişi 500 "Beklenmeyen bir hata" dönerdi.
++// Artık tohum SEED_CHUNK satırlık küçük INSERT'lere bölünür (her biri ~20 KB). Test ortamının sahte D1'i de bu sınırı uygular (test/d1-shim.mjs).
++export const SEED_CHUNK = 25;
++const SEED_HEAD = 'INSERT OR IGNORE INTO shop_products (id, kind, rarity, name, tagline, descr, price, stock_total, stock_sold, max_qty, data, status, is_new, sort, created_at, updated_at) VALUES\n';
++const seedRow = (p) => `  ('${p.id}', '${p.kind}', '${p.rarity}', '${p.name.replace(/'/g, "''")}', '${p.tagline.replace(/'/g, "''")}', '${p.descr.replace(/'/g, "''")}', ${p.price}, ${p.stock_total ?? 'NULL'}, 0, ${p.max_qty}, '${JSON.stringify(p.data).replace(/'/g, "''")}', 'on', ${p.is_new}, ${p.sort}, 0, 0)`;
++export const seedStatements = () => {
++  const out = [];
++  for (let i = 0; i < SEED.length; i += SEED_CHUNK) out.push(SEED_HEAD + SEED.slice(i, i + SEED_CHUNK).map(seedRow).join(',\n'));
++  return out;
++};
++export const MIGRATION_SQL = () => `-- Nexus Market: FN ile satılan tasarım ve fonksiyonel kartlar (stok, seri no, kalıcı sahiplik).\n-- Bu dosya scripts/gen-shop-migration.mjs ile src/lib/shop.js'ten üretilir.\n-- Her INSERT 100 KB D1 ifade sınırının çok altındadır (parçalı tohum).\n${SCHEMA.join(';\n')};\n${seedStatements().join(';\n')};\n`;
+ 
+ const CARD_DELIVERY_SCHEMA = [
+   `CREATE TABLE IF NOT EXISTS shop_card_deliveries (
+@@ -121,10 +130,22 @@
+ ];
+ 
+ const SCHEMA_OK = new WeakSet();
++const SEED_TRIED = new WeakSet();
+ export async function ensureShopSchema(env) {
+-  if (!env.DB || SCHEMA_OK.has(env.DB)) return;
+-  await env.DB.batch([...SCHEMA.map((q) => env.DB.prepare(q)), ...CARD_DELIVERY_SCHEMA.map((q) => env.DB.prepare(q)), env.DB.prepare(seedSql())]);
+-  SCHEMA_OK.add(env.DB);
++  if (!env.DB) return;
++  if (!SCHEMA_OK.has(env.DB)) {
++    await env.DB.batch([...SCHEMA.map((q) => env.DB.prepare(q)), ...CARD_DELIVERY_SCHEMA.map((q) => env.DB.prepare(q))]);
++    SCHEMA_OK.add(env.DB);
++  }
++  // Katalog tohumu en iyi çabayla yapılır: eksik/boş katalog GİRİŞİ ve banka ekranını asla düşürmemeli. İsolate başına bir kez denenir.
++  if (SEED_TRIED.has(env.DB)) return;
++  SEED_TRIED.add(env.DB);
++  try {
++    const have = (await env.DB.prepare('SELECT COUNT(*) AS c FROM shop_products').first())?.c || 0;
++    if (have < SEED.length) await env.DB.batch(seedStatements().map((q) => env.DB.prepare(q)));
++  } catch (err) {
++    console.error('[shop:seed] katalog tohumu uygulanamadı', err && err.message ? err.message : err);
++  }
+ }
+ 
+ export const parseData = (s) => { try { const o = JSON.parse(s); return o && typeof o === 'object' ? o : {}; } catch { return {}; } };
+diff -ruN -x node_modules -x 0007_shop.sql -x 0012_nexus_280_catalog.sql /home/claude/orig/forevye-nexus-main/src/routes/misc.js /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/src/routes/misc.js
+--- /home/claude/orig/forevye-nexus-main/src/routes/misc.js	2026-11-25 06:46:31.000000000 +0000
++++ /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/src/routes/misc.js	2026-11-25 06:57:53.474835622 +0000
+@@ -1,4 +1,4 @@
+-import { limitsFor, skinsOf } from '../lib/shop.js';
++import { limitsFor, skinsOf, NO_PERKS } from '../lib/shop.js';
+ import { HttpError, json, readJson, now, cfgNum, DAY, MIN, HOUR, isSuspended } from '../lib/util.js';
+ import { rateLimit } from '../lib/rate.js';
+ import { notify } from '../lib/auth.js';
+@@ -38,8 +38,15 @@
+     env.DB.prepare('SELECT id, display_name, card_token, status, design_json, design_version FROM cards WHERE user_id = ? AND is_default = 1').bind(user.id).first(),
+     usernameChangeStatus(env, user),
+   ]);
+-  const lim = await limitsFor(env, user.id);
+-  const skins = card ? await skinsOf(env, user.id) : {};
++  // Mağaza (perk/yüzey) verisi OPSİYONELDİR: şeması ya da tohumu bozuk olsa bile giriş ve banka açılışı 500 vermemeli.
++  // Perk okunamazsa en güvenli (temel) sınırlar, yüzey okunamazsa varsayılan görünüm kullanılır.
++  let lim;
++  try { lim = await limitsFor(env, user.id); } catch (err) {
++    console.error('[me] limitsFor başarısız, temel sınırlar kullanıldı', err && err.message ? err.message : err);
++    lim = { perks: { ...NO_PERKS }, max_transfer: cfgNum(env, 'MAX_TRANSFER_MINOR', 500000), daily_limit: cfgNum(env, 'DAILY_TRANSFER_LIMIT_MINOR', 1500000), max_cards: cfgNum(env, 'MAX_CARDS', 5) };
++  }
++  let skins = {};
++  if (card) { try { skins = await skinsOf(env, user.id); } catch (err) { console.error('[me] skinsOf başarısız', err && err.message ? err.message : err); } }
+   return {
+     user: {
+       id: user.id, username: user.username, email: user.email, created_at: user.created_at,
+@@ -60,7 +67,27 @@
+   };
+ }
+ 
++// Teşhis ucu (/api/health): hangi tablonun eksik olduğunu SIRRA/VERİYE dokunmadan söyler. Tarayıcıdan açıp bakılır; yalnızca tablo adı + ok/hata döner.
++const HEALTH_TABLES = ['users', 'sessions', 'wallets', 'cards', 'notifications', 'announcements', 'rate_limits', 'username_history', 'id_links', 'id_states', 'id_pending',
++  'shop_products', 'shop_entitlements', 'shop_card_skins', 'editor_tickets', 'bank_tickets', 'bank_tokens', 'crystal_gifts', 'card_ledger'];
++async function health(req, env) {
++  const checks = {};
++  let ok = true;
++  for (const tb of HEALTH_TABLES) {
++    try { await env.DB.prepare(`SELECT 1 FROM ${tb} LIMIT 1`).all(); checks[tb] = 'ok'; } catch (err) {
++      checks[tb] = /no such table/i.test(String(err && err.message)) ? 'eksik' : 'hata';
++      // Yalnızca isteğe bağlı/yan tablolar (kendiliğinden kurulanlar) eksikse sorun sayılmaz.
++      if (['users', 'sessions', 'wallets', 'cards', 'notifications', 'announcements', 'rate_limits', 'username_history'].includes(tb)) ok = false;
++    }
++  }
++  let products = null;
++  try { products = (await env.DB.prepare('SELECT COUNT(*) AS c FROM shop_products').first()).c; } catch { /* tablo yok */ }
++  const config = { id_login: Boolean(env.ID_URL && env.ID_API_URL), legacy_login: env.LEGACY_LOGIN !== 'off', mail: env.EMAIL_PROVIDER || null };
++  return json({ ok, db: Boolean(env.DB), checks, shop_products: products, config }, ok ? 200 : 503);
++}
++
+ export const miscRoutes = {
++  health,
+   async me(req, env, ctx, { user }) { return json(await meSummary(env, user)); },
+ 
+   async notifications(req, env, url, { user }) {
+diff -ruN -x node_modules -x 0007_shop.sql -x 0012_nexus_280_catalog.sql /home/claude/orig/forevye-nexus-main/src/worker.js /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/src/worker.js
+--- /home/claude/orig/forevye-nexus-main/src/worker.js	2026-11-25 06:46:31.000000000 +0000
++++ /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/src/worker.js	2026-11-25 06:57:53.475266429 +0000
+@@ -38,6 +38,7 @@
+ add('POST', '/api/bank/exchange', bankRoutes.exchange, 'bank-public');
+ add('POST', '/api/bank/market-ticket', bankRoutes.marketTicket, 'bank');
+ 
++add('GET', '/api/health', miscRoutes.health, 'public');
+ add('GET', '/api/me', miscRoutes.me, 'bank');
+ add('GET', '/api/notifications', miscRoutes.notifications, 'bank');
+ add('POST', '/api/notifications/read', miscRoutes.markRead, 'bank');
+diff -ruN -x node_modules -x 0007_shop.sql -x 0012_nexus_280_catalog.sql /home/claude/orig/forevye-nexus-main/test/d1-limits.test.mjs /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/test/d1-limits.test.mjs
+--- /home/claude/orig/forevye-nexus-main/test/d1-limits.test.mjs	1970-01-01 00:00:00.000000000 +0000
++++ /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/test/d1-limits.test.mjs	2026-11-25 06:58:16.864708792 +0000
+@@ -0,0 +1,62 @@
++// REGRESYON: "FOREVYE ID ile de, e-posta ile de girilmiyor — Beklenmeyen bir hata oluştu".
++// Kök neden: Market kataloğunun tohumu TEK bir ~254 KB'lık INSERT idi; D1 tek SQL ifadesini 100 KB ile sınırlar.
++// ensureShopSchema her soğuk başlangıçta patladı → meSummary/limitsFor → login ve /api/me 500.
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { readFileSync, readdirSync } from 'node:fs';
++import { fileURLToPath } from 'node:url';
++import { join, dirname } from 'node:path';
++import { makeEnv, register, client, PW } from './helpers.mjs';
++import { seedStatements, SEED } from '../src/lib/shop.js';
++
++const root = join(dirname(fileURLToPath(import.meta.url)), '..');
++const LIMIT = 100000;
++
++test('hiçbir migration ifadesi D1 100 KB sınırını aşmaz', () => {
++  for (const f of readdirSync(join(root, 'migrations')).filter((x) => x.endsWith('.sql'))) {
++    const stmts = readFileSync(join(root, 'migrations', f), 'utf8').split(/;\s*\n/).filter((s) => s.trim());
++    for (const s of stmts) assert.ok(Buffer.byteLength(s) < LIMIT, `${f}: ${Buffer.byteLength(s)} bayt (${s.slice(0, 60).replace(/\n/g, ' ')}…)`);
++  }
++});
++
++test('katalog tohumu parçalıdır, her parça sınırın çok altındadır ve tüm ürünleri kapsar', () => {
++  const parts = seedStatements();
++  assert.ok(parts.length > 1);
++  for (const p of parts) assert.ok(Buffer.byteLength(p) < LIMIT / 2);
++  assert.equal(parts.join('\n').match(/^ {2}\('/gm).length, SEED.length);
++});
++
++test('boş (eski) bir veritabanında ilk giriş 500 vermez; katalog kendiliğinden tohumlanır', async () => {
++  const env = makeEnv();
++  await env.DB.batch(['shop_card_skins', 'shop_entitlements', 'shop_purchases', 'shop_wishlist', 'shop_card_deliveries', 'shop_products'].map((t) => env.DB.prepare(`DROP TABLE IF EXISTS ${t}`)));
++  const { cl } = await register(env, 'heal@example.com', 'heal_user');
++  const c2 = client(env);
++  const r = await c2.post('/api/auth/login', { email: 'heal@example.com', password: PW });
++  assert.equal(r.status, 200, JSON.stringify(r.data));
++  const me = await c2.get('/api/me');
++  assert.equal(me.status, 200, JSON.stringify(me.data));
++  const n = (await env.DB.prepare('SELECT COUNT(*) AS c FROM shop_products').first()).c;
++  assert.equal(n, SEED.length);
++  assert.ok(cl.hasSession());
++});
++
++test('mağaza şeması tamamen bozuk olsa bile giriş ve /api/me çalışır (temel sınırlarla)', async () => {
++  const env = makeEnv();
++  await register(env, 'broken@example.com', 'broken_user');
++  const real = env.DB;
++  env.DB = { ...real, prepare: (q) => { if (/shop_/.test(q)) throw new Error('D1_ERROR: no such table: shop_entitlements'); return real.prepare(q); }, batch: (s) => real.batch(s) };
++  const cl = client(env);
++  const r = await cl.post('/api/auth/login', { email: 'broken@example.com', password: PW });
++  assert.equal(r.status, 200, JSON.stringify(r.data));
++  assert.equal(r.data.config.max_transfer, 500000);
++  assert.equal(r.data.config.perks.limit_mult, 1);
++});
++
++test('/api/health tablo durumunu sır içermeden bildirir', async () => {
++  const env = makeEnv();
++  const r = await client(env).get('/api/health');
++  assert.equal(r.status, 200);
++  assert.equal(r.data.ok, true);
++  assert.equal(r.data.checks.users, 'ok');
++  assert.ok(!JSON.stringify(r.data).includes('pepper'));
++});
+diff -ruN -x node_modules -x 0007_shop.sql -x 0012_nexus_280_catalog.sql /home/claude/orig/forevye-nexus-main/test/d1-shim.mjs /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/test/d1-shim.mjs
+--- /home/claude/orig/forevye-nexus-main/test/d1-shim.mjs	2026-11-25 06:46:31.000000000 +0000
++++ /home/claude/w/forevye-nexus-main__2_/forevye-nexus-main/test/d1-shim.mjs	2026-11-25 06:57:45.368276791 +0000
+@@ -21,7 +21,11 @@
+   }
+   return {
+     raw: db,
+-    prepare: (sql) => new Stmt(sql),
++    // Gerçek D1 tek SQL ifadesini 100.000 bayt ile sınırlar ("statement too long"). Sınırı taklit etmezsek 254 KB'lık tohum INSERT'i testte geçer, canlıda patlar.
++    prepare: (sql) => {
++      if (Buffer.byteLength(sql) > 100000) throw new Error('D1_ERROR: statement too long: SQLITE_TOOBIG');
++      return new Stmt(sql);
++    },
+     // D1 batch() gibi tek işlemdir; hata olursa hepsi geri alınır.
+     async batch(stmts) {
+       db.exec('BEGIN');

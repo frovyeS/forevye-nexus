@@ -1,0 +1,5 @@
+YAMA SETİ — Nexus giriş 500 düzeltmesi
+Bu klasördeki dosyaları Worker deposunun köküne AYNI YOL ile üzerine yaz (src/, migrations/, test/, docs/, package.json).
+Sonra commit et (GitHub Actions deploy eder) ya da: npx wrangler deploy
+Kontrol: https://forevye-nexus.forevyenexus.workers.dev/api/health  -> "ok": true
+Not: degisiklikler.patch yalnızca küçük dosyaların farkıdır (iki büyük migration hariç); gerekmez, dosyaları kopyalamak yeterli.
