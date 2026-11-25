@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Forevye Nexus — Sanal Banka</title>
+<meta name="theme-color" content="#07080B">
+<meta name="description" content="Forevye Nexus: oyun içi sanal banka. Gerçek banka veya ödeme kartı değildir.">
+<link rel="icon" type="image/svg+xml" href="assets/logo-icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?v=20261124-nexus-v6">
+</head>
+<body>
+
+<!-- ============ Banka kabuğu ============ -->
+<div id="view-app" class="shell">
+  <aside class="side">
+    <a class="brand" href="#/home" aria-label="Forevye Nexus ana sayfa">
+      <span class="brand-icon" id="side-icon"></span>
+      <img class="brand-word" src="assets/wordmark.png" alt="Forevye Nexus">
+    </a>
+    <nav class="nav" aria-label="Ana menü">
+      <a href="#/home" data-route="home">Ana sayfa</a>
+      <a href="#/card" data-route="card">Kartım</a>
+      <a href="#/activity" data-route="activity">Hareketler</a>
+      <a href="#/store" data-route="store">Mağaza</a>
+      <a href="#/settings" data-route="settings">Ayarlar</a>
+    </nav>
+    <p class="side-note">Forevye Nexus gerçek bir banka veya ödeme kartı değildir. Bakiye ve kart bilgileri yalnızca oyun içi temsilidir.</p>
+  </aside>
+  <main id="page" tabindex="-1"></main>
+  <nav class="tabbar" aria-label="Alt menü">
+    <a href="#/home" data-route="home">Ana sayfa</a>
+    <a href="#/card" data-route="card">Kartım</a>
+    <a href="#/activity" data-route="activity">Hareketler</a>
+    <a href="#/store" data-route="store">Mağaza</a>
+  </nav>
+</div>
+
+<!-- ============ Kart editörü (Card Studio) ============ -->
+<section id="view-editor" class="editor" hidden aria-label="Forevye Nexus Card Studio">
+  <header class="ed-top">
+    <button class="btn ghost" id="ed-exit" type="button">‹ Çık</button>
+    <h1 class="ed-title">Card Studio</h1>
+    <div class="orient" id="ed-orient" role="group" aria-label="Kart yönü">
+      <button type="button" data-orient="landscape" aria-pressed="true" title="Yatay kart"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6.5" width="19" height="11" rx="2.5"/></svg><span>Yatay</span></button>
+      <button type="button" data-orient="portrait" aria-pressed="false" title="Dikey kart"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/></svg><span>Dikey</span></button>
+    </div>
+    <span class="ed-status" id="ed-status" role="status" aria-live="polite"></span>
+    <div class="ed-actions">
+      <button class="btn icon" id="ed-undo" type="button" title="Geri al (Ctrl+Z)" aria-label="Geri al">↶</button>
+      <button class="btn icon" id="ed-redo" type="button" title="Yinele (Ctrl+Y)" aria-label="Yinele">↷</button>
+      <button class="btn" id="ed-preview" type="button" aria-pressed="false">Önizle</button>
+      <button class="btn" id="ed-reset" type="button">Sıfırla</button>
+      <button class="btn primary" id="ed-save" type="button"><span class="dirty-dot" id="ed-dot" hidden></span>Kaydet</button>
+    </div>
+  </header>
+
+  <div class="ed-body" id="ed-body" data-active="lib">
+    <aside class="panel ed-left" data-panel="lib" aria-label="Parça kütüphanesi">
+      <div class="tabs" id="lib-tabs" role="tablist"></div>
+      <div class="lib-content" id="lib-content"></div>
+    </aside>
+
+    <main class="ed-stage" id="ed-stage">
+      <div class="stage-bar">
+        <label class="check"><input type="checkbox" id="ed-zones"> Korumalı alanları göster</label>
+        <label class="check"><input type="checkbox" id="ed-snap" checked> Akıllı hizalama</label>
+        <span class="stage-hint">Sürükle · köşeden boyutlandır · üstteki noktadan döndür · Alt = hizalamayı geçici kapat</span>
+      </div>
+      <div class="stage-canvas" id="ed-canvas"><svg id="ed-svg" class="card-svg" viewBox="0 0 856 540" xmlns="http://www.w3.org/2000/svg" role="application" aria-label="Kart sahnesi"></svg></div>
+      <div class="stage-msg" id="ed-msg" role="alert"></div>
+    </main>
+
+    <aside class="panel ed-right" data-panel="props" aria-label="Özellikler">
+      <div class="field">
+        <label for="ed-name">Kartın üzerindeki ad</label>
+        <input id="ed-name" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Adın">
+        <div class="field-foot"><span id="ed-name-err" class="err"></span><span id="ed-name-count" class="muted"></span></div>
+      </div>
+      <div id="ed-props"></div>
+    </aside>
+
+    <section class="panel ed-layers" data-panel="layers" aria-label="Katmanlar">
+      <div id="ed-layers"></div>
+    </section>
+  </div>
+
+  <nav class="ed-mtabs" aria-label="Editör bölümleri">
+    <button type="button" data-tab="lib" class="on">Parçalar</button>
+    <button type="button" data-tab="props">Özellikler</button>
+    <button type="button" data-tab="layers">Katmanlar</button>
+  </nav>
+
+  <div class="modal" id="ed-modal" hidden role="dialog" aria-modal="true" aria-labelledby="ed-modal-t">
+    <div class="modal-box"><h2 id="ed-modal-t"></h2><div class="modal-body" id="ed-modal-b"></div><div class="modal-acts" id="ed-modal-a"></div></div>
+  </div>
+</section>
+
+<!-- ============ Giriş kapısı (Nexus bağlı modda oturum yoksa) ============ -->
+<section id="view-gate" class="gate" hidden></section>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="js/wallet.js"></script>
+<script src="js/rules.js"></script>
+<script src="js/library.js"></script>
+<script src="js/skins.js?v=20261124-nexus280"></script>
+<script src="js/qrcode.js"></script>
+<script src="js/render.js?v=20261124-nexus280"></script>
+<script src="js/templates.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/connect.js?v=20261124-v6"></script>
+<script src="js/bank-ui.js?v=20261125-v7"></script>
+<script src="js/app.js?v=20261124-v6"></script>
+</body>
+</html>

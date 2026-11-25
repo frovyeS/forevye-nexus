@@ -1,5 +1,3 @@
-YAMA SETİ — Nexus giriş 500 düzeltmesi
-Bu klasördeki dosyaları Worker deposunun köküne AYNI YOL ile üzerine yaz (src/, migrations/, test/, docs/, package.json).
-Sonra commit et (GitHub Actions deploy eder) ya da: npx wrangler deploy
-Kontrol: https://forevye-nexus.forevyenexus.workers.dev/api/health  -> "ok": true
-Not: degisiklikler.patch yalnızca küçük dosyaların farkıdır (iki büyük migration hariç); gerekmez, dosyaları kopyalamak yeterli.
+BANKA YAMASI — Market yeni sekmede açılır (bankadan kopma sorunu)
+Dosyaları forevye_nexus_bank deposunun köküne AYNI YOL ile üzerine yaz: index.html ve js/bank-ui.js. Commit et; GitHub Pages yayınlar.
+Sonra sayfayı Ctrl+Shift+R ile yenile (telefonda sekmeyi kapatıp yeniden aç).
