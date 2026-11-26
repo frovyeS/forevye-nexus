@@ -9,7 +9,7 @@ async function consistent(env) {
   for (const r of rows) assert.equal(r.balance, r.s, 'defter ile bakiye uyuşmuyor');
 }
 const setup = async (extra = {}) => {
-  const env = makeEnv({ __GOLD: 4000, MARKET_VOLATILITY_BPS: '0', ...extra });
+  const env = makeEnv({ __GOLD: 4000, MARKET_INITIAL_PRICE_MICRO: '25000000', MARKET_VOLATILITY_BPS: '0', ...extra });
   const u = await register(env, 'm@example.com', 'miner_one');
   await fund(env, u.me.user.id, 500000); // 5.000 FN
   return { env, u };
@@ -37,12 +37,12 @@ test('al/sat: atomik, defter tutarlı, spread uygulanır, ortalama maliyet', asy
   let m = (await u.cl.get('/api/market')).data;
   assert.equal(m.you.qty, 1000000);
   assert.equal(m.you.cost_minor, 251250);
-  assert.equal(m.you.value_minor, 248750);            // 100 * 24,875
-  assert.equal(m.you.pnl_minor, -2500);               // yalnızca spread kaybı
+  assert.equal(m.you.value_minor, 246875);            // net alış talebi makası 125 baz puana çıkarır
+  assert.equal(m.you.pnl_minor, -4375);               // temel makas + alış baskısı
 
   const sell = await u.cl.post('/api/market/trade', { side: 'sell', qty: '40', idempotency_key: key() });
   assert.equal(sell.status, 201);
-  assert.equal(sell.data.total, 99500);
+  assert.equal(sell.data.total, 98750); // alış baskısı sürerken dinamik satış kotasyonu
   m = (await u.cl.get('/api/market')).data;
   assert.equal(m.you.qty, 600000);
   assert.equal(m.you.cost_minor, 150750);             // maliyetin 40%'ı düştü
@@ -191,6 +191,74 @@ test('son alıcılar ve günlük limit bilgisi', async () => {
   assert.deepEqual(r.data.recipients, ['bob_one']);
   assert.equal(r.data.daily_used, 1000);
   assert.equal(r.data.daily_left, r.data.daily_limit - 1000);
+});
+
+
+test('piyasa akışı: FN→KRS talebi fiyatı ve makası artırır; hacim ve endeks görünür', async () => {
+  const { env, u } = await setup();
+  const initial = (await u.cl.get('/api/market')).data;
+  assert.equal(initial.spread_bps, 50);
+  const bought = await u.cl.post('/api/market/trade', { side: 'buy', qty: '10', idempotency_key: key() });
+  assert.equal(bought.status, 201);
+  env.__NOW += 2 * 60 * 1000;
+  const moved = (await u.cl.get('/api/market')).data;
+  assert.ok(moved.price_micro > initial.price_micro, 'alış yönlü net talep fiyatı yukarı taşımalı');
+  assert.ok(moved.spread_bps > moved.base_spread_bps, 'tek yönlü talep alış-satış makasını genişletmeli');
+  assert.equal(moved.flow_stats.hour.trade_count, 1);
+  assert.equal(moved.flow_stats.day.trade_count, 1);
+  assert.equal(moved.flow_stats.hour.volume_minor, bought.data.total);
+  assert.equal(moved.admin_index.last7_average, 50);
+  assert.equal(moved.admin_index.long_term_average, 50);
+});
+
+
+test('KRS→FN satışı arz baskısı oluşturur ve fiyatı aşağı taşır', async () => {
+  const { env, u } = await setup();
+  await env.DB.prepare('UPDATE crystal_holdings SET qty = ?, cost_basis = ? WHERE user_id = ?')
+    .bind(100000, 25125, u.me.user.id).run();
+  const initial = (await u.cl.get('/api/market')).data;
+  const sold = await u.cl.post('/api/market/trade', { side: 'sell', qty: '10', idempotency_key: key() });
+  assert.equal(sold.status, 201);
+  env.__NOW += 2 * 60 * 1000;
+  const moved = (await u.cl.get('/api/market')).data;
+  assert.ok(moved.price_micro < initial.price_micro, 'satış yönlü net arz fiyatı aşağı taşımalı');
+  assert.ok(moved.spread_bps > moved.base_spread_bps, 'tek yönlü satış baskısı makası genişletmeli');
+  assert.equal(moved.flow_stats.hour.trade_count, 1);
+  assert.equal(moved.flow_stats.hour.sell_qty, 100000);
+});
+
+test('yönetici günlük puanı API: bir günde tek ortak kayıt ve endeks özeti', async () => {
+  const { env } = await setup();
+  const admin = await register(env, 'market-admin@example.com', 'market_admin');
+  await env.DB.prepare("UPDATE users SET role = 'admin' WHERE id = ?").bind(admin.me.user.id).run();
+  const before = await admin.cl.get('/api/admin/market-sentiment');
+  assert.equal(before.status, 200);
+  assert.equal(before.data.submitted, false);
+  assert.equal(before.data.last7_average, 50);
+  const submitted = await admin.cl.post('/api/admin/market-sentiment', { score: 100 });
+  assert.equal(submitted.status, 200);
+  const after = await admin.cl.get('/api/admin/market-sentiment');
+  assert.equal(after.data.today.score, 100);
+  assert.equal(after.data.last7_average, 100);
+  assert.equal(after.data.long_term_average, 100);
+  assert.equal(after.data.effective_average, 100);
+  assert.equal((await admin.cl.post('/api/admin/market-sentiment', { score: 50 })).status, 409);
+});
+
+test('yönetici endeksi: son 7 gün kısa vade, tüm kayıtlar uzun vade dengesini belirler', async () => {
+  const { env, u } = await setup();
+  const adminId = u.me.user.id;
+  const baseDay = new Date(env.__NOW + 3 * 60 * 60 * 1000);
+  for (let i = 10; i >= 1; i -= 1) {
+    const day = new Date(baseDay.getTime() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    await env.DB.prepare('INSERT INTO market_admin_sentiment (day, score, admin_id, created_at) VALUES (?,?,?,?)')
+      .bind(day, i <= 6 ? 100 : 0, adminId, env.__NOW - i * 24 * 60 * 60 * 1000).run();
+  }
+  env.__NOW += 2 * 60 * 1000;
+  const market = (await u.cl.get('/api/market')).data;
+  assert.equal(market.admin_index.last7_average, 100);
+  assert.equal(market.admin_index.long_term_average, 60);
+  assert.equal(market.admin_index.effective_average, 88);
 });
 
 test('ilk kristal rozeti ve borsa geçmişi', async () => {

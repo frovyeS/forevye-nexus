@@ -36,7 +36,7 @@ function sentimentTab(body) {
   const render = (d) => {
     const panel = h('div', { class: 'panel' });
     panel.append(h('h2', { text: 'Günlük piyasa değerlendirmesi' }));
-    panel.append(h('p', { class: 'muted', text: `Bugünün tarihi: ${d.day} • Her gün bir kez puan verebilirsin.` }));
+    panel.append(h('p', { class: 'muted', text: `Bugünün tarihi: ${d.day} • Türkiye takvim gününde tek ortak piyasa puanı kaydedilir.` }));
     if (!d.submitted) {
       const value = h('strong', { text: '50 / 100' });
       const slider = h('input', { type: 'range', min: '0', max: '100', step: '1', value: '50', style: { width: '100%' } });
@@ -54,8 +54,10 @@ function sentimentTab(body) {
         h('p', { class: 'notice', text: 'Bugünün puanı kaydedildi. Aynı gün içinde tekrar değiştirilemez.' }));
     }
     panel.append(h('div', { class: 'row wrap' },
-      h('div', { class: 'chip', text: `Son 7 kayıt ortalaması: ${d.average} / 100` }),
-      h('div', { class: 'chip', text: `Kayıt sayısı: ${d.count}` })));
+      h('div', { class: 'chip', text: `Son 7 gün ortalaması: ${d.last7_average ?? d.average} / 100` }),
+      h('div', { class: 'chip', text: `Uzun vadeli denge: ${d.long_term_average ?? 50} / 100` }),
+      h('div', { class: 'chip', text: `Fiyata yansıyan endeks: ${d.effective_average ?? d.average} / 100` }),
+      h('div', { class: 'chip', text: `Toplam kayıt: ${d.total_count ?? d.count}` })));
     panel.append(h('h3', { text: 'Son 30 günlük değerlendirme' }));
     panel.append(d.history.length ? h('div', { class: 'tablewrap' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Tarih', 'Puan'].map((x) => h('th', { text: x })))),

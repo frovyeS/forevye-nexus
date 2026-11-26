@@ -231,10 +231,25 @@ th{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--sil
 .market-hero{background:repeating-linear-gradient(90deg,rgba(255,255,255,.025) 0 1px,rgba(255,255,255,0) 1px 3px),linear-gradient(135deg,#23272d,#14161a 70%);border:1px solid var(--line-2);border-top:2px solid var(--silver);border-radius:var(--r);padding:18px;margin-bottom:14px}
 .price{font-size:2rem;font-weight:800;letter-spacing:.01em}
 .delta{display:inline-flex;align-items:center;gap:2px;font-weight:700}.delta.pos{color:var(--ok)}.delta.neg{color:var(--danger)}
-.chart{width:100%;height:150px;display:block;margin:10px 0 6px}
+.chart{width:100%;height:210px;display:block;margin:10px 0 6px;touch-action:pan-y;cursor:crosshair}
 .chart .line{fill:none;stroke:var(--silver);stroke-width:2;vector-effect:non-scaling-stroke}
 .chart .area{fill:rgba(200,205,213,.1);stroke:none}
 .chart.down .line{stroke:var(--danger)}.chart.down .area{fill:rgba(255,122,112,.1)}
+.chart-crosshair{stroke:var(--silver);stroke-width:1;stroke-dasharray:4 4;opacity:.75;vector-effect:non-scaling-stroke;pointer-events:none}
+.chart-marker{fill:var(--surface);stroke:var(--silver);stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:none}
+.chart-wrap{position:relative;width:100%;min-width:0}
+.chart-tooltip{position:absolute;z-index:2;display:grid;gap:3px;min-width:160px;max-width:190px;padding:9px 11px;border:1px solid var(--line-2);border-radius:10px;background:rgba(15,17,20,.96);box-shadow:0 8px 24px rgba(0,0,0,.3);font-size:.76rem;pointer-events:none}
+.chart-tooltip strong{font-size:.92rem;color:var(--text)}
+.chart-tooltip span{color:var(--muted)}
+.chart-tooltip span.pos{color:var(--ok)}.chart-tooltip span.neg{color:var(--danger)}
+.chart-instruction{margin:2px 0 0}
+.market-transparency h3{margin-top:0}
+.market-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0}
+.market-fact{display:grid;gap:4px;min-width:0;padding:10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
+.market-fact strong{font-size:.96rem;overflow-wrap:anywhere}
+.market-fact small{font-size:.72rem}
+.market-source{margin:7px 0 0;overflow-wrap:anywhere}
+@media(max-width:440px){.market-facts{grid-template-columns:1fr}.chart{height:185px}}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;font-size:.78rem;color:var(--muted)}
 .stats div{background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:var(--r);padding:8px}
 .stats b{display:block;font-size:.92rem;color:var(--text);margin-top:2px}
