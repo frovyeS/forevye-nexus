@@ -18,7 +18,7 @@ export const cfg = (env) => ({
   maxTradeMinor: cfgNum(env, 'MARKET_MAX_TRADE_MINOR', 1000000),
   slipBps: cfgNum(env, 'MARKET_SLIPPAGE_BPS', 100),           // istemcinin gördüğü fiyattan en fazla %1 sapma
   volatilityBps: cfgNum(env, 'MARKET_VOLATILITY_BPS', 45),   // güncelleme başına azami ±%0,45
-  initialPriceMicro: cfgNum(env, 'MARKET_INITIAL_PRICE_MICRO', 25000000), // başlangıç: 25,0000 FN/KRS
+  initialPriceMicro: cfgNum(env, 'MARKET_INITIAL_PRICE_MICRO', 32000000), // başlangıç: 32,0000 FN/KRS
   reversionBps: cfgNum(env, 'MARKET_REVERSION_BPS', 200),    // eski simülasyon için geri çekim
   goldApiUrl: env.MARKET_GOLD_API_URL || '',
   goldRefreshMs: cfgNum(env, 'MARKET_GOLD_REFRESH_SEC', 300) * 1000,
@@ -112,7 +112,7 @@ async function marketFlowFactor(env, t) {
   } catch { return 1; }
 }
 function goldTargetMicro(quote, base, bist, supplyFactor = 1) {
-  // 25 FN yalnızca başlangıç ankrajıdır. Fiyatın 25'e dönmesi veya belirli aralıkta kalması zorlanmaz.
+  // 32 FN yalnızca başlangıç ankrajıdır. Fiyatın 25'e dönmesi veya belirli aralıkta kalması zorlanmaz.
   const q = quote.quarter / base.quarter;
   const g = quote.gram / base.gram;
   const usd = quote.usd && base.usd ? quote.usd / base.usd : 1;
@@ -123,7 +123,7 @@ function goldTargetMicro(quote, base, bist, supplyFactor = 1) {
   // Metal/FX kümülatif sinyali: toplam altın ağırlığı %55; BIST/FX eklenir.
   const goldFactor = Math.pow(q, 0.35) * Math.pow(g, 0.15) * Math.pow(usd, 0.10)
     * Math.pow(premiumNow / premiumBase, 0.05) * Math.pow(silverRatioNow / silverRatioBase, 0.05);
-  return Math.round(25000000 * goldFactor * (bist?.factor || 1) * supplyFactor);
+  return Math.round(32000000 * goldFactor * (bist?.factor || 1) * supplyFactor);
 }
 
 async function giftEmissionFactor(env, t) {
@@ -138,6 +138,22 @@ async function giftEmissionFactor(env, t) {
     const ratio = supply > 0 ? minted / supply : 0;
     return Math.pow(1 + ratio, -0.65);
   } catch { return 1; }
+}
+
+async function adminSentimentFactor(env, t) {
+  try {
+    const rows = (await env.DB.prepare('SELECT score FROM market_admin_sentiment ORDER BY day DESC LIMIT 7').all()).results;
+    if (!rows.length) return { factor: 1, pressureBps: 0, average: 50 };
+    const average = rows.reduce((sum, row) => sum + Number(row.score), 0) / rows.length;
+    // 0 puan yaklaşık -%16,7; 100 puan +%20 denge hedefi etkisi.
+    const factor = Math.pow(1.2, (average - 50) / 50);
+    // Dış veri olmayan adımlarda hissedilen küçük yön baskısı; puan tek başına fiyatı kilitlemez.
+    const pressureBps = Math.round((average - 50) * 0.35);
+    return { factor, pressureBps, average: Math.round(average * 10) / 10 };
+  } catch {
+    // Migration uygulanmamışsa mevcut piyasa davranışı bozulmasın.
+    return { factor: 1, pressureBps: 0, average: 50 };
+  }
 }
 
 export async function refreshPrice(env) {
@@ -173,7 +189,7 @@ export async function refreshPrice(env) {
     }
     const flow = await marketFlowFactor(env, t);
     const emission = await giftEmissionFactor(env, t);
-    const target = Math.round(goldTargetMicro(quote, base, { factor: bistCumulative }, emission) * flow);
+    const target = Math.round(goldTargetMicro(quote, base, { factor: bistCumulative }, emission) * flow * sentiment.factor);
     // Dinamik fiyat keşfi: sabit 25'e geri dönüş, mutlak fiyat tavanı/tabanı yok. Hareket limiti yalnız tek adım içindir.
     const diffBps = ((target - previous) / previous) * 10000;
     const volatility = Math.max(150, Math.min(3000, Math.abs(diffBps)));
@@ -181,13 +197,13 @@ export async function refreshPrice(env) {
     moveBps = Math.round(diffBps * 0.45);
     moveBps = Math.max(-stepCap, Math.min(stepCap, moveBps));
     price_micro = Math.max(1, Math.round(previous * (10000 + moveBps) / 10000));
-    source = `Çeyrek altın + BIST100/30 + banka/sanayi + USD/TRY + hacim + Nexus arz/talep + hediye emisyonu (${quote.provider || 'altın verisi'})`;
+    source = `Çeyrek altın + BIST + USD/TRY + arz/talep + hediye emisyonu + yönetici güven endeksi (${sentiment.average}/100) (${quote.provider || 'altın verisi'})`;
   } else if (signals && validPrev) {
     // Altın servisi yokken de BIST/FX ve akış, fiyatı aşağı/yukarı taşıyabilir.
     const impactBps = Math.round((bist.factor - 1) * 10000);
-    moveBps = Math.max(-3000, Math.min(3000, Math.round(impactBps * 0.45)));
+    moveBps = Math.max(-3000, Math.min(3000, Math.round(impactBps * 0.45) + sentiment.pressureBps));
     price_micro = Math.max(1, Math.round(previous * (10000 + moveBps) / 10000));
-    source = 'BIST100/30 + banka/sanayi + USD/TRY + hacim + Nexus alım/satım akışı';
+    source = `BIST + USD/TRY + alım/satım akışı + yönetici güven endeksi (${sentiment.average}/100)`;
   } else if (env.MARKET_FALLBACK_ENABLED === 'true') {
     // Dış piyasa sağlayıcıları tanımlı/erişilebilir değilse borsa donmasın:
     // 5 dakikalık Cron adımlarında sanal piyasa dalgalanması + işlem akışı yön etkisi.
@@ -196,9 +212,13 @@ export async function refreshPrice(env) {
     const flow = await marketFlowFactor(env, t);
     const flowBps = Math.round((flow - 1) * 10000);
     const noiseBps = Math.round((Math.random() * 2 - 1) * fallbackVol);
-    moveBps = Math.max(-fallbackVol, Math.min(fallbackVol, noiseBps + Math.max(-250, Math.min(250, flowBps))));
+    // Dış veri yokken 32 FN yalnızca yumuşak referans noktasıdır; puan bu dengeyi ± yönde değiştirir.
+    // Yaklaşma hızı küçük tutulur; 1 veya 200 gibi fiyatlar da mümkündür, sert bir taban/tavan yoktur.
+    const softAnchor = 32000000 * sentiment.factor;
+    const anchorDriftBps = Math.round(Math.max(-fallbackVol, Math.min(fallbackVol, ((softAnchor - previous) / previous) * 10000 * 0.025)));
+    moveBps = Math.max(-fallbackVol, Math.min(fallbackVol, noiseBps + anchorDriftBps + Math.max(-250, Math.min(250, flowBps)) + sentiment.pressureBps));
     price_micro = Math.max(1, Math.round(previous * (10000 + moveBps) / 10000));
-    source = 'Nexus sanal piyasa simülasyonu + alım/satım akışı (dış fiyat kaynağı yok)';
+    source = `Nexus sanal piyasa + alım/satım akışı + yönetici güven endeksi (${sentiment.average}/100) (dış fiyat kaynağı yok)`;
   }
   const last = { model: quote ? 'nexus-dynamic-market-v5' : signals ? 'nexus-dynamic-bist-v5' : 'nexus-market-stable-v3', ts: t, price_micro, source, move_bps: moveBps, gold_quote_ts: quote?.ts || null, bist_ts: signals?.ts || null };
   await stateSet(env, 'last_price', JSON.stringify(last), t);

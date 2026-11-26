@@ -20,14 +20,50 @@ async function init() {
     if (e.status === 401) return loginGate();
     return mount(root, h('div', { class: 'auth' }, h('div', { class: 'notice bad', role: 'alert', text: 'Bu sayfaya erişim yetkiniz yok.' }), h('a', { class: 'btn block', href: '/', text: 'Uygulamaya dön' })));
   }
-  const tabs = [['users', 'Kullanıcılar'], ['announce', 'Duyurular'], ['templates', 'Kart şablonları'], ['audit', 'Denetim kaydı'], ['gift', 'Entegrasyon'], ['pass', 'Nexus Pass']];
+  const tabs = [['sentiment', 'Piyasa değerlendirmesi'], ['users', 'Kullanıcılar'], ['announce', 'Duyurular'], ['templates', 'Kart şablonları'], ['audit', 'Denetim kaydı'], ['gift', 'Entegrasyon'], ['pass', 'Nexus Pass']];
   if (isSuper()) tabs.push(['roles', 'Yetkililer']);
-  const body = h('div'); let current = 'users';
+  const body = h('div'); let current = 'sentiment';
   const bar = h('div', { class: 'seg' });
-  const show = (k) => { current = k; for (const b of bar.children) b.setAttribute('aria-pressed', String(b.dataset.k === k)); ({ users: usersTab, announce: announceTab, templates: templatesTab, audit: auditTab, gift: giftTab, pass: passTab, roles: rolesTab })[k](body); };
+  const show = (k) => { current = k; for (const b of bar.children) b.setAttribute('aria-pressed', String(b.dataset.k === k)); ({ sentiment: sentimentTab, users: usersTab, announce: announceTab, templates: templatesTab, audit: auditTab, gift: giftTab, pass: passTab, roles: rolesTab })[k](body); };
   tabs.forEach(([k, l]) => bar.append(h('button', { type: 'button', 'data-k': k, 'aria-pressed': 'false', text: l, onClick: () => show(k) })));
   mount(root, h('div', { class: 'shell' }, h('main', { class: 'screen' }, h('div', { class: 'topbar' }, h('h1', { text: 'FOREVYE NEXUS • Yönetim' }), h('span', { class: 'chip', text: `${admin.username} (${admin.role})` })), bar, body, h('p', { class: 'virtual' }, back('/', 'Uygulamaya dön')))));
-  show('users');
+  show('sentiment');
+}
+
+
+function sentimentTab(body) {
+  const holder = h('div');
+  const render = (d) => {
+    const panel = h('div', { class: 'panel' });
+    panel.append(h('h2', { text: 'Günlük piyasa değerlendirmesi' }));
+    panel.append(h('p', { class: 'muted', text: `Bugünün tarihi: ${d.day} • Her gün bir kez puan verebilirsin.` }));
+    if (!d.submitted) {
+      const value = h('strong', { text: '50 / 100' });
+      const slider = h('input', { type: 'range', min: '0', max: '100', step: '1', value: '50', style: { width: '100%' } });
+      slider.addEventListener('input', () => { value.textContent = `${slider.value} / 100`; });
+      panel.append(h('h3', { text: 'Bugün FOREVYE ekonomisine kaç puan veriyorsun?' }), value, slider,
+        h('p', { class: 'muted small', text: '0 = çok karamsar • 50 = nötr • 100 = çok iyimser. Puan fiyatı doğrudan belirlemez; piyasa denge hedefini ve yön baskısını etkiler.' }),
+        h('button', { class: 'btn primary', type: 'button', text: 'Bugünün puanını kaydet', onClick: async (e) => {
+          await busy(e.currentTarget, async () => {
+            try { await api.post('/api/admin/market-sentiment', { score: Number(slider.value) }); toast('Günlük piyasa puanın kaydedildi.', 'ok'); load(holder, () => api.get('/api/admin/market-sentiment'), render); }
+            catch (ex) { toast(ex.message, 'error'); }
+          });
+        } }));
+    } else {
+      panel.append(h('h3', { text: `Bugünkü puanın: ${d.today.score} / 100` }),
+        h('p', { class: 'notice', text: 'Bugünün puanı kaydedildi. Aynı gün içinde tekrar değiştirilemez.' }));
+    }
+    panel.append(h('div', { class: 'row wrap' },
+      h('div', { class: 'chip', text: `Son 7 kayıt ortalaması: ${d.average} / 100` }),
+      h('div', { class: 'chip', text: `Kayıt sayısı: ${d.count}` })));
+    panel.append(h('h3', { text: 'Son 30 günlük değerlendirme' }));
+    panel.append(d.history.length ? h('div', { class: 'tablewrap' }, h('table', {},
+      h('thead', {}, h('tr', {}, ['Tarih', 'Puan'].map((x) => h('th', { text: x })))),
+      h('tbody', {}, d.history.map((x) => h('tr', {}, h('td', { text: x.day }), h('td', { text: `${x.score} / 100` })))))) : empty('Henüz değerlendirme yok'));
+    return panel;
+  };
+  mount(body, holder);
+  load(holder, () => api.get('/api/admin/market-sentiment'), render);
 }
 
 function usersTab(body) {

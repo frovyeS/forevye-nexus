@@ -135,6 +135,8 @@ add('GET', '/api/admin/shop/products', shopAdminRoutes.list, 'admin');
 add('POST', '/api/admin/shop/products', shopAdminRoutes.save, 'super');
 add('GET', '/api/admin/pass/products', passAdminRoutes.list, 'admin');
 add('POST', '/api/admin/pass/products', passAdminRoutes.save, 'super');
+add('GET', '/api/admin/market-sentiment', adminRoutes.marketSentiment, 'admin');
+add('POST', '/api/admin/market-sentiment', adminRoutes.submitMarketSentiment, 'admin');
 add('GET', '/api/admin/audit', adminRoutes.audit, 'admin');
 add('GET', '/api/admin/giftcard', adminRoutes.giftcard, 'admin');
 add('GET', '/api/admin/admins', adminRoutes.listAdmins, 'super');

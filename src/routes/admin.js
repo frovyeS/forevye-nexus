@@ -179,6 +179,39 @@ export const adminRoutes = {
     return json({ items: rows });
   },
 
+
+  // Günlük yönetici piyasa değerlendirmesi: her yönetici günde bir kez puan verebilir.
+  async marketSentiment(req, env, ctx, { user }) {
+    const day = new Date(now(env) + 3 * HOUR).toISOString().slice(0, 10); // Türkiye günü
+    const today = await env.DB.prepare('SELECT score, created_at FROM market_admin_sentiment WHERE day = ?').bind(day).first();
+    const stats = await env.DB.prepare(`SELECT ROUND(AVG(score), 1) AS average, COUNT(*) AS count
+      FROM (SELECT score FROM market_admin_sentiment ORDER BY day DESC LIMIT 7)`).first();
+    const history = (await env.DB.prepare('SELECT day, score, created_at FROM market_admin_sentiment ORDER BY day DESC LIMIT 30').all()).results;
+    return json({ day, submitted: Boolean(today), today: today || null, average: Number(stats?.average ?? 50), count: Number(stats?.count || 0), history });
+  },
+
+  async submitMarketSentiment(req, env, ctx, { user }) {
+    const b = await readJson(req);
+    const score = Number(b.score);
+    if (!Number.isInteger(score) || score < 0 || score > 100) {
+      throw new HttpError(400, 'invalid_score', 'Puan 0 ile 100 arasında tam sayı olmalı.');
+    }
+    const day = new Date(now(env) + 3 * HOUR).toISOString().slice(0, 10);
+    try {
+      await env.DB.batch([
+        env.DB.prepare('INSERT INTO market_admin_sentiment (day, score, admin_id, created_at) VALUES (?,?,?,?)')
+          .bind(day, score, user.id, now(env)),
+        auditStmt(env, user.id, 'market.sentiment', day, null, 'success', `score=${score}`),
+      ]);
+    } catch (err) {
+      if (String(err?.message || err).includes('UNIQUE')) {
+        throw new HttpError(409, 'already_submitted', 'Bugünün piyasa puanını zaten verdiniz.');
+      }
+      throw err;
+    }
+    return json({ ok: true, day, score });
+  },
+
   async giftcard(req, env) { return json(await giftcardStatus(env)); },
 
   async listAdmins(req, env) {
