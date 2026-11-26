@@ -1,3 +1,898 @@
+/* FOREVYE NEXUS — 280 koleksiyon kartı için ürüne özel, yöne duyarlı, DOM'suz sanat üretici (FNXArt).
+ * build(item, w, h, P) -> { defs, under }.  w×h gerçek tuval (856×540 yatay / 540×856 dikey).
+ * Resmî arma, karakter benzerliği veya oyuncu görseli ÜRETMEZ. */
+(function (root) {
+  'use strict';
+  function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function rng(seed) { var s = (seed >>> 0) || 1; return function () { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; }
+  function n1(v) { return Math.round(v * 10) / 10; }
+  function h2r(h) { h = h.replace('#', ''); return [parseInt(h.substr(0, 2), 16), parseInt(h.substr(2, 2), 16), parseInt(h.substr(4, 2), 16)]; }
+  function r2h(a) { return '#' + a.map(function (v) { v = Math.max(0, Math.min(255, Math.round(v))); return ('0' + v.toString(16)).slice(-2); }).join(''); }
+  function mix(a, b, t) { var x = h2r(a), y = h2r(b); return r2h([0, 1, 2].map(function (i) { return x[i] + (y[i] - x[i]) * t; })); }
+  function lit(c, t) { return t >= 0 ? mix(c, '#ffffff', t) : mix(c, '#000000', -t); }
+
+  function newCtx(item, w, h, P) { return { P: P, w: w, h: h, s: Math.min(w, h) / 540, L: Math.max(w, h), defs: [], body: [], r: rng(hash(item.id)), item: item, port: h > w }; }
+  function stops(a) { return a.map(function (x) { return '<stop offset="' + x[0] + '" stop-color="' + x[1] + '"' + (x[2] != null ? ' stop-opacity="' + x[2] + '"' : '') + '/>'; }).join(''); }
+  var uid = 0;
+  function nid(C, k) { return C.P + k + (++uid); }
+  function LG(C, a, x1, y1, x2, y2, ex) { var id = nid(C, 'g'); C.defs.push('<linearGradient id="' + id + '" x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '"' + (ex || '') + '>' + stops(a) + '</linearGradient>'); return 'url(#' + id + ')'; }
+  function RG(C, a, cx, cy, r, ex) { var id = nid(C, 'r'); C.defs.push('<radialGradient id="' + id + '" cx="' + cx + '" cy="' + cy + '" r="' + r + '"' + (ex || '') + '>' + stops(a) + '</radialGradient>'); return 'url(#' + id + ')'; }
+  function FILT(C, inner, ex) { var id = nid(C, 'f'), reg = (ex && ex.indexOf(' x=') >= 0) ? '' : ' x="0" y="0" width="100%" height="100%"'; C.defs.push('<filter id="' + id + '"' + reg + ' color-interpolation-filters="sRGB"' + (ex || '') + '>' + inner + '</filter>'); return 'url(#' + id + ')'; }
+  function R(C, fill, ex) { return '<rect width="' + C.w + '" height="' + C.h + '" fill="' + fill + '"' + (ex || '') + '/>'; }
+  function BIG(C, fill, ex) { return '<rect x="' + (-C.L) + '" y="' + (-C.L) + '" width="' + (C.L * 3) + '" height="' + (C.L * 3) + '" fill="' + fill + '"' + (ex || '') + '/>'; }
+  function ROT(C, ang, inner) { return '<g transform="rotate(' + ang + ' ' + C.w / 2 + ' ' + C.h / 2 + ')">' + inner + '</g>'; }
+  function BM(mode, op) { return ' style="mix-blend-mode:' + mode + '"' + (op != null ? ' opacity="' + op + '"' : ''); }
+  var GRAY = '<feColorMatrix type="matrix" values="0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0 0 0 0 1"/>';
+  function turb(freq, oct, seed, type) { return '<feTurbulence type="' + (type || 'fractalNoise') + '" baseFrequency="' + freq + '" numOctaves="' + oct + '" seed="' + seed + '" result="n"/>'; }
+  function seedOf(C) { return Math.floor(C.r() * 900) + 1; }
+  function base(C, cols, ang) { // temel gradyan
+    var a = ang == null ? 135 : ang, rad = a * Math.PI / 180, dx = Math.cos(rad) / 2, dy = Math.sin(rad) / 2;
+    var st = cols.map(function (c, i) { return [n1(i / (cols.length - 1)), c]; });
+    C.body.push(R(C, LG(C, st, .5 - dx, .5 - dy, .5 + dx, .5 + dy)));
+  }
+  // ince ışık tarama / kenar vinyeti
+  function finish(C, o) {
+    o = o || {};
+    C.body.push(R(C, RG(C, [[0, '#fff', 0], [.7, '#000', 0], [1, '#000', o.vig == null ? .38 : o.vig]], .5, .5, .78)));
+    if (o.sheen !== false) C.body.push(R(C, LG(C, [[0, '#fff', 0], [.42, '#fff', 0], [.5, '#fff', o.sh || .13], [.58, '#fff', 0], [1, '#fff', 0]], 0, 0, 1, C.port ? .55 : .35)));
+  }
+
+  /* ===== doku yapı taşları ===== */
+  function brushed(C, p) {
+    base(C, p.c, p.ang0 == null ? 160 : p.ang0);
+    var fr = p.fine ? '0.0015 1.4' : '0.003 0.55';
+    var f = FILT(C, turb(fr, 3, seedOf(C)) + GRAY);
+    C.body.push(ROT(C, p.ang || 0, BIG(C, '#808080', ' filter="' + f + '"' + BM('overlay', p.str || .75))));
+    if (p.grain) { var g = FILT(C, turb('0.9', 2, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + g + '"' + BM('overlay', p.grain))); }
+    if (p.sheen) C.body.push(R(C, LG(C, [[0, p.sheen, 0], [.35, p.sheen, 0], [.5, p.sheen, .5], [.65, p.sheen, 0], [1, p.sheen, 0]], 0, 0, 1, 1), BM('screen', .65)));
+    finish(C, p);
+  }
+  function grain(C, p) { // kum/boncuk püskürtme/yumuşak dokunuş
+    if (!p.nobase) base(C, p.c, p.ang0 == null ? 150 : p.ang0);
+    var f = FILT(C, turb(p.fr || '0.85', p.oct || 3, seedOf(C)) + '<feDiffuseLighting in="n" surfaceScale="' + (p.ss || 1.6) + '" diffuseConstant="1" lighting-color="#fff"><feDistantLight azimuth="225" elevation="' + (p.el || 55) + '"/></feDiffuseLighting>');
+    C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM(p.blend || 'overlay', p.str || .8)));
+    if (p.sheen) C.body.push(R(C, LG(C, [[0, p.sheen, 0], [.5, p.sheen, .35], [1, p.sheen, 0]], 0, 0, 1, 1), BM('screen', .5)));
+    finish(C, p);
+  }
+  function mirror(C, p) { // sıvı krom
+    var stp = p.c.map(function (c, i) { return [n1(i / (p.c.length - 1)), c]; });
+    var g = LG(C, stp, 0, 0, C.port ? .5 : 1, C.port ? 1 : .6, ' spreadMethod="reflect"');
+    var f = FILT(C, turb(p.fr || '0.0035 0.006', 3, seedOf(C)) + '<feDisplacementMap in="SourceGraphic" in2="n" scale="' + Math.round(C.L * (p.amp || .55)) + '" xChannelSelector="R" yChannelSelector="G"/>');
+    C.body.push('<g filter="' + f + '">' + BIG(C, g) + '</g>');
+    finish(C, { sh: .08, vig: .3 });
+  }
+  function liquid(C, p) { // inci/yağ/aurora/iridesans akışkan renk
+    var st = p.c.map(function (c, i) { return [n1(i / (p.c.length - 1)), c]; });
+    var g = LG(C, st, 0, 0, 1, C.port ? 1 : .5, ' spreadMethod="repeat" gradientTransform="scale(' + (p.rep || 1) + ')"');
+    var f = FILT(C, turb(p.fr || '0.004 0.007', 2, seedOf(C)) + '<feDisplacementMap in="SourceGraphic" in2="n" scale="' + Math.round(C.L * (p.amp || .7)) + '" xChannelSelector="R" yChannelSelector="B"/>' + (p.blur ? '<feGaussianBlur stdDeviation="' + p.blur + '"/>' : ''));
+    C.body.push('<g filter="' + f + '">' + BIG(C, g) + '</g>');
+    if (p.pearl) C.body.push(R(C, RG(C, [[0, '#fff', .5], [1, '#fff', 0]], .3, .25, .8), BM('soft-light')));
+    finish(C, { sh: .1, vig: p.vig == null ? .25 : p.vig });
+  }
+  function weave(C, p) { // karbon/kevlar/kompozit dokuma (twill/plain)
+    var cs = Math.round(p.cell * C.s), id = nid(C, 'w');
+    var a = p.c[0], b = p.c[1], sp = p.sp || '#fff';
+    var up = LG(C, [[0, lit(b, .25)], [.5, b], [1, a]], 0, 0, 0, 1), dn = LG(C, [[0, lit(b, .25)], [.5, b], [1, a]], 0, 0, 1, 0);
+    var half = cs / 2, tile = '';
+    if (p.twill) { // 2x2 twill çapraz
+      var c4 = cs / 4, k, j;
+      for (j = 0; j < 4; j++) for (k = 0; k < 4; k++) { var over = ((k + j) % 4) < 2; tile += '<rect x="' + (k * c4) + '" y="' + (j * c4) + '" width="' + c4 + '" height="' + c4 + '" fill="' + (over ? up : dn) + '" stroke="' + a + '" stroke-width="' + n1(c4 * .08) + '"/>'; }
+    } else {
+      tile = '<rect width="' + half + '" height="' + half + '" fill="' + up + '" stroke="' + a + '" stroke-width="' + n1(half * .08) + '"/><rect x="' + half + '" width="' + half + '" height="' + half + '" fill="' + dn + '" stroke="' + a + '" stroke-width="' + n1(half * .08) + '"/><rect y="' + half + '" width="' + half + '" height="' + half + '" fill="' + dn + '" stroke="' + a + '" stroke-width="' + n1(half * .08) + '"/><rect x="' + half + '" y="' + half + '" width="' + half + '" height="' + half + '" fill="' + up + '" stroke="' + a + '" stroke-width="' + n1(half * .08) + '"/>';
+    }
+    C.defs.push('<pattern id="' + id + '" width="' + cs + '" height="' + cs + '" patternUnits="userSpaceOnUse"' + (p.rot ? ' patternTransform="rotate(' + p.rot + ')"' : '') + '>' + tile + '</pattern>');
+    C.body.push(R(C, a)); C.body.push(R(C, 'url(#' + id + ')'));
+    if (p.fiber) { var f = FILT(C, turb('0.02 0.9', 2, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('overlay', .35))); }
+    C.body.push(R(C, LG(C, [[0, sp, 0], [.4, sp, 0], [.5, sp, p.gl == null ? .26 : p.gl], [.6, sp, 0], [1, sp, 0]], 0, 0, 1, .7), BM('screen')));
+    finish(C, { sheen: false, vig: .42 });
+  }
+  function relief(C, p) { // deri, taş benekleri, kabuk: turbulence + ışık
+    base(C, p.c, p.ang0);
+    var f = FILT(C, turb(p.fr, p.oct || 3, seedOf(C), p.type) + '<feDiffuseLighting in="n" surfaceScale="' + (p.ss || 2.4) + '" diffuseConstant="1.05" lighting-color="' + (p.lc || '#fff') + '"><feDistantLight azimuth="' + (p.az || 235) + '" elevation="' + (p.el || 50) + '"/></feDiffuseLighting>');
+    C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM(p.blend || 'overlay', p.str == null ? .9 : p.str)));
+    if (p.spec) { var s = FILT(C, turb(p.fr, p.oct || 3, seedOf(C), p.type) + '<feSpecularLighting in="n" surfaceScale="' + (p.ss || 2.4) + '" specularConstant=".8" specularExponent="22" lighting-color="#fff"><feDistantLight azimuth="235" elevation="45"/></feSpecularLighting>'); C.body.push(R(C, '#000', ' filter="' + s + '"' + BM('screen', p.spec))); }
+    finish(C, p);
+  }
+  function hatch(C, p) { // saffiano, knurl, ince çapraz desenler
+    base(C, p.c, p.ang0);
+    var st = Math.max(3, Math.round(p.step * C.s)), id = nid(C, 'h');
+    C.defs.push('<pattern id="' + id + '" width="' + st + '" height="' + st + '" patternUnits="userSpaceOnUse" patternTransform="rotate(' + (p.rot || 45) + ')"><path d="M0 0H' + st + 'M0 0V' + st + '" stroke="' + p.line + '" stroke-opacity="' + (p.lo == null ? .55 : p.lo) + '" stroke-width="' + n1(st * (p.lw || .22)) + '"/><path d="M' + st / 2 + ' 0V' + st + '" stroke="' + p.hi + '" stroke-opacity="' + (p.ho == null ? .22 : p.ho) + '" stroke-width="' + n1(st * .12) + '"/></pattern>');
+    C.body.push(R(C, 'url(#' + id + ')'));
+    finish(C, p);
+  }
+  function glossy(C, p) { // lake/cam: koyu zemin + pencere yansımaları
+    base(C, p.c, p.ang0 == null ? 140 : p.ang0);
+    var s = C.s, w = C.w, h = C.h;
+    C.body.push('<g' + BM('screen') + '><path d="M' + -w * .1 + ' ' + h * .12 + 'L' + w * .62 + ' ' + -h * .05 + 'L' + w * .38 + ' ' + h * 1.05 + 'L' + -w * .1 + ' ' + h * .9 + 'Z" fill="' + RGfill(C, p.hl || '#fff', p.ho == null ? .22 : p.ho) + '"/><path d="M' + w * .7 + ' ' + -h * .05 + 'L' + w * 1.1 + ' ' + h * .05 + 'L' + w * 1.1 + ' ' + h * .8 + 'L' + w * .52 + ' ' + h * 1.05 + 'Z" fill="' + RGfill(C, p.hl || '#fff', (p.ho == null ? .22 : p.ho) * .6) + '"/></g>');
+    C.body.push(R(C, LG(C, [[0, '#fff', 0], [.5, '#fff', .16], [.52, '#fff', 0], [1, '#fff', 0]], 0, 0, 1, 1), BM('screen')));
+    if (p.frost) { var f = FILT(C, turb('0.55', 3, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('overlay', p.frost))); }
+    finish(C, p);
+  }
+  function RGfill(C, col, op) { return LG(C, [[0, col, op], [1, col, op * .2]], 0, 0, 1, 1); }
+  root.__FNXA = { hash: hash, rng: rng, n1: n1, mix: mix, lit: lit, newCtx: newCtx, LG: LG, RG: RG, FILT: FILT, R: R, BIG: BIG, ROT: ROT, BM: BM, GRAY: GRAY, turb: turb, seedOf: seedOf, base: base, finish: finish, brushed: brushed, grain: grain, mirror: mirror, liquid: liquid, weave: weave, relief: relief, hatch: hatch, glossy: glossy, nid: nid, stops: stops, h2r: h2r, r2h: r2h };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+(function (root) {
+  'use strict';
+  var A = root.__FNXA, n1 = A.n1, mix = A.mix, lit = A.lit, LG = A.LG, RG = A.RG, FILT = A.FILT, R = A.R, BIG = A.BIG, ROT = A.ROT, BM = A.BM, GRAY = A.GRAY, turb = A.turb, seedOf = A.seedOf, base = A.base, finish = A.finish, nid = A.nid;
+  var TAU = Math.PI * 2;
+  function disp(C, fr, sc, oct) { return FILT(C, turb(fr, oct || 2, seedOf(C)) + '<feDisplacementMap in="SourceGraphic" in2="n" scale="' + Math.round(sc) + '" xChannelSelector="R" yChannelSelector="G"/>'); }
+  function glow(C, sd) { return FILT(C, '<feGaussianBlur stdDeviation="' + sd + '" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>', ' x="-20%" y="-20%" width="140%" height="140%"'); }
+  function blur(C, sd) { return FILT(C, '<feGaussianBlur stdDeviation="' + sd + '"/>', ' x="-10%" y="-10%" width="120%" height="120%"'); }
+  function poly(pts) { return pts.map(function (p, i) { return (i ? 'L' : 'M') + n1(p[0]) + ' ' + n1(p[1]); }).join('') + 'Z'; }
+
+  /* ---- Guilloché / rozet ---- */
+  function guil(C, p) {
+    if (!p.nobase) base(C, p.c, p.ang0);
+    var cx = C.w * (p.cx == null ? .5 : p.cx), cy = C.h * (p.cy == null ? .5 : p.cy), m = Math.min(C.w, C.h), Rr = m * (p.R || .42), n = p.n || 28, out = '';
+    var rr = Rr * (p.rr || .36), d = Rr * (p.d || .5), pts, t, k, i;
+    for (k = 0; k < n; k++) {
+      pts = []; var a0 = k * TAU / n;
+      for (i = 0; i <= 360; i++) { t = i * TAU / 360 * (p.turns || 1); var x = (Rr - rr) * Math.cos(t) + d * Math.cos((Rr - rr) / rr * t), y = (Rr - rr) * Math.sin(t) - d * Math.sin((Rr - rr) / rr * t); pts.push([cx + x * Math.cos(a0) - y * Math.sin(a0), cy + x * Math.sin(a0) + y * Math.cos(a0)]); }
+      out += '<path d="' + pts.map(function (q, j) { return (j ? 'L' : 'M') + n1(q[0]) + ' ' + n1(q[1]); }).join('') + '" fill="none" stroke="' + (p.lines[k % p.lines.length]) + '" stroke-opacity="' + (p.op || .5) + '" stroke-width="' + n1(.7 * C.s) + '"/>';
+    }
+    C.body.push(out);
+    if (p.second) { var o2 = ''; for (k = 0; k < 18; k++) { pts = []; for (i = 0; i <= 200; i++) { t = i * TAU / 200; var q = m * .17 * (1 + .35 * Math.cos(6 * t + k * .35)); pts.push([cx + q * Math.cos(t + k * .08), cy + q * Math.sin(t + k * .08)]); } o2 += '<path d="' + poly(pts) + '" fill="none" stroke="' + p.lines[0] + '" stroke-opacity=".45" stroke-width="' + n1(.7 * C.s) + '"/>'; } C.body.push(o2); }
+    finish(C, p);
+  }
+  function engine(C, p) { // makine işlemeli (engine-turned) örtüşen daireler
+    base(C, p.c, p.ang0);
+    var st = 26 * C.s, o = '', x, y, rr = st * 1.45, row = 0;
+    for (y = -st; y < C.h + st; y += st * .86) { for (x = -st + (row % 2 ? st / 2 : 0); x < C.w + st; x += st) o += '<circle cx="' + n1(x) + '" cy="' + n1(y) + '" r="' + n1(rr) + '" fill="none" stroke="' + p.line + '" stroke-opacity=".55" stroke-width="' + n1(.9 * C.s) + '"/><circle cx="' + n1(x) + '" cy="' + n1(y) + '" r="' + n1(rr * .6) + '" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="' + n1(.7 * C.s) + '"/>'; row++; }
+    C.body.push(o); C.body.push(R(C, LG(C, [[0, '#fff', 0], [.45, '#fff', 0], [.5, '#fff', .35], [.55, '#fff', 0], [1, '#fff', 0]], 0, 0, 1, 1), BM('screen')));
+    finish(C, p);
+  }
+  function spiral(C, p) { // CNC spiral frezeleme
+    base(C, p.c, p.ang0);
+    var cx = C.w * .5, cy = C.h * .5, o = '', i, N = 60, m = Math.max(C.w, C.h);
+    for (i = 0; i < N; i++) { var rr = 14 * C.s + i * m * .012; o += '<circle cx="' + n1(cx + i * 3 * C.s) + '" cy="' + n1(cy - i * 1.6 * C.s) + '" r="' + n1(rr) + '" fill="none" stroke="' + (i % 2 ? '#000' : '#fff') + '" stroke-opacity="' + (i % 2 ? .35 : .3) + '" stroke-width="' + n1(2.2 * C.s) + '"/>'; }
+    C.body.push(o);
+    C.body.push(R(C, LG(C, [[0, '#fff', 0], [.5, '#fff', .26], [1, '#fff', 0]], 0, 0, 1, 1), BM('overlay')));
+    finish(C, p);
+  }
+  /* ---- Metal geometrikler ---- */
+  function mesh(C, p) {
+    base(C, p.dark, 135);
+    var st = Math.round(18 * C.s), id = nid(C, 'm'), g1 = LG(C, [[0, p.c[1]], [.5, p.c[0]], [1, p.c[2]]], 0, 0, 1, 1), g2 = LG(C, [[0, p.c[2]], [.5, p.c[0]], [1, p.c[1]]], 1, 0, 0, 1);
+    C.defs.push('<pattern id="' + id + '" width="' + st + '" height="' + st + '" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="' + st + '" height="' + st + '" fill="' + p.dark[0] + '"/><path d="M0 ' + st / 2 + 'H' + st + '" stroke="' + g1 + '" stroke-width="' + n1(st * .34) + '"/><path d="M' + st / 2 + ' 0V' + st + '" stroke="' + g2 + '" stroke-width="' + n1(st * .34) + '" stroke-dasharray="' + n1(st * .36) + ' ' + n1(st * .14) + '"/></pattern>');
+    C.body.push(R(C, 'url(#' + id + ')'));
+    C.body.push(R(C, LG(C, [[0, '#fff', 0], [.5, '#fff', .3], [1, '#fff', 0]], 0, 0, 1, 1), BM('overlay')));
+    finish(C, p);
+  }
+  function perf(C, p) {
+    base(C, p.c, p.ang0);
+    var st = Math.round(p.st * C.s), r0 = st * .34, o = '', x, y, row = 0;
+    for (y = st / 2; y < C.h + st; y += st * .87) { for (x = (row % 2 ? st : st / 2); x < C.w + st; x += st) o += '<circle cx="' + n1(x) + '" cy="' + n1(y) + '" r="' + n1(r0 + 1.5 * C.s) + '" fill="#fff" fill-opacity=".22"/><circle cx="' + n1(x) + '" cy="' + n1(y) + '" r="' + n1(r0) + '" fill="' + p.hole + '"/><circle cx="' + n1(x - r0 * .18) + '" cy="' + n1(y - r0 * .2) + '" r="' + n1(r0 * .62) + '" fill="#000" fill-opacity=".55"/>'; row++; }
+    C.body.push(o); finish(C, p);
+  }
+  function hexes(C, p) {
+    if (!p.nobase) base(C, p.c, p.ang0);
+    var s = p.size * C.s, o = '', hh = s * Math.sqrt(3) / 2, row = 0, x, y, rr = A.rng(A.hash(C.item.id)), k, pts;
+    for (y = -hh; y < C.h + hh * 2; y += hh) { for (x = (row % 2 ? 1.5 * s : 0) - s; x < C.w + s * 2; x += 3 * s) { pts = []; for (k = 0; k < 6; k++) pts.push([x + s * Math.cos(k * TAU / 6) * .94, y + s * Math.sin(k * TAU / 6) * .94]); var sh = (rr() - .5) * (p.vary || .2); o += '<path d="' + poly(pts) + '" fill="' + (p.fill ? lit(p.fill, sh) : 'none') + '" fill-opacity="' + (p.fo == null ? .9 : p.fo) + '" stroke="' + p.line + '" stroke-opacity="' + (p.lo || .6) + '" stroke-width="' + n1((p.lw || 1.2) * C.s) + '"/>'; if (p.nodes) for (k = 0; k < 6; k += 2) o += '<circle cx="' + n1(pts[k][0]) + '" cy="' + n1(pts[k][1]) + '" r="' + n1(2.2 * C.s) + '" fill="' + p.line + '"/>'; } row++; }
+    C.body.push(o);
+    if (p.glow) C.body.push(R(C, RG(C, [[0, p.line, .35], [1, p.line, 0]], .65, .35, .7), BM('screen')));
+    finish(C, p);
+  }
+  function laser(C, p) {
+    base(C, p.c, p.ang0);
+    var rr = C.r, st = 7 * C.s, o = '', x, y;
+    for (y = st; y < C.h; y += st) { var k = (y / C.h); for (x = st; x < C.w; x += st) { var v = Math.sin(x * .02 + y * .011) * .5 + .5; if (rr() < .12 + .5 * v * (1 - k * .5)) o += '<circle cx="' + n1(x) + '" cy="' + n1(y) + '" r="' + n1(st * (.18 + .22 * v)) + '" fill="' + p.hot + '" fill-opacity="' + n1(.25 + .6 * v) + '"/>'; } }
+    C.body.push(o); C.body.push(R(C, LG(C, [[0, p.hot, 0], [.5, p.hot, .28], [1, p.hot, 0]], 0, .2, 1, .8), BM('screen')));
+    finish(C, p);
+  }
+  function circuit(C, p) {
+    base(C, p.c, p.ang0);
+    var rr = C.r, o = '', i, g = 20 * C.s, pads = '';
+    for (i = 0; i < p.n; i++) {
+      var x = Math.round(rr() * C.w / g) * g, y = Math.round(rr() * C.h / g) * g, d = 'M' + x + ' ' + y, dir = Math.floor(rr() * 4), seg = 3 + Math.floor(rr() * 5), k;
+      for (k = 0; k < seg; k++) { var L = g * (1 + Math.floor(rr() * 4)), ax = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1]][(dir + (rr() < .45 ? (rr() < .5 ? 1 : 3) : 0)) % 4]; if (rr() < .25) ax = [[1, 1], [1, -1], [-1, 1], [-1, -1]][Math.floor(rr() * 4)]; x += ax[0] * L; y += ax[1] * L; d += 'L' + n1(x) + ' ' + n1(y); }
+      o += '<path d="' + d + '" fill="none" stroke="' + p.trace + '" stroke-width="' + n1(p.tw * C.s) + '" stroke-linejoin="round" stroke-opacity=".9"/>'; pads += '<circle cx="' + n1(x) + '" cy="' + n1(y) + '" r="' + n1(p.tw * 1.7 * C.s) + '" fill="' + p.pad + '"/><circle cx="' + n1(x) + '" cy="' + n1(y) + '" r="' + n1(p.tw * .6 * C.s) + '" fill="' + p.c[0] + '"/>';
+    }
+    C.body.push('<g filter="' + glow(C, 1.2 * C.s) + '">' + o + '</g>' + pads);
+    finish(C, p);
+  }
+  function foil(C, p) { // holografik / girişim filmi
+    var stp = p.c.map(function (c, i) { return [n1(i / (p.c.length - 1)), c]; });
+    var g = LG(C, stp, 0, 0, p.sx || 1, p.sy || .6, ' spreadMethod="repeat" gradientTransform="scale(' + (p.rep || 1.4) + ')"');
+    C.body.push('<g filter="' + disp(C, p.fr || '0.003 0.005', C.L * (p.amp || .3)) + '">' + BIG(C, g) + '</g>');
+    var st = Math.max(2, Math.round(3 * C.s)), id = nid(C, 'd');
+    C.defs.push('<pattern id="' + id + '" width="' + st + '" height="' + st + '" patternUnits="userSpaceOnUse" patternTransform="rotate(' + (p.rot || 30) + ')"><path d="M0 0V' + st + '" stroke="#000" stroke-opacity="' + (p.lo == null ? .28 : p.lo) + '" stroke-width="' + n1(st * .4) + '"/></pattern>');
+    C.body.push(R(C, 'url(#' + id + ')'));
+    C.body.push(R(C, RG(C, [[0, '#fff', .55], [1, '#fff', 0]], .3, .2, .6), BM('soft-light')));
+    finish(C, { vig: .3, sh: .1 });
+  }
+  function fresnel(C, p) {
+    base(C, p.c, p.ang0);
+    var cx = C.w * .5, cy = C.h * .5, m = Math.max(C.w, C.h), o = '', i = 0, r = 10 * C.s;
+    while (r < m * .8) { o += '<circle cx="' + cx + '" cy="' + cy + '" r="' + n1(r) + '" fill="none" stroke="url(#FR' + (i % 2) + ')" stroke-width="' + n1(r * .045 + 1.2 * C.s) + '"/>'; r += (6 + r * .045) * C.s; i++; }
+    var a = LG(C, [[0, '#fff', .7], [1, '#fff', 0]], 0, 0, 1, 1), b = LG(C, [[0, '#000', .6], [1, '#000', 0]], 0, 0, 1, 1);
+    o = o.replace(/url\(#FR0\)/g, a).replace(/url\(#FR1\)/g, b);
+    C.body.push(o); C.body.push(R(C, RG(C, [[0, p.glow, .45], [1, p.glow, 0]], .5, .5, .5), BM('screen')));
+    finish(C, p);
+  }
+  function facets(C, p) { // kristal/prizmatik/duman kuvars
+    base(C, p.c, 135);
+    var rr = C.r, cols = 6, rows = 9, dx = C.w / cols, dy = C.h / rows, pts = [], i, j, o = '';
+    for (j = 0; j <= rows; j++) { pts[j] = []; for (i = 0; i <= cols; i++) pts[j][i] = [i * dx + (i > 0 && i < cols ? (rr() - .5) * dx * .7 : 0), j * dy + (j > 0 && j < rows ? (rr() - .5) * dy * .7 : 0)]; }
+    for (j = 0; j < rows; j++) for (i = 0; i < cols; i++) {
+      var a = pts[j][i], b = pts[j][i + 1], c = pts[j + 1][i + 1], d = pts[j + 1][i], flip = rr() < .5, tris = flip ? [[a, b, c], [a, c, d]] : [[a, b, d], [b, c, d]];
+      tris.forEach(function (t) { var col = p.rainbow ? 'hsl(' + Math.floor(((t[0][0] / C.w + t[1][1] / C.h) * 360 + rr() * 60)) % 360 + ',70%,' + (55 + rr() * 20) + '%)' : (rr() < .5 ? '#fff' : p.c[1]); o += '<path d="' + poly(t) + '" fill="' + col + '" fill-opacity="' + n1(p.rainbow ? .35 + rr() * .3 : rr() * .22) + '" stroke="#fff" stroke-opacity="' + (p.so || .28) + '" stroke-width="' + n1(.8 * C.s) + '"/>'; });
+    }
+    C.body.push(o); C.body.push(R(C, LG(C, [[0, '#fff', 0], [.45, '#fff', .0], [.5, '#fff', .4], [.55, '#fff', 0], [1, '#fff', 0]], 0, 0, 1, 1), BM('screen')));
+    finish(C, p);
+  }
+  function damascus(C, p) {
+    base(C, p.c, 90);
+    var st = Math.round(11 * C.s), id = nid(C, 'dm');
+    C.defs.push('<pattern id="' + id + '" width="40" height="' + st + '" patternUnits="userSpaceOnUse"><rect width="40" height="' + st + '" fill="' + p.c[0] + '"/><rect y="' + st * .25 + '" width="40" height="' + st * .22 + '" fill="' + p.c[1] + '" fill-opacity=".9"/><rect y="' + st * .62 + '" width="40" height="' + st * .12 + '" fill="' + p.c[2] + '"/></pattern>');
+    C.body.push('<g filter="' + disp(C, '0.004 0.009', C.L * .22, 2) + '">' + BIG(C, 'url(#' + id + ')') + '</g>');
+    var f = FILT(C, turb('0.7', 2, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('overlay', .3)));
+    finish(C, p);
+  }
+  function forged(C, p) {
+    base(C, [p.c[0], p.c[0]], 90);
+    var rr = C.r, o = '', i, N = Math.round(170 * (C.w * C.h) / (856 * 540));
+    for (i = 0; i < N; i++) { var cx = rr() * C.w, cy = rr() * C.h, a = rr() * TAU, L = (30 + rr() * 90) * C.s, W = (12 + rr() * 40) * C.s, pts = []; for (var k = 0; k < 5; k++) { var t = k / 5 * TAU, rx = (k % 2 ? .6 : 1) * L * (.7 + rr() * .5), ry = W * (.6 + rr() * .6); pts.push([cx + Math.cos(t) * rx * Math.cos(a) - Math.sin(t) * ry * Math.sin(a), cy + Math.cos(t) * rx * Math.sin(a) + Math.sin(t) * ry * Math.cos(a)]); } var g = Math.round(14 + rr() * 38); o += '<path d="' + poly(pts) + '" fill="rgb(' + g + ',' + g + ',' + (g + 3) + ')" stroke="#fff" stroke-opacity="' + n1(.04 + rr() * .14) + '" stroke-width="' + n1(.8 * C.s) + '"/>'; }
+    C.body.push(o); C.body.push(R(C, LG(C, [[0, '#fff', 0], [.5, '#fff', .2], [1, '#fff', 0]], 0, 0, 1, 1), BM('overlay')));
+    finish(C, p);
+  }
+  function patina(C, p) { // bakır + verdigris
+    A.brushed(C, { c: p.c, fine: false, ang: 12, str: .55 });
+    var f2 = FILT(C, turb('0.011 0.015', 4, seedOf(C)) + '<feColorMatrix type="matrix" values="0 0 0 0 ' + n1(A.h2r(p.pat)[0] / 255) + ' 0 0 0 0 ' + n1(A.h2r(p.pat)[1] / 255) + ' 0 0 0 0 ' + n1(A.h2r(p.pat)[2] / 255) + ' 0 0 0 5 -2.2"/>');
+    C.body.push(R(C, '#fff', ' filter="' + f2 + '" opacity=".85"'));
+    finish(C, p);
+  }
+  /* ---- Taşlar ---- */
+  function bands(C, p) { // oniks, malahit, akik bantları
+    base(C, [p.c[0], p.c[1]], 90);
+    var rr = C.r, o = '', i, N = p.n || 34, y, cx = C.w * (.3 + rr() * .4), cy = C.h * (.3 + rr() * .4);
+    for (i = 0; i < N; i++) {
+      var col = p.c[i % p.c.length], op = .35 + rr() * .5;
+      if (p.conc) { var rad = (i + 1) * C.L * .75 / N * (.9 + rr() * .2); o += '<circle cx="' + n1(cx) + '" cy="' + n1(cy) + '" r="' + n1(rad) + '" fill="none" stroke="' + col + '" stroke-opacity="' + n1(op) + '" stroke-width="' + n1((6 + rr() * 22) * C.s) + '"/>'; }
+      else { y = (i + .5) * C.h / N * 1.2 - C.h * .1; o += '<rect x="-20" y="' + n1(y) + '" width="' + (C.w + 40) + '" height="' + n1((4 + rr() * 22) * C.s) + '" fill="' + col + '" fill-opacity="' + n1(op) + '"/>'; }
+    }
+    C.body.push('<g filter="' + disp(C, p.fr || '0.005 0.01', C.L * (p.amp || .35), 3) + '">' + o + '</g>');
+    if (p.gloss) C.body.push(R(C, LG(C, [[0, '#fff', .0], [.5, '#fff', .18], [1, '#fff', 0]], 0, 0, 1, 1), BM('screen')));
+    finish(C, p);
+  }
+  function veins(C, p) { // mermer
+    base(C, p.c, 140);
+    var f0 = FILT(C, turb('0.004 0.01', 3, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f0 + '"' + BM('soft-light', .6)));
+    var rr = C.r, o = '', i, k;
+    for (i = 0; i < p.n; i++) {
+      var x = rr() * C.w, y = rr() * C.h, a = rr() * TAU, d = 'M' + n1(x) + ' ' + n1(y), w0 = (p.w || 2) * (.6 + rr() * 1.8) * C.s;
+      for (k = 0; k < 8; k++) { a += (rr() - .5) * 1.3; var L = (30 + rr() * 80) * C.s; x += Math.cos(a) * L; y += Math.sin(a) * L; d += 'L' + n1(x) + ' ' + n1(y); }
+      o += '<path d="' + d + '" fill="none" stroke="' + p.vein[i % p.vein.length] + '" stroke-opacity="' + n1(.35 + rr() * .55) + '" stroke-width="' + n1(w0) + '" stroke-linejoin="round" stroke-linecap="round"/>';
+    }
+    C.body.push('<g filter="' + disp(C, '0.012 0.02', C.L * .12, 3) + '">' + o + '</g>');
+    if (p.gold) C.body.push(R(C, LG(C, [[0, p.gold, 0], [.5, p.gold, .16], [1, p.gold, 0]], 0, 0, 1, 1), BM('overlay')));
+    C.body.push(R(C, LG(C, [[0, '#fff', 0], [.5, '#fff', p.gl == null ? .2 : p.gl], [1, '#fff', 0]], 0, 0, 1, 1), BM('screen')));
+    finish(C, p);
+  }
+  function speckle(C, p) { // lapis (altın pirit) / bazalt gözenekleri / meteorit
+    A.relief(C, { c: p.c, fr: p.fr || '0.02', oct: 4, ss: p.ss || 2, str: .8, spec: p.spec });
+    var rr = C.r, o = '', i, N = Math.round(p.n * (C.w * C.h) / (856 * 540));
+    for (i = 0; i < N; i++) o += '<circle cx="' + n1(rr() * C.w) + '" cy="' + n1(rr() * C.h) + '" r="' + n1((.5 + rr() * (p.r || 1.8)) * C.s) + '" fill="' + p.fleck[i % p.fleck.length] + '" fill-opacity="' + n1(.3 + rr() * .6) + '"/>';
+    C.body.push(o);
+    if (p.vein) { var v = '', k; for (i = 0; i < 6; i++) { var x = rr() * C.w, y = rr() * C.h, a = rr() * TAU, d = 'M' + n1(x) + ' ' + n1(y); for (k = 0; k < 6; k++) { a += (rr() - .5); x += Math.cos(a) * 40 * C.s; y += Math.sin(a) * 40 * C.s; d += 'L' + n1(x) + ' ' + n1(y); } v += '<path d="' + d + '" fill="none" stroke="' + p.vein + '" stroke-opacity=".45" stroke-width="' + n1(1.2 * C.s) + '"/>'; } C.body.push('<g filter="' + disp(C, '0.02', C.L * .06) + '">' + v + '</g>'); }
+    finish(C, p);
+  }
+  function widman(C, p) { // meteorit Widmanstätten
+    base(C, p.c, 140);
+    var rr = C.r, o = '', i, k, doms = 9, cl = '';
+    for (i = 0; i < doms; i++) {
+      var cx = rr() * C.w, cy = rr() * C.h, rad = (90 + rr() * 150) * C.s, a = [0, 60, 120][Math.floor(rr() * 3)] + rr() * 12, id = nid(C, 'wc'), pts = [];
+      for (k = 0; k < 7; k++) pts.push([cx + Math.cos(k / 7 * TAU) * rad * (.7 + rr() * .5), cy + Math.sin(k / 7 * TAU) * rad * (.7 + rr() * .5)]);
+      C.defs.push('<clipPath id="' + id + '"><path d="' + poly(pts) + '"/></clipPath>');
+      var ln = ''; for (k = -rad * 1.6; k < rad * 1.6; k += (6 + rr() * 5) * C.s) ln += '<path d="M' + n1(cx + k) + ' ' + n1(cy - rad * 1.6) + 'L' + n1(cx + k) + ' ' + n1(cy + rad * 1.6) + '" stroke="' + (rr() < .5 ? p.hi : p.lo) + '" stroke-opacity="' + n1(.35 + rr() * .4) + '" stroke-width="' + n1((1 + rr() * 2.2) * C.s) + '"/>';
+      cl += '<g clip-path="url(#' + id + ')"><g transform="rotate(' + n1(a) + ' ' + n1(cx) + ' ' + n1(cy) + ')">' + ln + '</g></g>';
+    }
+    C.body.push(cl); C.body.push(R(C, LG(C, [[0, '#fff', 0], [.5, '#fff', .22], [1, '#fff', 0]], 0, 0, 1, 1), BM('overlay')));
+    finish(C, p);
+  }
+  function topo(C, p) {
+    base(C, p.c, 135);
+    var rr = C.r, cs = [], i, k, j, o = '';
+    for (i = 0; i < 3; i++) cs.push([rr() * C.w, rr() * C.h, rr() * 6]);
+    for (k = 1; k <= 22; k++) cs.forEach(function (c, ci) { var pts = []; for (j = 0; j <= 120; j++) { var t = j / 120 * TAU, rad = (k * 17 * C.s) * (1 + .22 * Math.sin(3 * t + c[2]) + .14 * Math.cos(5 * t + c[2] * 2)); pts.push([c[0] + Math.cos(t) * rad, c[1] + Math.sin(t) * rad]); } o += '<path d="' + poly(pts) + '" fill="none" stroke="' + (k % 5 === 0 ? p.hi : p.line) + '" stroke-opacity="' + (k % 5 === 0 ? .75 : .38) + '" stroke-width="' + n1((k % 5 === 0 ? 1.9 : .9) * C.s) + '"/>'; });
+    C.body.push(o); finish(C, p);
+  }
+  function glacier(C, p) {
+    base(C, p.c, 150);
+    var rr = C.r, o = '', i, k;
+    for (i = 0; i < 14; i++) { var x = rr() * C.w, y = rr() * C.h, a = rr() * TAU, d = 'M' + n1(x) + ' ' + n1(y); for (k = 0; k < 6; k++) { a += (rr() - .5) * 1.8; x += Math.cos(a) * (20 + rr() * 60) * C.s; y += Math.sin(a) * (20 + rr() * 60) * C.s; d += 'L' + n1(x) + ' ' + n1(y); } o += '<path d="' + d + '" fill="none" stroke="#fff" stroke-opacity="' + n1(.3 + rr() * .5) + '" stroke-width="' + n1((.8 + rr() * 1.8) * C.s) + '"/>'; }
+    for (i = 0; i < 40; i++) o += '<circle cx="' + n1(rr() * C.w) + '" cy="' + n1(rr() * C.h) + '" r="' + n1((1 + rr() * 4) * C.s) + '" fill="#fff" fill-opacity="' + n1(.08 + rr() * .25) + '" stroke="#fff" stroke-opacity=".4" stroke-width=".7"/>';
+    C.body.push('<g filter="' + disp(C, '0.015', C.L * .05) + '">' + o + '</g>');
+    var f = FILT(C, turb('0.006 0.01', 3, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('soft-light', .7)));
+    finish(C, p);
+  }
+  function moltenVeins(C, p) {
+    base(C, p.c, 120);
+    var f = FILT(C, turb('0.01 0.014', 3, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('overlay', .5)));
+    var rr = C.r, o = '', i, k;
+    for (i = 0; i < 9; i++) { var x = rr() * C.w, y = rr() * C.h, a = rr() * TAU, d = 'M' + n1(x) + ' ' + n1(y); for (k = 0; k < 9; k++) { a += (rr() - .5) * 1.4; x += Math.cos(a) * (25 + rr() * 70) * C.s; y += Math.sin(a) * (25 + rr() * 70) * C.s; d += 'L' + n1(x) + ' ' + n1(y); } o += '<path d="' + d + '" fill="none" stroke="' + p.gold + '" stroke-width="' + n1((1.2 + rr() * 3.2) * C.s) + '" stroke-linejoin="round" stroke-linecap="round"/>'; }
+    C.body.push('<g filter="' + disp(C, '0.012 0.02', C.L * .1) + '"><g filter="' + glow(C, 3 * C.s) + '">' + o + '</g></g>');
+    finish(C, p);
+  }
+  /* ---- Mine ---- */
+  function cloison(C, p) {
+    base(C, p.c, 135);
+    var cx = C.w * .5, cy = C.h * .5, m = Math.min(C.w, C.h), o = '', i, k, N = 12, pc = p.cells;
+    for (var ring = 0; ring < 3; ring++) for (i = 0; i < N; i++) {
+      var a = i / N * TAU + ring * .2, r1 = m * (.1 + ring * .13), r2 = m * (.2 + ring * .13), w = TAU / N * .46, p1 = [cx + Math.cos(a - w) * r1, cy + Math.sin(a - w) * r1], p2 = [cx + Math.cos(a) * r2 * 1.08, cy + Math.sin(a) * r2 * 1.08], p3 = [cx + Math.cos(a + w) * r1, cy + Math.sin(a + w) * r1];
+      o += '<path d="M' + n1(p1[0]) + ' ' + n1(p1[1]) + 'Q' + n1(cx + Math.cos(a - w * 1.2) * r2) + ' ' + n1(cy + Math.sin(a - w * 1.2) * r2) + ' ' + n1(p2[0]) + ' ' + n1(p2[1]) + 'Q' + n1(cx + Math.cos(a + w * 1.2) * r2) + ' ' + n1(cy + Math.sin(a + w * 1.2) * r2) + ' ' + n1(p3[0]) + ' ' + n1(p3[1]) + 'Z" fill="' + pc[(i + ring) % pc.length] + '" stroke="' + p.wire + '" stroke-width="' + n1(2.6 * C.s) + '" stroke-linejoin="round"/>';
+    }
+    o += '<circle cx="' + cx + '" cy="' + cy + '" r="' + n1(m * .08) + '" fill="' + pc[0] + '" stroke="' + p.wire + '" stroke-width="' + n1(3 * C.s) + '"/>';
+    var y, x, bg = '', st = 34 * C.s; for (y = st / 2; y < C.h; y += st) for (x = st / 2; x < C.w; x += st) bg += '<circle cx="' + n1(x) + '" cy="' + n1(y) + '" r="' + n1(st * .2) + '" fill="' + p.c[1] + '" stroke="' + p.wire + '" stroke-opacity=".6" stroke-width="' + n1(1.2 * C.s) + '"/>';
+    C.body.push(bg + o);
+    C.body.push(R(C, RG(C, [[0, '#fff', .5], [1, '#fff', 0]], .35, .25, .55), BM('soft-light')));
+    finish(C, p);
+  }
+  root.__FNXA.m = { disp: disp, glow: glow, blur: blur, poly: poly, guil: guil, engine: engine, spiral: spiral, mesh: mesh, perf: perf, hexes: hexes, laser: laser, circuit: circuit, foil: foil, fresnel: fresnel, facets: facets, damascus: damascus, forged: forged, patina: patina, bands: bands, veins: veins, speckle: speckle, widman: widman, topo: topo, glacier: glacier, moltenVeins: moltenVeins, cloison: cloison };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+(function (root) {
+  'use strict';
+  var A = root.__FNXA, M = A.m, n1 = A.n1, mix = A.mix, lit = A.lit, LG = A.LG, RG = A.RG, FILT = A.FILT, R = A.R, BIG = A.BIG, ROT = A.ROT, BM = A.BM, GRAY = A.GRAY, turb = A.turb, seedOf = A.seedOf, base = A.base, finish = A.finish, nid = A.nid;
+  var TAU = Math.PI * 2;
+  function paper(C, p) { // kâğıt/keten/laid
+    base(C, p.c, p.ang0 || 150);
+    var f = FILT(C, turb(p.fr || '0.6 0.06', 3, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('overlay', p.str || .5)));
+    if (p.laid) { var o = '', y; for (y = 0; y < C.h; y += 4 * C.s) o += '<path d="M0 ' + n1(y) + 'H' + C.w + '" stroke="#000" stroke-opacity=".06" stroke-width="' + n1(1.4 * C.s) + '"/>'; for (var x = 0; x < C.w; x += 46 * C.s) o += '<path d="M' + n1(x) + ' 0V' + C.h + '" stroke="#000" stroke-opacity=".05" stroke-width="' + n1(1.2 * C.s) + '"/>'; C.body.push(o); }
+  }
+  function linen(C, p) {
+    base(C, p.c, 150);
+    var st = Math.round(5 * C.s) || 4, id = nid(C, 'ln');
+    C.defs.push('<pattern id="' + id + '" width="' + st * 2 + '" height="' + st * 2 + '" patternUnits="userSpaceOnUse"><rect width="' + st + '" height="' + st + '" fill="#fff" fill-opacity=".16"/><rect x="' + st + '" y="' + st + '" width="' + st + '" height="' + st + '" fill="#fff" fill-opacity=".16"/><rect x="' + st + '" width="' + st + '" height="' + st + '" fill="#000" fill-opacity=".12"/><rect y="' + st + '" width="' + st + '" height="' + st + '" fill="#000" fill-opacity=".12"/></pattern>');
+    C.body.push(R(C, 'url(#' + id + ')'));
+    var f = FILT(C, turb('0.04 0.6', 3, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('overlay', .5)));
+    var g = FILT(C, turb('0.6 0.04', 3, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + g + '"' + BM('overlay', .4)));
+    finish(C, p);
+  }
+  function herring(C, p) { // balık kılçığı (Oxford navy)
+    base(C, [p.c[0], p.c[0]], 90);
+    var st = Math.round(16 * C.s), id = nid(C, 'hb'), a = LG(C, [[0, p.c[1]], [1, p.c[0]]], 0, 0, 1, 1), b = LG(C, [[0, p.c[0]], [1, lit(p.c[1], .1)]], 1, 0, 0, 1);
+    C.defs.push('<pattern id="' + id + '" width="' + st * 2 + '" height="' + st + '" patternUnits="userSpaceOnUse"><path d="M0 ' + st + 'L' + st + ' 0V' + st * .5 + 'L0 ' + st * 1.5 + 'Z" fill="' + a + '"/><path d="M' + st * 2 + ' ' + st + 'L' + st + ' 0V' + st * .5 + 'L' + st * 2 + ' ' + st * 1.5 + 'Z" fill="' + b + '"/></pattern>');
+    C.body.push(R(C, 'url(#' + id + ')'));
+    var f = FILT(C, turb('0.8', 2, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('overlay', .5)));
+    finish(C, p);
+  }
+  function wood(C, p) {
+    base(C, p.c, 90);
+    var st = Math.round(9 * C.s), id = nid(C, 'wd');
+    C.defs.push('<pattern id="' + id + '" width="60" height="' + st + '" patternUnits="userSpaceOnUse"><rect width="60" height="' + st + '" fill="' + p.c[0] + '"/><rect y="' + st * .2 + '" width="60" height="' + st * .3 + '" fill="' + p.c[1] + '" fill-opacity=".75"/><rect y="' + st * .7 + '" width="60" height="' + st * .12 + '" fill="' + p.c[2] + '"/></pattern>');
+    C.body.push('<g filter="' + M.disp(C, '0.004 0.02', C.L * .3, 3) + '">' + BIG(C, 'url(#' + id + ')') + '</g>');
+    var f = FILT(C, turb('0.02 0.5', 3, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('overlay', .45)));
+    C.body.push(R(C, LG(C, [[0, '#fff', 0], [.5, '#fff', .3], [1, '#fff', 0]], 0, 0, 1, .6), BM('soft-light')));
+    finish(C, p);
+  }
+  function engrave(C, p) { // banknot gravürü: faz kaymalı dalga çizgiler
+    paper(C, { c: p.c });
+    var o = '', i, N = Math.round(C.h / (4 * C.s)), j, d;
+    for (i = 0; i < N; i++) { d = ''; for (j = 0; j <= 80; j++) { var x = j / 80 * C.w, y = i * 4 * C.s + Math.sin(j * .35 + i * .22) * 7 * C.s * Math.sin(i * .05 + .6) + Math.sin(j * .09 + i * .05) * 9 * C.s; d += (j ? 'L' : 'M') + n1(x) + ' ' + n1(y); } o += '<path d="' + d + '" fill="none" stroke="' + p.ink + '" stroke-opacity="' + n1(.4 + (i % 3) * .1) + '" stroke-width="' + n1(.9 * C.s) + '"/>'; }
+    C.body.push(o);
+    M.guil(C, { nobase: true, c: ['#000', '#000'], lines: [p.ink], n: 20, R: .3, rr: .32, d: .42, op: .45, cx: .5, cy: .5 }); // arka plan boyası: saydam
+    finish(C, { vig: .25 });
+  }
+  function intaglio(C, p) { // kabartma çizgili
+    base(C, p.c, 135);
+    var cx = C.w * .5, cy = C.h * .5, o = '', i, N = 160;
+    for (i = 0; i < N; i++) { var a = i / N * TAU, r1 = 40 * C.s, r2 = C.L; o += '<path d="M' + n1(cx + Math.cos(a) * r1) + ' ' + n1(cy + Math.sin(a) * r1) + 'L' + n1(cx + Math.cos(a) * r2) + ' ' + n1(cy + Math.sin(a) * r2) + '" stroke="' + p.ink + '" stroke-opacity=".5" stroke-width="' + n1(1.1 * C.s) + '"/><path d="M' + n1(cx + Math.cos(a + .008) * r1) + ' ' + n1(cy + Math.sin(a + .008) * r1) + 'L' + n1(cx + Math.cos(a + .008) * r2) + ' ' + n1(cy + Math.sin(a + .008) * r2) + '" stroke="#fff" stroke-opacity=".25" stroke-width="' + n1(.8 * C.s) + '"/>'; }
+    C.body.push(o);
+    var m = Math.min(C.w, C.h), k, rr = ''; for (k = 1; k < 9; k++) rr += '<circle cx="' + cx + '" cy="' + cy + '" r="' + n1(m * (.04 + k * .045)) + '" fill="none" stroke="' + p.ink + '" stroke-opacity=".6" stroke-width="' + n1(1.5 * C.s) + '"/>';
+    C.body.push(rr); finish(C, p);
+  }
+  function border(C, col, op) { // ince çerçeve + köşe süsü
+    var m = 26 * C.s, w = C.w, h = C.h, s = C.s, o = '<rect x="' + m + '" y="' + m + '" width="' + (w - 2 * m) + '" height="' + (h - 2 * m) + '" fill="none" stroke="' + col + '" stroke-opacity="' + op + '" stroke-width="' + n1(2.4 * s) + '"/><rect x="' + (m + 8 * s) + '" y="' + (m + 8 * s) + '" width="' + (w - 2 * m - 16 * s) + '" height="' + (h - 2 * m - 16 * s) + '" fill="none" stroke="' + col + '" stroke-opacity="' + op * .7 + '" stroke-width="' + n1(1 * s) + '"/>';
+    [[m, m, 1, 1], [w - m, m, -1, 1], [m, h - m, 1, -1], [w - m, h - m, -1, -1]].forEach(function (c) { o += '<path d="M' + c[0] + ' ' + (c[1] + c[3] * 40 * s) + 'Q' + c[0] + ' ' + c[1] + ' ' + (c[0] + c[2] * 40 * s) + ' ' + c[1] + '" fill="none" stroke="' + col + '" stroke-opacity="' + op + '" stroke-width="' + n1(2 * s) + '"/><circle cx="' + (c[0] + c[2] * 14 * s) + '" cy="' + (c[1] + c[3] * 14 * s) + '" r="' + n1(3 * s) + '" fill="' + col + '" fill-opacity="' + op + '"/>'; });
+    C.body.push(o);
+  }
+  function ledger(C, p) {
+    paper(C, { c: p.c, str: .7, fr: '0.03 0.04' });
+    var o = '', y; for (y = 70 * C.s; y < C.h; y += 24 * C.s) o += '<path d="M0 ' + n1(y) + 'H' + C.w + '" stroke="#3b5a8a" stroke-opacity=".35" stroke-width="' + n1(1 * C.s) + '"/>';
+    o += '<path d="M' + n1(C.w * .16) + ' 0V' + C.h + '" stroke="#b3261e" stroke-opacity=".5" stroke-width="' + n1(1.6 * C.s) + '"/><path d="M' + n1(C.w * .16 + 5 * C.s) + ' 0V' + C.h + '" stroke="#b3261e" stroke-opacity=".3" stroke-width="' + n1(1 * C.s) + '"/>';
+    var rr = C.r; for (y = 70 * C.s; y < C.h; y += 24 * C.s) { var x = C.w * .2, d = 'M' + n1(x) + ' ' + n1(y - 6 * C.s); while (x < C.w * (.5 + rr() * .4)) { x += (3 + rr() * 5) * C.s; d += 'L' + n1(x) + ' ' + n1(y - (4 + rr() * 8) * C.s); } o += '<path d="' + d + '" fill="none" stroke="#2c2a4a" stroke-opacity=".5" stroke-width="' + n1(1.3 * C.s) + '"/>'; }
+    C.body.push(o);
+    var f = FILT(C, turb('0.01', 3, seedOf(C)) + '<feColorMatrix type="matrix" values="0 0 0 0 .45 0 0 0 0 .3 0 0 0 0 .1 0 0 0 1.6 -.55"/>'); C.body.push(R(C, '#000', ' filter="' + f + '" opacity=".35"'));
+    finish(C, { vig: .5 });
+  }
+  function gilt(C, p) { // altın külçe / altın varak
+    A.brushed(C, { c: p.c, fine: true, ang: 0, str: .8, sheen: '#fff6c8' });
+    if (p.bars) {
+      var o = '', bw = 150 * C.s, bh = 56 * C.s, y, x, row = 0;
+      for (y = -bh * .5; y < C.h + bh; y += bh * .95) { for (x = -bw * (row % 2 ? .5 : 0); x < C.w + bw; x += bw * 1.04) o += '<path d="M' + n1(x + bh * .2) + ' ' + n1(y) + 'H' + n1(x + bw - bh * .2) + 'L' + n1(x + bw) + ' ' + n1(y + bh * .8) + 'H' + n1(x) + 'Z" fill="' + LG(C, [[0, '#fff2b8'], [.45, '#e0b64a'], [1, '#9a7420']], 0, 0, 0, 1) + '" stroke="#5c4310" stroke-opacity=".6" stroke-width="' + n1(1.6 * C.s) + '"/><rect x="' + n1(x + bw * .3) + '" y="' + n1(y + bh * .22) + '" width="' + n1(bw * .4) + '" height="' + n1(bh * .3) + '" rx="2" fill="none" stroke="#5c4310" stroke-opacity=".55"/>'; row++; }
+      C.body.push(o);
+    }
+    finish(C, p);
+  }
+  function coin(C, p) { // darphane kenarı
+    base(C, p.c, 135);
+    var cx = C.w * .5, cy = C.h * .5, m = Math.min(C.w, C.h) * .46, o = '', i, N = 120;
+    o += '<circle cx="' + cx + '" cy="' + cy + '" r="' + n1(m) + '" fill="' + LG(C, [[0, lit(p.c[1], .3)], [1, p.c[2] || p.c[0]]], 0, 0, 1, 1) + '"/>';
+    for (i = 0; i < N; i++) { var a = i / N * TAU; o += '<path d="M' + n1(cx + Math.cos(a) * m * .9) + ' ' + n1(cy + Math.sin(a) * m * .9) + 'L' + n1(cx + Math.cos(a) * m) + ' ' + n1(cy + Math.sin(a) * m) + '" stroke="#000" stroke-opacity=".5" stroke-width="' + n1(2 * C.s) + '"/>'; }
+    o += '<circle cx="' + cx + '" cy="' + cy + '" r="' + n1(m * .86) + '" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="' + n1(2 * C.s) + '"/><circle cx="' + cx + '" cy="' + cy + '" r="' + n1(m * .58) + '" fill="none" stroke="#000" stroke-opacity=".35" stroke-width="' + n1(2 * C.s) + '"/>';
+    for (i = 0; i < 16; i++) { var b = i / 16 * TAU; o += '<path d="M' + n1(cx + Math.cos(b) * m * .22) + ' ' + n1(cy + Math.sin(b) * m * .22) + 'Q' + n1(cx + Math.cos(b + .35) * m * .45) + ' ' + n1(cy + Math.sin(b + .35) * m * .45) + ' ' + n1(cx + Math.cos(b) * m * .66) + ' ' + n1(cy + Math.sin(b) * m * .66) + '" fill="none" stroke="#fff" stroke-opacity=".38" stroke-width="' + n1(1.8 * C.s) + '"/>'; }
+    C.body.push(o); finish(C, p);
+  }
+  function crest(C, p) { // GENEL kabartma kalkan + defne (gerçek bir arma değildir)
+    base(C, p.c, 140);
+    var f = FILT(C, turb('0.5', 3, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('overlay', .35)));
+    var cx = C.w * .5, cy = C.h * .5, s = Math.min(C.w, C.h) * (C.port ? .36 : .3), sh = 'M' + cx + ' ' + (cy - s) + 'C' + (cx + s * .9) + ' ' + (cy - s * .85) + ' ' + (cx + s * .9) + ' ' + (cy - s * .1) + ' ' + (cx + s * .8) + ' ' + (cy + s * .25) + 'C' + (cx + s * .6) + ' ' + (cy + s * .75) + ' ' + cx + ' ' + (cy + s) + ' ' + cx + ' ' + (cy + s) + 'C' + cx + ' ' + (cy + s) + ' ' + (cx - s * .6) + ' ' + (cy + s * .75) + ' ' + (cx - s * .8) + ' ' + (cy + s * .25) + 'C' + (cx - s * .9) + ' ' + (cy - s * .1) + ' ' + (cx - s * .9) + ' ' + (cy - s * .85) + ' ' + cx + ' ' + (cy - s) + 'Z';
+    var o = '<path d="' + sh + '" transform="translate(' + n1(2 * C.s) + ' ' + n1(3 * C.s) + ')" fill="#000" fill-opacity=".4"/><path d="' + sh + '" fill="' + LG(C, [[0, lit(p.c[1], .25)], [1, p.c[0]]], 0, 0, 1, 1) + '" stroke="' + p.gold + '" stroke-width="' + n1(3 * C.s) + '"/><path d="' + sh + '" transform="translate(' + cx + ' ' + cy + ') scale(.78) translate(' + -cx + ' ' + -cy + ')" fill="none" stroke="' + p.gold + '" stroke-opacity=".6" stroke-width="' + n1(1.4 * C.s) + '"/>';
+    var i; for (i = 0; i < 9; i++) { var y = cy + s * 1.05 - i * s * .17; [-1, 1].forEach(function (sd) { o += '<ellipse cx="' + n1(cx + sd * (s * (.95 + Math.sin(i / 9 * 1.6) * .22))) + '" cy="' + n1(y - s * .5) + '" rx="' + n1(s * .08) + '" ry="' + n1(s * .17) + '" transform="rotate(' + sd * (30 - i * 5) + ' ' + n1(cx + sd * s * (.95 + Math.sin(i / 9 * 1.6) * .22)) + ' ' + n1(y - s * .5) + ')" fill="' + p.gold + '" fill-opacity=".85"/>'; }); }
+    o += '<path d="M' + n1(cx - s * .35) + ' ' + n1(cy - s * .1) + 'L' + cx + ' ' + n1(cy - s * .55) + 'L' + n1(cx + s * .35) + ' ' + n1(cy - s * .1) + 'L' + cx + ' ' + n1(cy + s * .5) + 'Z" fill="' + p.gold + '" fill-opacity=".75"/>';
+    C.body.push(o); finish(C, p);
+  }
+  function seal(C, p) { // balmumu mühür
+    paper(C, { c: p.paper, str: .5, laid: true });
+    var cx = C.w * .5, cy = C.h * .5, m = Math.min(C.w, C.h) * .34, o = '', i, N = 22, pts = [], rr = C.r;
+    for (i = 0; i < 90; i++) { var a = i / 90 * TAU, r = m * (1 + .06 * Math.sin(a * N / 2) + (rr() - .5) * .05); pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); }
+    o += '<path d="' + M.poly(pts) + '" transform="translate(' + n1(3 * C.s) + ' ' + n1(5 * C.s) + ')" fill="#000" fill-opacity=".3"/><path d="' + M.poly(pts) + '" fill="' + RG(C, [[0, lit(p.wax, .25)], [.7, p.wax], [1, lit(p.wax, -.35)]], .4, .35, .8) + '"/>';
+    o += '<circle cx="' + cx + '" cy="' + cy + '" r="' + n1(m * .8) + '" fill="none" stroke="' + lit(p.wax, -.4) + '" stroke-width="' + n1(3 * C.s) + '"/><circle cx="' + cx + '" cy="' + cy + '" r="' + n1(m * .8) + '" fill="none" stroke="' + lit(p.wax, .35) + '" stroke-opacity=".6" stroke-width="' + n1(1 * C.s) + '" transform="translate(' + n1(-1.5 * C.s) + ' ' + n1(-1.5 * C.s) + ')"/>';
+    for (i = 0; i < 24; i++) { var b = i / 24 * TAU; o += '<path d="M' + n1(cx + Math.cos(b) * m * .22) + ' ' + n1(cy + Math.sin(b) * m * .22) + 'L' + n1(cx + Math.cos(b) * m * .7) + ' ' + n1(cy + Math.sin(b) * m * .7) + '" stroke="' + lit(p.wax, -.4) + '" stroke-opacity=".7" stroke-width="' + n1(2.4 * C.s) + '" stroke-linecap="round"/>'; }
+    o += '<circle cx="' + cx + '" cy="' + cy + '" r="' + n1(m * .2) + '" fill="' + lit(p.wax, .1) + '" stroke="' + lit(p.wax, -.4) + '" stroke-width="' + n1(2.5 * C.s) + '"/>';
+    C.body.push(o); finish(C, { vig: .35 });
+  }
+  function bell(C, p) { // borsa çanı
+    base(C, p.c, 160);
+    var cx = C.w * .5, cy = C.h * .5, s = Math.min(C.w, C.h) * .26, o = '', k;
+    for (k = 1; k < 8; k++) o += '<circle cx="' + cx + '" cy="' + n1(cy + s * .1) + '" r="' + n1(s * (.9 + k * .32)) + '" fill="none" stroke="' + p.gold + '" stroke-opacity="' + n1(.5 - k * .055) + '" stroke-width="' + n1(1.6 * C.s) + '"/>';
+    var b = 'M' + n1(cx - s) + ' ' + n1(cy + s * .75) + 'C' + n1(cx - s * .9) + ' ' + n1(cy + s * .35) + ' ' + n1(cx - s * .75) + ' ' + n1(cy - s * .8) + ' ' + cx + ' ' + n1(cy - s * .85) + 'C' + n1(cx + s * .75) + ' ' + n1(cy - s * .8) + ' ' + n1(cx + s * .9) + ' ' + n1(cy + s * .35) + ' ' + n1(cx + s) + ' ' + n1(cy + s * .75) + 'Z';
+    o += '<path d="' + b + '" fill="' + LG(C, [[0, '#fff0b0'], [.4, p.gold], [1, '#7a5a1a']], 0, 0, 1, 0) + '" stroke="#4a3610" stroke-width="' + n1(2 * C.s) + '"/><rect x="' + n1(cx - s * 1.05) + '" y="' + n1(cy + s * .72) + '" width="' + n1(s * 2.1) + '" height="' + n1(s * .12) + '" rx="3" fill="' + p.gold + '"/><circle cx="' + cx + '" cy="' + n1(cy + s * 1.0) + '" r="' + n1(s * .13) + '" fill="' + p.gold + '"/><circle cx="' + cx + '" cy="' + n1(cy - s * .98) + '" r="' + n1(s * .1) + '" fill="' + p.gold + '"/>';
+    C.body.push(o); finish(C, p);
+  }
+  function flourish(C, p) { // imza
+    paper(C, { c: p.c, str: .5, laid: true });
+    var w = C.w, h = C.h, s = C.s, o = '', y0 = h * .62;
+    var d = 'M' + n1(w * .16) + ' ' + n1(y0) + 'C' + n1(w * .22) + ' ' + n1(y0 - 120 * s) + ' ' + n1(w * .3) + ' ' + n1(y0 + 60 * s) + ' ' + n1(w * .34) + ' ' + n1(y0 - 30 * s) + 'S' + n1(w * .42) + ' ' + n1(y0 - 80 * s) + ' ' + n1(w * .46) + ' ' + n1(y0) + 'S' + n1(w * .56) + ' ' + n1(y0 + 50 * s) + ' ' + n1(w * .6) + ' ' + n1(y0 - 40 * s) + 'S' + n1(w * .7) + ' ' + n1(y0 - 100 * s) + ' ' + n1(w * .74) + ' ' + n1(y0 + 10 * s) + 'C' + n1(w * .77) + ' ' + n1(y0 + 60 * s) + ' ' + n1(w * .83) + ' ' + n1(y0 + 20 * s) + ' ' + n1(w * .86) + ' ' + n1(y0 - 20 * s);
+    o += '<path d="' + d + '" fill="none" stroke="' + p.ink + '" stroke-width="' + n1(4.2 * s) + '" stroke-linecap="round" stroke-opacity=".85"/><path d="' + d + '" fill="none" stroke="' + p.gold + '" stroke-width="' + n1(1.4 * s) + '" stroke-linecap="round" transform="translate(' + n1(1.5 * s) + ' ' + n1(2 * s) + ')" stroke-opacity=".8"/><path d="M' + n1(w * .12) + ' ' + n1(y0 + 52 * s) + 'C' + n1(w * .4) + ' ' + n1(y0 + 30 * s) + ' ' + n1(w * .6) + ' ' + n1(y0 + 75 * s) + ' ' + n1(w * .9) + ' ' + n1(y0 + 44 * s) + '" fill="none" stroke="' + p.ink + '" stroke-opacity=".7" stroke-width="' + n1(1.6 * s) + '"/>';
+    C.body.push(o); border(C, p.gold, .7); finish(C, { vig: .3 });
+  }
+  function ornate(C, p) { paper(C, { c: p.c, str: .55 }); border(C, p.gold, .85); M.guil(C, { nobase: true, c: ['#000', '#000'], lines: [p.gold, p.ink], n: 24, R: .22, rr: .36, d: .5, op: .55 }); finish(C, { vig: .35 }); }
+  function foilLines(C, p) { // gece mavisi + altın pin-stripe
+    base(C, p.c, 160);
+    var o = '', x; for (x = -C.L; x < C.L * 2; x += 14 * C.s) o += '<path d="M' + n1(x) + ' ' + n1(C.h) + 'L' + n1(x + C.h * .6) + ' 0" stroke="' + p.gold + '" stroke-opacity=".3" stroke-width="' + n1(1 * C.s) + '"/>';
+    C.body.push(o); C.body.push(R(C, LG(C, [[0, p.gold, 0], [.5, p.gold, .25], [1, p.gold, 0]], 0, 0, 1, 1), BM('screen')));
+    finish(C, p);
+  }
+  root.__FNXA.f = { paper: paper, linen: linen, herring: herring, wood: wood, engrave: engrave, intaglio: intaglio, border: border, ledger: ledger, gilt: gilt, coin: coin, crest: crest, seal: seal, bell: bell, flourish: flourish, ornate: ornate, foilLines: foilLines };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+(function (root) {
+  'use strict';
+  var A = root.__FNXA, M = A.m, F = A.f;
+  var S = {};
+  function B(c, o) { o = o || {}; o.c = c; return function (C) { A.brushed(C, o); }; }
+  function G(c, o) { o = o || {}; o.c = c; return function (C) { A.grain(C, o); }; }
+  function L(c, o) { o = o || {}; o.c = c; return function (C) { A.liquid(C, o); }; }
+  function Gl(c, o) { o = o || {}; o.c = c; return function (C) { A.glossy(C, o); }; }
+  function Rl(c, o) { o = o || {}; o.c = c; return function (C) { A.relief(C, o); }; }
+  /* Executive Materials 151-170 */
+  S[151] = B(['#0c0d10', '#2b2f36', '#06070a'], { ang: -18, sheen: '#8c97ad', str: .8 });
+  S[152] = B(['#80858d', '#cdd2da', '#6c7179'], { fine: true, ang: 0, sheen: '#ffffff' });
+  S[153] = B(['#8f97a3', '#dde2ea', '#7a828e'], { ang: 90, str: .95, grain: .2 });
+  S[154] = function (C) { M.damascus(C, { c: ['#16181c', '#d4d8de', '#7e848d'] }); };
+  S[155] = function (C) { A.mirror(C, { c: ['#f7f9fc', '#5d6572', '#0a0c11', '#dfe6f1', '#77808f', '#fbfcfe', '#2b303a'], amp: .6 }); };
+  S[156] = function (C) { A.mirror(C, { c: ['#eceff2', '#a3a9b1', '#f6f7f9', '#8a9099', '#dadde1'], amp: .3, fr: '0.002 0.004' }); };
+  S[157] = B(['#0e1219', '#232c3d', '#070a0f'], { ang: 24, sheen: '#6d89bd', str: .85 });
+  S[158] = function (C) { M.forged(C, { c: ['#101012'] }); };
+  S[159] = function (C) { A.weave(C, { c: ['#08080a', '#4a4b52'], cell: 22, twill: true, sp: '#ffffff', gl: .3 }); };
+  S[160] = G(['#26282b', '#4b4e53', '#1b1c1f'], { fr: '1.1', ss: .9, str: .6, sheen: '#cfd5dd' });
+  S[161] = B(['#16337f', '#4a7cf0', '#10235a'], { fine: true, ang: 90, sheen: '#a8c4ff', str: .7 });
+  S[162] = G(['#a7abb2', '#d6d9de', '#9a9ea5'], { fr: '1.4', ss: 1.2, str: .9, sheen: '#fff' });
+  S[163] = B(['#363b42', '#5d6672', '#272b31'], { ang: 32, str: .7, sheen: '#9fb0c8' });
+  S[164] = B(['#241a0f', '#74592a', '#150f08'], { ang: -8, sheen: '#e0c27a', str: .8 });
+  S[165] = B(['#c6a977', '#f3e1b2', '#b09058'], { fine: true, ang: 0, sheen: '#fff8dc' });
+  S[166] = function (C) { M.mesh(C, { c: ['#e0a0a0', '#fbdcd4', '#a8626c'], dark: ['#5a2c36', '#3a1c22'] }); };
+  S[167] = function (C) { M.patina(C, { c: ['#6d3a1d', '#b8693a', '#4a2412'], pat: '#4fb89f' }); };
+  S[168] = function (C) { M.guil(C, { c: ['#9aa0a9', '#e9edf2', '#838995'], lines: ['#ffffff', '#3b414b'], n: 36, R: .46, rr: .31, d: .55, op: .5, second: true }); };
+  S[169] = B(['#d3d6dc', '#f8f9fb', '#bcc0c7'], { fine: true, ang: 0, str: .55, sheen: '#fff' });
+  S[170] = B(['#44474d', '#7b808a', '#2c2f34'], { ang: 10, grain: .5, str: .55, sheen: '#c0c8d6' });
+  /* Luxury Craft 171-190 */
+  S[171] = Gl(['#020203', '#0c0c10', '#010102'], { ho: .16, hl: '#bcd0ff' });
+  S[172] = Gl(['#08080a', '#1d1d22', '#040405'], { ho: .2, hl: '#cfe0ff' });
+  S[173] = Gl(['#2a2c30', '#52565d', '#1b1d20'], { ho: .26, frost: .25 });
+  S[174] = Gl(['#173a73', '#4f86d6', '#0f2a57'], { ho: .35, frost: .55, hl: '#dff0ff' });
+  S[175] = function (C) { M.facets(C, { c: ['#e8f1f8', '#a8c6dd', '#f6fbff'], so: .55 }); };
+  S[176] = function (C) { M.facets(C, { c: ['#18202c', '#3e4d63', '#101620'], rainbow: true, so: .4 }); };
+  S[177] = function (C) { A.liquid(C, { c: ['#f7efe8', '#d8e8f2', '#f2dcec', '#e2f2e6', '#f7efe8'], fr: '0.006 0.009', amp: .5, pearl: true, vig: .12 }); M.hexes(C, { nobase: true, c: ['#fff', '#fff'], size: 13, line: '#ffffff', lo: .5, lw: .9 }); };
+  S[178] = L(['#0f5a63', '#2fb8a6', '#6a3ea0', '#2d7fd0', '#46c07a', '#0f5a63'], { fr: '0.007 0.012', amp: .9, pearl: true });
+  S[179] = function (C) { M.bands(C, { c: ['#0d0d10', '#2b2a2c', '#0f0f12', '#5a4a30', '#161619'], n: 36, gloss: true }); };
+  S[180] = function (C) { M.bands(C, { c: ['#0b3d2a', '#17794f', '#0a2a1d', '#2dae74', '#0f5b3a', '#7fd9a8'], n: 34, conc: true, amp: .18, fr: '0.007 0.007', gloss: true }); };
+  S[181] = function (C) { M.speckle(C, { c: ['#0e2a6b', '#1f4aa8', '#0a1c4a'], fr: '0.012', n: 260, fleck: ['#e8c25a', '#fff0b0', '#c89a2e'], spec: .2, vein: '#ffffff' }); };
+  S[182] = Rl(['#cdb79a', '#e8d6bb', '#b89f80'], { fr: '0.004 0.07', oct: 4, ss: 2.5, str: .8, blend: 'multiply', lc: '#fff' });
+  S[183] = function (C) { M.veins(C, { c: ['#0c0c0e', '#1b1b1e'], vein: ['#ffffff', '#c9c9cf', '#8e8e96'], n: 14, w: 1.8, gl: .16 }); };
+  S[184] = function (C) { M.veins(C, { c: ['#f4f1ea', '#e7e2d8'], vein: ['#b59a5c', '#8c8d92', '#3a3a3e'], n: 9, w: 3.6, gold: '#e8d6a0', gl: .25 }); };
+  S[185] = G(['#1c1d20', '#33363a', '#121315'], { fr: '0.7', oct: 4, ss: 1.2, str: .75, sheen: '#b8c0cc' });
+  S[186] = function (C) { M.cloison(C, { c: ['#0e2a63', '#17409a'], wire: '#e7c35c', cells: ['#c1272d', '#f1f1ea', '#1c8a5d', '#e7a43c', '#2a5db0'] }); };
+  S[187] = function (C) { M.guil(C, { c: ['#07204f', '#103f94', '#061a40'], lines: ['#d9b85a', '#f0d98a'], n: 30, R: .44, rr: .34, d: .5, op: .55 }); };
+  S[188] = function (C) { A.hatch(C, { c: ['#2b1b12', '#6a4026', '#1c110b'], step: 7, line: '#000', hi: '#e8c9a8', ho: .35, rot: 45 }); };
+  S[189] = Rl(['#5b2f1c', '#8a4c2f', '#3d1e11'], { fr: '0.09', oct: 3, ss: 4, str: .95, spec: .25 });
+  S[190] = function (C) { A.relief(C, { c: ['#d6c3a7', '#efe3cd', '#c1ab8a'], fr: '0.012 0.016', oct: 3, ss: 1.4, str: .7, spec: .18 }); };
+  /* Precision & Engineering 191-210 */
+  S[191] = function (C) { A.brushed(C, { c: ['#7c828b', '#c5cad2', '#656b74'], fine: true, ang: 45 }); };
+  S[192] = function (C) { M.spiral(C, { c: ['#5a6068', '#aab1bb', '#3d4249'] }); };
+  S[193] = function (C) { M.guil(C, { c: ['#555b64', '#c6ccd5', '#3b4048'], lines: ['#ffffff', '#20242a'], n: 60, R: .5, rr: .22, d: .3, op: .5, turns: 1 }); };
+  S[194] = function (C) { M.engine(C, { c: ['#868c95', '#d4d9e0', '#6b717a'], line: '#2a2e35' }); };
+  S[195] = function (C) { M.perf(C, { c: ['#9aa0a8', '#d8dce2', '#7b818a'], st: 24, hole: '#0c0d10' }); };
+  S[196] = function (C) { M.hexes(C, { c: ['#1b222c', '#33414f', '#10151c'], size: 10, line: '#7fd0ff', lo: .55, lw: .9, fill: '#223040', glow: true }); };
+  S[197] = function (C) { M.circuit(C, { c: ['#0b1f18', '#12372a', '#07140f'], trace: '#8ff0c4', pad: '#c6ffe4', tw: 2.2, n: 26 }); };
+  S[198] = function (C) { M.circuit(C, { c: ['#0d3a27', '#146a46', '#082a1c'], trace: '#e6c35a', pad: '#f7e08a', tw: 3, n: 30 }); };
+  S[199] = function (C) { A.hatch(C, { c: ['#606770', '#aeb5bf', '#454b53'], step: 9, line: '#000', hi: '#fff', ho: .5, lo: .6, rot: 45, lw: .3 }); };
+  S[200] = function (C) { M.laser(C, { c: ['#16171a', '#2c2f36', '#0d0e10'], hot: '#ffa24a' }); };
+  S[201] = function (C) { M.foil(C, { c: ['#ff4d9a', '#ffb347', '#e8ff5a', '#4dffb8', '#4db8ff', '#9a5dff', '#ff4d9a'], rep: 1.4, amp: .35, rot: 20 }); };
+  S[202] = function (C) { M.foil(C, { c: ['#9fe8ff', '#f3c6ff', '#fff2b0', '#b8ffd9', '#9fe8ff'], rep: 1.1, amp: .55, fr: '0.002 0.003', rot: 80, lo: .1 }); };
+  S[203] = function (C) { M.foil(C, { c: ['#2d5bff', '#a14dff', '#ff4daf', '#ffb84d', '#2d5bff'], rep: 3.2, sx: 1, sy: .12, amp: .22, fr: '0.002 0.02', rot: 0 }); };
+  S[204] = function (C) { M.fresnel(C, { c: ['#0f1b2b', '#1e3a5a', '#09111c'], glow: '#6ec6ff' }); };
+  S[205] = function (C) { A.weave(C, { c: ['#05080f', '#142238'], cell: 14, sp: '#4fd6ff', gl: .45, fiber: true }); M.laser(C, { c: ['#000', '#000'], hot: '#58e0ff' }); };
+  S[206] = function (C) { M.hexes(C, { c: ['#e3ddd2', '#c8c0b2', '#a89f90'], size: 16, line: '#6d665a', lo: .8, lw: 1.6, fill: '#d6cfc2', vary: .22 }); };
+  S[207] = function (C) { A.weave(C, { c: ['#1b222b', '#4f5d6d'], cell: 16, twill: true, sp: '#cfe6ff', gl: .36, rot: 0 }); };
+  S[208] = function (C) { A.weave(C, { c: ['#241f1a', '#5c5146'], cell: 12, sp: '#e8d8c0', gl: .2, fiber: true }); };
+  S[209] = function (C) { A.weave(C, { c: ['#9c7a14', '#f0c93a'], cell: 20, sp: '#fff6c0', gl: .4, fiber: true }); };
+  S[210] = function (C) { M.hexes(C, { c: ['#0b0d12', '#1a1f2b', '#06080b'], size: 20, line: '#b9c4d8', lo: .75, lw: 1.5, nodes: true, glow: false }); };
+  /* Finance & Heritage 211-230 */
+  S[211] = function (C) { F.engrave(C, { c: ['#e7efe0', '#cfe0c8', '#b7cfae'], ink: '#1d5a3a' }); };
+  S[212] = function (C) { F.seal(C, { paper: ['#efe6d4', '#dccdb0'], wax: '#9c1c2a' }); };
+  S[213] = function (C) { F.linen(C, { c: ['#d8cdb6', '#eee6d3', '#c7baa0'] }); };
+  S[214] = function (C) { M.guil(C, { c: ['#0e3a4a', '#1a6a84', '#0a2a38'], lines: ['#8fe0f5', '#f2d98a', '#ffffff'], n: 42, R: .46, rr: .27, d: .4, op: .45, second: true }); };
+  S[215] = function (C) { F.intaglio(C, { c: ['#2a2f2c', '#4c564f', '#1a1d1b'], ink: '#0a0c0b' }); };
+  S[216] = function (C) { F.paper(C, { c: ['#eef0f4', '#dfe3ea', '#f6f7fa'], str: .35 }); M.guil(C, { nobase: true, c: ['#fff', '#fff'], lines: ['#8a97b0'], n: 20, R: .3, rr: .33, d: .5, op: .45 }); };
+  S[217] = function (C) { F.ornate(C, { c: ['#e9dcc0', '#d6c49f', '#c3ad82'], gold: '#7a5a20', ink: '#6a2a1a' }); };
+  S[218] = function (C) { F.bell(C, { c: ['#0d1a33', '#1b2f57', '#08111f'], gold: '#e0b84e' }); };
+  S[219] = function (C) { F.gilt(C, { c: ['#b8902f', '#f0d27a', '#8d6a1e'], bars: true }); };
+  S[220] = function (C) { F.coin(C, { c: ['#5d6068', '#a3a8b1', '#43464d'] }); };
+  S[221] = function (C) { F.ledger(C, { c: ['#d9c79d', '#e9dbb7', '#c4ad7c'] }); };
+  S[222] = function (C) { F.crest(C, { c: ['#2a1a2e', '#4d2e56'], gold: '#d9b45a' }); };
+  S[223] = function (C) { A.relief(C, { c: ['#5a0f22', '#8a1c38', '#3d0916'], fr: '0.08', oct: 3, ss: 3, str: .9, spec: .22 }); F.border(C, '#e0c06a', .85); };
+  S[224] = function (C) { F.herring(C, { c: ['#0e1a3a', '#2a3f78'] }); };
+  S[225] = function (C) { A.grain(C, { c: ['#0e3d2a', '#1c6a47', '#0a2a1d'], fr: '0.9', ss: 1.4, str: .85, oct: 4 }); };
+  S[226] = function (C) { F.paper(C, { c: ['#efe7d3', '#fbf6e8', '#e1d6bb'], str: .4, laid: true }); F.border(C, '#9c8450', .55); };
+  S[227] = function (C) { F.foilLines(C, { c: ['#050a1a', '#0e1c42', '#030610'], gold: '#d9b85a' }); };
+  S[228] = function (C) { F.gilt(C, { c: ['#a88226', '#ecd079', '#8a6a1d'] }); M.guil(C, { nobase: true, c: ['#000', '#000'], lines: ['#5c4310', '#fff2b8'], n: 30, R: .36, rr: .34, d: .5, op: .5 }); };
+  S[229] = function (C) { F.wood(C, { c: ['#3a2216', '#6b4328', '#22130b'] }); };
+  S[230] = function (C) { F.flourish(C, { c: ['#f1ead8', '#e4d9bd', '#d3c4a1'], ink: '#1c1b3a', gold: '#b5902f' }); };
+  /* Modern Surface Lab 231-250 */
+  S[231] = function (C) { A.mirror(C, { c: ['#dfe4ec', '#5a6372', '#f4f6fa', '#2a303c', '#c7cfdb', '#eef1f6'], amp: .75, fr: '0.005 0.009' }); };
+  S[232] = L(['#fbf4f0', '#f1dfe9', '#dfe9f4', '#e9f4ea', '#fbf4f0'], { fr: '0.004 0.008', amp: .65, pearl: true, vig: .1 });
+  S[233] = L(['#2b1e6e', '#9b2fd1', '#ff5a8a', '#ffb347', '#3fd0c9', '#2b1e6e'], { fr: '0.006 0.009', amp: .85, rep: 1.2 });
+  S[234] = L(['#0b0d12', '#3a3f4b', '#1fb8a0', '#b34df0', '#f0a030', '#2a2f3a', '#0b0d12'], { fr: '0.008 0.012', amp: .75, rep: 1.4, vig: .35 });
+  S[235] = L(['#0d2b46', '#1fa8a0', '#7dd9a8', '#3e6fd8', '#8a4fd1', '#0d2b46'], { fr: '0.0045 0.007', amp: .9, blur: 6 * 1 });
+  S[236] = function (C) { A.glossy(C, { c: ['#222a38', '#4a5a78', '#151a24'], ho: .22, frost: .12 }); M.foil(C, { c: ['#ff6fa8', '#ffe27a', '#6fffc8', '#6fb8ff', '#d06fff', '#ff6fa8'], rep: 1, amp: .5, fr: '0.002 0.003', rot: 60, lo: 0 }); };
+  S[237] = L(['#f0ece8', '#dde6ee', '#f1e0e6', '#e2f0ea', '#f0ece8'], { fr: '0.003 0.005', amp: .5, blur: 14, pearl: true, vig: .12 });
+  S[238] = G(['#4a4f58', '#6a707b', '#383c44'], { fr: '0.6', ss: .6, str: .5, sheen: '#e6ebf5' });
+  S[239] = G(['#2b2d31', '#44474d', '#1e1f23'], { fr: '1.2', ss: 1.1, str: .8 });
+  S[240] = Rl(['#b79c78', '#dcc6a2', '#9b8160'], { fr: '0.75', oct: 4, ss: 3, str: .85 });
+  S[241] = function (C) { A.weave(C, { c: ['#0b0b0d', '#2c2d31'], cell: 20, twill: true, sp: '#ffffff', gl: .08 }); A.grain(C, { nobase: true, c: ['#000', '#000'], fr: '1.3', ss: 1, str: .35, blend: 'soft-light' }); };
+  S[242] = B(['#7a3c1e', '#d98a55', '#5a2a14'], { fine: true, ang: 0, sheen: '#ffd2a8' });
+  S[243] = B(['#14161a', '#383d46', '#0a0b0e'], { fine: true, ang: 20, sheen: '#7d88a0' });
+  S[244] = B(['#a6a9ae', '#e2e4e8', '#8c9096'], { fine: true, ang: 90, sheen: '#fff' });
+  S[245] = function (C) { M.moltenVeins(C, { c: ['#050505', '#17130d', '#030303'], gold: '#ffc94a' }); };
+  S[246] = function (C) { M.glacier(C, { c: ['#9fd4f0', '#5fa8d8', '#d6efff'] }); };
+  S[247] = function (C) { M.facets(C, { c: ['#4a3a30', '#8a7360', '#2c221b'], so: .25 }); };
+  S[248] = function (C) { M.speckle(C, { c: ['#1d1d20', '#38383c', '#111113'], fr: '0.03', n: 380, r: 3.2, fleck: ['#000', '#0a0a0c', '#505055'], ss: 3.5 }); };
+  S[249] = function (C) { M.widman(C, { c: ['#5b5f66', '#9aa0aa', '#3d4046'], hi: '#e9edf3', lo: '#2a2d32' }); };
+  S[250] = function (C) { M.topo(C, { c: ['#16352f', '#2a6a5c', '#0e221e'], line: '#a8e8d4', hi: '#ffffff' }); };
+  root.__FNXA.MAT = S;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+(function (root) {
+  'use strict';
+  var A = root.__FNXA, n1 = A.n1, lit = A.lit, mix = A.mix, R = A.R, BM = A.BM, GRAY = A.GRAY, turb = A.turb, FILT = A.FILT, seedOf = A.seedOf;
+  var WORD = { 'kırık beyaz': '#E4DCC6', 'beyaz': '#EFEBDD', 'krem': '#DCCBA3', 'fildişi': '#E6DABC', 'kemik': '#D6CAAE', 'koyu kırmızı': '#8A1D24', 'kırmızı': '#A82A2C', 'bordo': '#6A1730', 'lacivert': '#1B2A52', 'koyu mavi': '#1E3A6A', 'mavi': '#2E5E9E', 'indigo': '#1F2D68', 'siyah': '#1B1714', 'koyu kahve': '#3E2A1E', 'kiremit': '#A24E2E', 'hardal': '#C2962A', 'sarı': '#D2AE38', 'altın': '#B8964A', 'altın sarısı': '#B8964A', 'çam yeşili': '#2E5842', 'koyu yeşil': '#294833', 'yeşil': '#3B764C', 'pembe-kiremit': '#C07562' };
+  // 11×11 motifler: # ana, + vurgu, . zemin  (Anadolu kilim motif ailelerinin sadeleştirilmiş, ızgara/dokuma uyumlu çizimleri)
+  var MOT = {
+    311: ['.#########.', '.#.......#.', '.#.#####.#.', '.#.#...#.#.', '.#.#.+.#.#.', '.#.#...#.#.', '.#.#.....#.', '.#.#######.', '.#.........', '.#.........', '.#########.'],
+    312: ['.##.....##.', '#..#...#..#', '#.#.....#.#', '#.#..+..#.#', '#.#..#..#.#', '.##..#..##.', '.....#.....', '...#####...', '.....#.....', '.....#.....', '....###....'],
+    313: ['.....#.....', '....###....', '.....#.....', '..#.###.#..', '.#.#####.#.', '.#..###..#.', '.#...#...#.', '..#.###.#..', '....###....', '...#####...', '...#...#...'],
+    314: ['.#.#.#.#.#.', '..#######..', '.....#.....', '.#..###..#.', '#..#####..#', '#...###...#', '.#...#...#.', '..#.###.#..', '...#####...', '....###....', '.....+.....'],
+    315: ['....###....', '....#+#....', '.....#.....', '.#########.', '#.#.###.#.#', '#..#####..#', '.#..###..#.', '..#..#..#..', '...#####...', '....#.#....', '...##.##...'],
+    316: ['.....#.....', '....#+#....', '...#####...', '#.#..#..#.#', '.###.#.###.', '#.#.###.#.#', '...#####...', '.#..###..#.', '###..#..###', '.#...#...#.', '.....#.....'],
+    317: ['.....#.....', '....###....', '...#.#.#...', '.....#.....', '..#######..', '...#.#.#...', '.....#.....', '.#########.', '..#..#..#..', '.....#.....', '...#####...'],
+    318: ['....###....', '..##...##..', '.#.......#.', '.#...+...#.', '#....#....#', '#...###...#', '#..#####..#', '#.........#', '#.........#', '#.........#', '###########'],
+    319: ['#.#.#.#.#.#', '#.#.#.#.#.#', '#.#.#.#.#.#', '###########', '###########', '.+.+.+.+.+.', '###########', '###########', '#.#.#.#.#.#', '#.#.#.#.#.#', '#.#.#.#.#.#'],
+    320: ['.....#.....', '....#.#....', '...#...#...', '..#..+..#..', '.#.......#.', '#....#....#', '.#.......#.', '..#..+..#..', '...#...#...', '....#.#....', '.....#.....'],
+    321: ['#...#.#...#', '...#####...', '.##.....##.', '#...###...#', '#..##+##..#', '#...###...#', '.##.....##.', '...#####...', '#...#.#...#', '...........', '...........'],
+    322: ['.....#.....', '..#..#..#..', '...#.#.#...', '....###....', '.##.#+#.##.', '#####+#####', '.##.#+#.##.', '....###....', '...#.#.#...', '..#..#..#..', '.....#.....'],
+    323: ['###########', '.#.#.#.#.#.', '..#.#.#.#..', '...........', '+.+.+.+.+.+', '...........', '..#.#.#.#..', '.#.#.#.#.#.', '###########', '...........', '...........'],
+    324: ['...#...#...', '..###.###..', '...#...#...', '.#.......#.', '###..#..###', '.#..###..#.', '...#####...', '...#####...', '...##.##...', '...........', '...........'],
+    325: ['#.#.....#.#', '.###...###.', '..#######..', '....###....', '...#####...', '....###....', '....###....', '.....#.....', '...#.#.#...', '.....#.....', '....+.+....'],
+    326: ['###........', '..#........', '..#####....', '......#....', '......#####', '..........#', '....#######', '....#......', '....#######', '..........#', '........+##'],
+    327: ['..####.....', '.#....#....', '.#.+..#....', '..#..#.....', '...##......', '..#........', '.#.........', '.#...##....', '..#.#..#...', '...#..###..', '.........#.'],
+    328: ['.....#.....', '....###....', '...#.#.#...', '..#..#..#..', '.#...#...#.', '#...###...#', '....#+#....', '...##.##...', '..#.....#..', '.#.......#.', '...........'],
+    329: ['..#.....#..', '.###...###.', '..#.....#..', '.....#.....', '....###....', '.#.#####.#.', '###..#..###', '.#...#...#.', '.....#.....', '..#.....#..', '.###...###.'],
+    330: ['..#.....#..', '.#.#...#.#.', '#...#.#...#', '.#..+#+..#.', '..#..#..#..', '...#####...', '..#..#..#..', '.#..+#+..#.', '#...#.#...#', '.#.#...#.#.', '..#.....#..'],
+    331: ['.###...###.', '#...#.#...#', '#...###...#', '#....#....#', '.###.#.###.', '...#####...', '.###.#.###.', '#....#....#', '#...###...#', '#...#.#...#', '.###...###.'],
+    332: ['.....#.....', '....#.#....', '...#...#...', '..#..+..#..', '.#.......#.', '###########', '...........', '.....#.....', '....###....', '...#####...', '...........'],
+    333: ['##..##..##.', '.##..##..##', '..##..##..#', '#..##..##..', '...........', '+++++++++++', '...........', '##..##..##.', '.##..##..##', '..##..##..#', '#..##..##..'],
+    334: ['.....#.....', '....#.#....', '...#...#...', '...#...#...', '....#.#....', '.....#.....', '.....+.....', '....###....', '...##+##...', '....###....', '.....#.....'],
+    335: ['...........', '.#########.', '.#.......#.', '.#.......#.', '#.........#', '###########', '#....+....#', '#...+++...#', '#....+....#', '#.........#', '###########'],
+    336: ['#..........', '##.........', '.##........', '..##.......', '...##......', '....##.....', '.....##....', '......##...', '.......##..', '........##.', '.........##'],
+    337: ['.....#.....', '.....#.....', '..#..#..#..', '...#.#.#...', '....###....', '#####+#####', '....###....', '...#.#.#...', '..#..#..#..', '.....#.....', '.....#.....'],
+    338: ['...##.##...', '..#..#..#..', '..#.+#+.#..', '...#.#.#...', '.##.###.##.', '#..#+++#..#', '.##.###.##.', '....###....', '.....#.....', '...#.#.#...', '....###....'],
+    339: ['#.........#', '##.......##', '###.....###', '...........', '#.........#', '##.......##', '###.....###', '...........', '+++++++++++', '...........', '...........'],
+    340: ['.....#.....', '....#+#....', '...#...#...', '..#..#..#..', '.#..###..#.', '#..##+##..#', '.#..###..#.', '..#..#..#..', '...#...#...', '....#+#....', '.....#.....']
+  };
+  var BIGMOT = { 317: 1, 318: 1, 338: 1, 340: 1, 327: 1 }; // halı (düğümlü havlı): büyük merkez kompozisyon
+  function pal(item) {
+    var m = /renk paleti: ([^.]*)\./.exec(item.artDirection || item.art_direction || ''), ws = m ? m[1].split(',').map(function (s) { return s.trim(); }) : ['bordo', 'krem', 'lacivert'];
+    var cs = ws.map(function (w) { return WORD[w] || '#8A1D24'; });
+    while (cs.length < 3) cs.push('#DCCBA3');
+    return cs;
+  }
+  function lum(h) { var c = A.h2r(h); return (c[0] * .3 + c[1] * .59 + c[2] * .11) / 255; }
+  function build(C, num) {
+    var item = C.item, p = pal(item), ground = p[0], main = p[1], acc = p[2];
+    if (Math.abs(lum(ground) - lum(main)) < .22) { var t = main; main = acc; acc = t; }
+    if (Math.abs(lum(ground) - lum(main)) < .2) main = lum(ground) > .5 ? '#2a1c16' : '#E6DABC';
+    var cream = '#DCCBA3', pile = !!BIGMOT[num], u = Math.round((pile ? 9 : 11) * C.s), N = 11;
+    var fr = Math.round(15 * C.s), top = fr, bot = C.h - fr;
+    var cols = Math.floor(C.w / u), rows = Math.floor((bot - top) / u), ox = Math.round((C.w - cols * u) / 2), tw = 0;
+    var t = 6, mot = MOT[num], i, j;
+    var x0 = t, x1 = cols - t - 1, y0 = t, y1 = rows - t - 1, fw = x1 - x0 + 1, fh = y1 - y0 + 1;
+    // yoğunluk: tek büyük motif (halı) veya döşeli (kilim)
+    var cell = function (x, y) {
+      var d = Math.min(x, y, cols - 1 - x, rows - 1 - y);
+      if (d === 0) return cream; if (d === 1) return main;
+      if (d >= 2 && d <= 4) { var q = (y < t || y >= rows - t) ? x : y, tt = d - 2; return Math.abs((q % 6) - 3) <= (2 - tt) ? main : ground; }
+      if (d === 5) return acc;
+      var fx = x - x0, fy = y - y0, v = 0;
+      if (BIGMOT[num]) {
+        var k = Math.max(1, Math.min(Math.floor(fw / (N + 1)), Math.floor(fh / (N + 1)))), mx = Math.floor((fw - N * k) / 2), my = Math.floor((fh - N * k) / 2);
+        var ix = fx - mx, iy = fy - my;
+        if (ix >= 0 && iy >= 0 && ix < N * k && iy < N * k) { var ch = mot[Math.floor(iy / k)].charAt(Math.floor(ix / k)); v = ch === '#' ? 1 : ch === '+' ? 2 : 0; }
+        else { var ring = Math.min(fx, fy, fw - 1 - fx, fh - 1 - fy); if (ring === 1) v = 2; else if (ring === 3 && (fx + fy) % 4 < 2) v = 1; }
+      } else {
+        var sx = N + 2, sy = N + 2, rowI = Math.floor((fy + 1) / sy), off = (rowI % 2) ? Math.floor(sx / 2) : 0, gx = ((fx + off + 1) % sx), gy = ((fy + 1) % sy);
+        if (gx < N && gy < N) { var c2 = mot[gy].charAt(gx); v = c2 === '#' ? 1 : c2 === '+' ? 2 : 0; }
+      }
+      return v === 1 ? main : v === 2 ? acc : ground;
+    };
+    var out = '', y, x, rr = A.rng(A.hash(item.id));
+    out += '<rect x="0" y="' + top + '" width="' + C.w + '" height="' + (bot - top) + '" fill="' + cream + '"/>';
+    for (y = 0; y < rows; y++) {
+      var sh = (rr() - .5) * .09, run = null, xs = 0;
+      for (x = 0; x <= cols; x++) {
+        var col = x < cols ? cell(x, y) : null;
+        if (run !== col) { if (run) out += '<rect x="' + (ox + xs * u) + '" y="' + (top + y * u) + '" width="' + ((x - xs) * u) + '" height="' + u + '" fill="' + lit(run, sh) + '"/>'; run = col; xs = x; }
+      }
+      out += '<rect x="' + ox + '" y="' + (top + y * u + u - 1) + '" width="' + cols * u + '" height="1" fill="#000" fill-opacity=".16"/>';
+    }
+    // hücre dikey çözgü ipliği dokusu
+    var wf = FILT(C, turb('0.9 0.12', 3, seedOf(C)) + GRAY);
+    var body = '<g' + (pile ? ' filter="' + FILT(C, turb('0.07', 2, seedOf(C)) + '<feDisplacementMap in="SourceGraphic" in2="n" scale="' + Math.round(3 * C.s) + '" xChannelSelector="R" yChannelSelector="G"/>') + '"' : '') + '>' + out + '</g>';
+    C.body.push(R(C, '#2b211b'));
+    C.body.push(body);
+    C.body.push(R(C, '#808080', ' filter="' + wf + '"' + BM('overlay', pile ? .6 : .5)));
+    if (pile) { var pf = FILT(C, turb('0.55', 3, seedOf(C)) + '<feDiffuseLighting in="n" surfaceScale="2.2" diffuseConstant="1" lighting-color="#fff"><feDistantLight azimuth="225" elevation="58"/></feDiffuseLighting>'); C.body.push(R(C, '#808080', ' filter="' + pf + '"' + BM('overlay', .65))); }
+    // saçaklar (üst/alt)
+    var fz = '', tx; for (tx = 4 * C.s; tx < C.w; tx += 5 * C.s) { var jit = (rr() - .5) * 4 * C.s; fz += '<path d="M' + n1(tx) + ' ' + n1(top + 2) + 'Q' + n1(tx + jit) + ' ' + n1(top - fr * .5) + ' ' + n1(tx + jit * 1.6) + ' ' + 0 + '" fill="none" stroke="' + cream + '" stroke-width="' + n1(2.2 * C.s) + '" stroke-linecap="round"/><path d="M' + n1(tx) + ' ' + n1(bot - 2) + 'Q' + n1(tx - jit) + ' ' + n1(bot + fr * .5) + ' ' + n1(tx - jit * 1.6) + ' ' + C.h + '" fill="none" stroke="' + cream + '" stroke-width="' + n1(2.2 * C.s) + '" stroke-linecap="round"/>'; }
+    C.body.push(fz);
+    C.body.push(R(C, '#000', ' opacity=".0"'));
+    C.body.push(R(C, RGsoft(C), ' '));
+  }
+  function RGsoft(C) { return A.RG(C, [[0, '#fff', 0], [.75, '#000', 0], [1, '#000', .28]], .5, .5, .8); }
+  root.__FNXA.rug = build; root.__FNXA.RUGMOT = MOT;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+(function (root) {
+  'use strict';
+  var A = root.__FNXA, M = A.m, n1 = A.n1, lit = A.lit, mix = A.mix, LG = A.LG, RG = A.RG, FILT = A.FILT, R = A.R, BM = A.BM, GRAY = A.GRAY, turb = A.turb, seedOf = A.seedOf, nid = A.nid;
+  var TAU = Math.PI * 2;
+  // [renk1, renk2, renk3, desen, spor(f|b), ?=renk doğrulanmalı]
+  var CL = {
+    251: ['#A90432', '#FDB912', '#2a0010', 'halves', 'f'], 252: ['#FFE600', '#07235B', '#ffffff', 'stripes', 'f'], 253: ['#111111', '#F4F4F4', '#888', 'stripes', 'f'], 254: ['#7A1B3A', '#1FA2DC', '#ffffff', 'stripes', 'f'],
+    255: ['#00793A', '#F4F4F4', '#003d1d', 'hoops', 'f'], 256: ['#F26B21', '#1B2D5E', '#ffffff', 'chevron', 'f'], 257: ['#D9232D', '#F7C520', '#7a0a10', 'hoops', 'f'], 258: ['#00873E', '#101010', '#ffffff', 'stripes', 'f'],
+    259: ['#E20A17', '#F4F4F4', '#7a0008', 'stripes', 'f'], 260: ['#D6202C', '#141414', '#ffffff', 'stripes', 'f'], 261: ['#FFD500', '#0F2A5C', '#ffffff', 'stripes', 'f'], 262: ['#D6202C', '#141414', '#ffffff', 'hoops', 'f'],
+    263: ['#0B7A3E', '#141414', '#ffffff', 'hoops', 'f'], 264: ['#0E7D3C', '#F4F4F4', '#05301a', 'stripes', 'f'], 265: ['#1B4DA8', '#F4F4F4', '#0a2150', 'stripes', 'f'],
+    266: ['#F4F4F4', '#0B1F4A', '#C8A24A', 'solid', 'f'], 267: ['#A50044', '#004D98', '#EDBB00', 'stripes', 'f'], 268: ['#DA291C', '#111111', '#FBE122', 'solid', 'f'], 269: ['#C8102E', '#F4F4F4', '#00A398', 'solid', 'f'],
+    270: ['#6CABDD', '#F4F4F4', '#1C2C5B', 'solid', 'f'], 271: ['#EF0107', '#F4F4F4', '#9C824A', 'sash', 'f'], 272: ['#034694', '#F4F4F4', '#DBA111', 'solid', 'f'], 273: ['#DC052D', '#0066B2', '#F4F4F4', 'sash', 'f'],
+    274: ['#FDE100', '#111111', '#ffffff', 'chevron', 'f'], 275: ['#004170', '#DA291C', '#F4F4F4', 'center', 'f'], 276: ['#F4F4F4', '#111111', '#C8A24A', 'stripes', 'f'], 277: ['#FB090B', '#111111', '#ffffff', 'stripes', 'f'],
+    278: ['#0068A8', '#101010', '#ffffff', 'stripes', 'f'], 279: ['#F4F4F4', '#D2122E', '#111', 'center', 'f'], 280: ['#138A3D', '#F4F4F4', '#05301a', 'hoops', 'f'],
+    281: ['#FFE600', '#07235B', '#ffffff', 'stripes', 'b'], 282: ['#1D4C9E', '#F4F4F4', '#0a2150', 'chevron', 'b'], 283: ['#111111', '#F4F4F4', '#888', 'stripes', 'b'], 284: ['#A90432', '#FDB912', '#2a0010', 'halves', 'b'],
+    285: ['#00A0DF', '#1B1F4B', '#F4F4F4', 'sash', 'b', '?'], 286: ['#D6202C', '#00843D', '#F4F4F4', 'stripes', 'b', '?'], 287: ['#F5C400', '#14336B', '#F4F4F4', 'chevron', 'b', '?'], 288: ['#1E3A8A', '#C8102E', '#F4F4F4', 'sash', 'b', '?'],
+    289: ['#00793A', '#F4F4F4', '#003d1d', 'hoops', 'b'], 290: ['#14336B', '#F4F4F4', '#C8102E', 'hoops', 'b', '?'], 291: ['#C8102E', '#F4F4F4', '#111', 'halves', 'b', '?'], 292: ['#7A1B3A', '#1FA2DC', '#ffffff', 'halves', 'b'],
+    293: ['#E8561C', '#14336B', '#F4F4F4', 'chevron', 'b', '?'], 294: ['#1D4C9E', '#E8561C', '#F4F4F4', 'sash', 'b', '?'], 295: ['#C8102E', '#141414', '#F4F4F4', 'center', 'b', '?'],
+    296: ['#552583', '#FDB927', '#2b0f45', 'sash', 'b'], 297: ['#007A33', '#F4F4F4', '#BA9653', 'solid', 'b'], 298: ['#CE1141', '#111111', '#F4F4F4', 'hoops', 'b'], 299: ['#1D428A', '#FFC72C', '#F4F4F4', 'chevron', 'b'],
+    300: ['#006BB6', '#F58426', '#C4CED4', 'sash', 'b'], 301: ['#98002E', '#F9A01B', '#111111', 'chevron', 'b'], 302: ['#C4CED4', '#111111', '#F4F4F4', 'stripes', 'b'], 303: ['#00538C', '#002B5E', '#B8C4CA', 'sash', 'b'],
+    304: ['#1D1160', '#E56020', '#F9AD1B', 'chevron', 'b'], 305: ['#006BB6', '#ED174C', '#F4F4F4', 'sash', 'b'], 306: ['#F4F4F4', '#0B1F4A', '#C8A24A', 'solid', 'b'], 307: ['#A50044', '#004D98', '#EDBB00', 'stripes', 'b'],
+    308: ['#D6202C', '#F4F4F4', '#7a0008', 'stripes', 'b'], 309: ['#0B7A3E', '#F4F4F4', '#05301a', 'solid', 'b'], 310: ['#111111', '#F4F4F4', '#888', 'stripes', 'b']
+  };
+  function kit(C, c1, c2, c3, pat, rr) {
+    var w = C.w, h = C.h, o = '', i, n, s = C.s;
+    o += R(C, c1);
+    if (pat === 'stripes') { n = 5 + Math.floor(rr() * 4); var sw = w / n; for (i = 0; i < n; i += 2) o += '<rect x="' + n1(i * sw) + '" width="' + n1(sw) + '" height="' + h + '" fill="' + c2 + '"/>'; }
+    else if (pat === 'halves') { o += '<rect x="' + w / 2 + '" width="' + w / 2 + '" height="' + h + '" fill="' + c2 + '"/>'; }
+    else if (pat === 'hoops') { n = 6 + Math.floor(rr() * 4); var hh = h / n; for (i = 0; i < n; i += 2) o += '<rect y="' + n1(i * hh) + '" width="' + w + '" height="' + n1(hh) + '" fill="' + c2 + '"/>'; }
+    else if (pat === 'sash') { var th = Math.max(w, h) * .22; o += '<path d="M' + -w * .1 + ' ' + h * .78 + 'L' + w * .78 + ' ' + -h * .1 + 'L' + w * 1.1 + ' ' + -h * .1 + 'L' + w * 1.1 + ' ' + h * .1 + 'L' + w * .1 + ' ' + h * 1.1 + 'L' + -w * .1 + ' ' + h * 1.1 + 'Z" fill="' + c2 + '"/><path d="M' + -w * .1 + ' ' + h * .98 + 'L' + w * .98 + ' ' + -h * .1 + 'L' + w * 1.1 + ' ' + -h * .1 + 'L' + w * 1.1 + ' ' + h * .02 + 'L' + w * .02 + ' ' + h * 1.1 + 'L' + -w * .1 + ' ' + h * 1.1 + 'Z" fill="' + c3 + '" fill-opacity=".9"/>'; }
+    else if (pat === 'chevron') { var k, st = h / 7; for (k = 0; k < 5; k++) o += '<path d="M0 ' + n1(k * st * 1.2) + 'L' + w / 2 + ' ' + n1(k * st * 1.2 + st * 1.1) + 'L' + w + ' ' + n1(k * st * 1.2) + 'V' + n1(k * st * 1.2 + st * .55) + 'L' + w / 2 + ' ' + n1(k * st * 1.2 + st * 1.65) + 'L0 ' + n1(k * st * 1.2 + st * .55) + 'Z" fill="' + (k % 2 ? c3 : c2) + '"/>'; }
+    else if (pat === 'center') { o += '<rect x="' + w * .34 + '" width="' + w * .32 + '" height="' + h + '" fill="' + c2 + '"/><rect x="' + w * .31 + '" width="' + w * .025 + '" height="' + h + '" fill="' + c3 + '"/><rect x="' + w * .665 + '" width="' + w * .025 + '" height="' + h + '" fill="' + c3 + '"/>'; }
+    else { o += '<path d="M0 ' + h * .2 + 'H' + w + 'V' + h * .27 + 'H0Z" fill="' + c3 + '"/><path d="M0 ' + h * .86 + 'H' + w + 'V' + h * .9 + 'H0Z" fill="' + c2 + '"/>'; }
+    return o;
+  }
+  function pitchLines(C, sport, col) {
+    var w = C.w, h = C.h, s = C.s, m = Math.min(w, h), o = '', st = ' fill="none" stroke="' + col + '" stroke-opacity=".28" stroke-width="' + n1(3 * s) + '"';
+    if (sport === 'f') { o += '<path d="M0 ' + h / 2 + 'H' + w + '"' + st + '/><circle cx="' + w / 2 + '" cy="' + h / 2 + '" r="' + n1(m * .2) + '"' + st + '/><circle cx="' + w / 2 + '" cy="' + h / 2 + '" r="' + n1(8 * s) + '" fill="' + col + '" fill-opacity=".3"/><rect x="' + w * .22 + '" y="' + -4 + '" width="' + w * .56 + '" height="' + h * .16 + '"' + st + '/><rect x="' + w * .22 + '" y="' + h * .84 + '" width="' + w * .56 + '" height="' + h * .2 + '"' + st + '/>'; }
+    else { o += '<circle cx="' + w / 2 + '" cy="' + h * .5 + '" r="' + n1(m * .16) + '"' + st + '/><rect x="' + w * .32 + '" y="' + h * .78 + '" width="' + w * .36 + '" height="' + h * .3 + '"' + st + '/><path d="M' + w * .1 + ' ' + h * 1.02 + 'V' + h * .74 + 'A' + w * .4 + ' ' + w * .4 + ' 0 0 1 ' + w * .9 + ' ' + h * .74 + 'V' + h * 1.02 + '"' + st + '/><circle cx="' + w / 2 + '" cy="' + h * .93 + '" r="' + n1(m * .05) + '"' + st + '/><path d="M0 ' + h * .12 + 'H' + w + '"' + st + '/>'; }
+    return o;
+  }
+  function scarf(C, c1, c2, rr) {
+    var w = C.w, h = C.h, s = C.s, L = Math.hypot(w, h) * 1.2, bw = 74 * s, o = '', i, nstr = 14, sw = L / nstr;
+    var cx = w * .5, cy = h * (C.port ? .72 : .78), ang = C.port ? -14 : -9;
+    o += '<g transform="rotate(' + ang + ' ' + n1(cx) + ' ' + n1(cy) + ')"><g transform="translate(' + n1(cx - L / 2) + ' ' + n1(cy - bw / 2) + ')">';
+    o += '<rect x="0" y="' + n1(4 * s) + '" width="' + n1(L) + '" height="' + n1(bw) + '" fill="#000" fill-opacity=".35"/>';
+    for (i = 0; i < nstr; i++) o += '<rect x="' + n1(i * sw) + '" width="' + n1(sw + 1) + '" height="' + n1(bw) + '" fill="' + (i % 2 ? c2 : c1) + '"/>';
+    o += '<rect width="' + n1(L) + '" height="' + n1(bw) + '" fill="' + LG(C, [[0, '#fff', .28], [.35, '#fff', 0], [1, '#000', .35]], 0, 0, 0, 1) + '"/>';
+    var jj; for (jj = 0; jj < L; jj += 7 * s) { o += '<path d="M' + n1(jj) + ' ' + n1(bw) + 'q' + n1((rr() - .5) * 3 * s) + ' ' + n1(9 * s) + ' ' + n1((rr() - .5) * 4 * s) + ' ' + n1(15 * s) + '" stroke="' + (Math.floor(jj / sw) % 2 ? c2 : c1) + '" stroke-width="' + n1(3 * s) + '" fill="none" stroke-linecap="round"/><path d="M' + n1(jj) + ' 0q' + n1((rr() - .5) * 3 * s) + ' ' + n1(-9 * s) + ' ' + n1((rr() - .5) * 4 * s) + ' ' + n1(-15 * s) + '" stroke="' + (Math.floor(jj / sw) % 2 ? c2 : c1) + '" stroke-width="' + n1(3 * s) + '" fill="none" stroke-linecap="round"/>'; }
+    // örgü dokusu
+    o += '</g></g>';
+    return o;
+  }
+  function build(C, num) {
+    var d = CL[num], c1 = d[0], c2 = d[1], c3 = d[2], pat = d[3], sp = d[4], rr = A.rng(A.hash(C.item.id)), w = C.w, h = C.h, s = C.s, i;
+    var o = kit(C, c1, c2, c3, pat, rr);
+    C.body.push(o);
+    // dokuma kumaş (forma) dokusu
+    var kn = nid(C, 'kn'); C.defs.push('<pattern id="' + kn + '" width="' + n1(7 * s) + '" height="' + n1(6 * s) + '" patternUnits="userSpaceOnUse"><path d="M0 0l' + n1(3.5 * s) + ' ' + n1(6 * s) + 'l' + n1(3.5 * s) + ' ' + n1(-6 * s) + '" fill="none" stroke="#000" stroke-opacity=".16" stroke-width="' + n1(1 * s) + '"/><path d="M0 ' + n1(3 * s) + 'l' + n1(3.5 * s) + ' ' + n1(3 * s) + 'l' + n1(3.5 * s) + ' ' + n1(-3 * s) + '" fill="none" stroke="#fff" stroke-opacity=".1" stroke-width="' + n1(.8 * s) + '"/></pattern>');
+    C.body.push(R(C, 'url(#' + kn + ')'));
+    var f = FILT(C, turb('0.8', 2, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('overlay', .4)));
+    C.body.push(pitchLines(C, sp, lum(c1) > .55 ? '#000' : '#fff'));
+    // stadyum ışıkları
+    C.body.push(R(C, RG(C, [[0, '#fff', .55], [1, '#fff', 0]], 0, 0, .9), BM('soft-light')));
+    C.body.push(R(C, RG(C, [[0, '#fff', .4], [1, '#fff', 0]], 1, 0, .8), BM('soft-light')));
+    for (i = 0; i < 7; i++) { var a = (.1 + i * .13) * Math.PI; C.body.push('<path d="M' + (i % 2 ? w : 0) + ' 0L' + n1((i % 2 ? w : 0) + Math.cos(a) * C.L * (i % 2 ? -1 : 1)) + ' ' + n1(Math.sin(a) * C.L) + '" stroke="#fff" stroke-opacity=".05" stroke-width="' + n1(26 * s) + '"/>'); }
+    C.body.push(scarf(C, c1 === c2 ? c3 : c1, c2, rr));
+    // konfeti / meşale kıvılcımı
+    var cf = ''; for (i = 0; i < 70; i++) cf += '<rect x="' + n1(rr() * w) + '" y="' + n1(rr() * h * .7) + '" width="' + n1((2 + rr() * 5) * s) + '" height="' + n1((2 + rr() * 8) * s) + '" fill="' + [c1, c2, c3, '#fff'][Math.floor(rr() * 4)] + '" fill-opacity="' + n1(.35 + rr() * .5) + '" transform="rotate(' + Math.floor(rr() * 180) + ' ' + n1(rr() * w) + ' ' + n1(rr() * h) + ')"/>';
+    C.body.push(cf);
+    C.body.push(R(C, RG(C, [[0, '#000', 0], [.62, '#000', 0], [1, '#000', .5]], .5, .5, .8)));
+  }
+  function lum(hx) { var c = A.h2r(hx); return (c[0] * .3 + c[1] * .59 + c[2] * .11) / 255; }
+  root.__FNXA.club = build; root.__FNXA.CLUBS = CL;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+(function (root) {
+  'use strict';
+  var A = root.__FNXA, n1 = A.n1, lit = A.lit, mix = A.mix, LG = A.LG, RG = A.RG, FILT = A.FILT, R = A.R, BM = A.BM, GRAY = A.GRAY, turb = A.turb, seedOf = A.seedOf, nid = A.nid;
+  var TAU = Math.PI * 2;
+  // [zemin, ikincil, vurgu] — yalnızca renk ailesi; karakter çizimi/benzerliği YOKTUR (lisanslı/özel illüstrasyon gerekir)
+  var PAL = {
+    1: ['#C9232B', '#FFC72C', '#1F4E9E'], 2: ['#9B5E38', '#2E8C8C', '#E0BE82'], 3: ['#6CBCE6', '#234C7E', '#F2F6FA'], 4: ['#1F3A6B', '#C4CAD2', '#D8B25A'], 5: ['#F5C80F', '#F28C1E', '#2A2A2E'], 6: ['#14161B', '#2E7DE0', '#B5BDC8'],
+    7: ['#3C9E3F', '#E8D43A', '#14161B'], 8: ['#1A9BD6', '#F2F6FA', '#D7262C'], 9: ['#6A3BA8', '#D8B25A', '#2FB8B0'], 10: ['#2FB8B0', '#B58CD8', '#F2F6FA'], 11: ['#EAD13A', '#3E9E58', '#D7262C'], 12: ['#2E6FD0', '#F2F6FA', '#D7262C'],
+    13: ['#5FAE4A', '#F28C1E', '#8B4FD0'], 14: ['#5E6B3A', '#C8B98A', '#2C3320'], 15: ['#1A1A1D', '#F2F6FA', '#D7262C'], 16: ['#C62828', '#F2A0A0', '#2A0A0A'], 17: ['#B3261E', '#C4CAD2', '#1A1A1D'], 18: ['#F2F6FA', '#2E7DE0', '#D7262C'],
+    19: ['#D7262C', '#F2F6FA', '#14161B'], 20: ['#F28C1E', '#2A2A2E', '#F5C80F'], 21: ['#D7262C', '#3C9E3F', '#F2F6FA'], 22: ['#17A89E', '#14161B', '#F2C6D8'], 23: ['#8E96A3', '#14161B', '#E8D8A8'], 24: ['#4A4F5C', '#E3B341', '#14161B'],
+    25: ['#2F7DD6', '#F2F6FA', '#F5C80F'], 26: ['#E0701E', '#14161B', '#F2F6FA'], 27: ['#6A3BA8', '#F2F6FA', '#F5C80F'], 28: ['#4B3B7A', '#E8A33C', '#F2F6FA'], 29: ['#3B6E8F', '#C9C2A8', '#14161B'], 30: ['#14161B', '#E8D43A', '#D7262C'],
+    31: ['#4FB6EE', '#F2F6FA', '#F5C80F'], 32: ['#F2B33A', '#E0701E', '#14161B'], 33: ['#F48FB1', '#FCE4EC', '#C2185B'], 34: ['#2A1B4A', '#C62850', '#B0B6C2'], 35: ['#A9DCF5', '#F2F6FA', '#3F72C4'], 36: ['#3FB9A8', '#BFEFE3', '#F2C94C'],
+    37: ['#F2701E', '#FFD54F', '#B71C1C'], 38: ['#B388EB', '#E1D2F9', '#F5C80F'], 39: ['#E86A8A', '#F8C9D4', '#6A1B9A'], 40: ['#5E8C6A', '#E8EEC4', '#C62850'], 41: ['#7DB36A', '#F4B6C2', '#6B4A2E'], 42: ['#C9E04E', '#F5F2B8', '#4A6B1E'],
+    43: ['#101714', '#3F7A4A', '#B9E6A0'], 44: ['#2E6B3E', '#9CCB6A', '#6B4A2E'], 45: ['#C98A5E', '#F2D6B8', '#3A5FA8'], 46: ['#3F82D8', '#F2F6FA', '#F5C80F'], 47: ['#7C4DFF', '#FF80AB', '#4FD8EB'], 48: ['#F2F6FA', '#F28C1E', '#14161B'],
+    49: ['#8E24AA', '#E040FB', '#FFD54F'], 50: ['#7E57C2', '#F8BBD0', '#26A69A'],
+    51: ['#2FA8F0', '#F2F6FA', '#FF8A3D'], 52: ['#FF8A3D', '#2FA8F0', '#FFD54F'], 53: ['#FF7EB6', '#B388EB', '#F2F6FA'], 54: ['#3F6EC8', '#FF7EB6', '#F5C80F'], 55: ['#F5A3C7', '#3A5FA8', '#F2F6FA'], 56: ['#E0872E', '#F5C896', '#6A3BA8'],
+    57: ['#8E4FD0', '#14161B', '#FFD54F'], 58: ['#A0C84A', '#F2F6FA', '#3A5FA8'], 59: ['#FFD93A', '#F28C1E', '#14161B'], 60: ['#7B2FD0', '#FF4FA0', '#F2F6FA'], 61: ['#14161B', '#F2F6FA', '#D7262C'], 62: ['#E8505B', '#F2F6FA', '#14161B'],
+    63: ['#2FB8A0', '#FFD54F', '#14161B'], 64: ['#4CAF50', '#F2F6FA', '#FFB300'], 65: ['#43C463', '#F2F6FA', '#14161B'], 66: ['#78909C', '#4FD8EB', '#14161B'], 67: ['#2E6FD0', '#FFD54F', '#F2F6FA'], 68: ['#00B8D4', '#F2F6FA', '#D7262C'],
+    69: ['#FFB300', '#6A3BA8', '#F2F6FA'], 70: ['#F2F6FA', '#FF4081', '#14161B'],
+    121: ['#E5252A', '#1F4EC2', '#FFD43B'], 122: ['#2FA84F', '#1F4EC2', '#F2F6FA'], 123: ['#F48FB1', '#FFD43B', '#4FA8F0'], 124: ['#3E9E3F', '#F2701E', '#14161B'], 125: ['#5BC85B', '#F2F6FA', '#E5252A'], 126: ['#3E9E3F', '#C9B27C', '#F2F6FA'],
+    127: ['#7B4FC2', '#F5D26B', '#F2F6FA'], 128: ['#F8A6C8', '#E5252A', '#F2F6FA'], 129: ['#1F6FE0', '#F2F6FA', '#E5252A'], 130: ['#F2A33A', '#F2F6FA', '#1F6FE0'], 131: ['#D7262C', '#F2F6FA', '#3E9E3F'], 132: ['#14161B', '#D7262C', '#F2F6FA'],
+    133: ['#F28C1E', '#4FA8F0', '#6A3BA8'], 134: ['#7B4FC2', '#F5C80F', '#F2F6FA'], 135: ['#1F8F8F', '#C9A26B', '#14161B'], 136: ['#6B7A3A', '#D8B25A', '#14161B'], 137: ['#00BCD4', '#6B4A2E', '#8E96A3'], 138: ['#4CAF50', '#14161B', '#A5D6A7'],
+    139: ['#FFD93A', '#1F4EC2', '#F2F6FA'], 140: ['#F2F6FA', '#D7262C', '#14161B']
+  };
+  var SYM = [
+    function (c, r, col, sw) { return '<path d="M0 ' + -r + 'L' + r * .55 + ' 0L' + r * .1 + ' 0L' + r * .5 + ' ' + r + 'L' + -r * .5 + ' ' + r * .1 + 'L' + -r * .05 + ' ' + r * .1 + 'Z" '; }, // şimşek
+    function (c, r) { var d = '', i; for (i = 0; i < 10; i++) { var a = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? r * .42 : r; d += (i ? 'L' : 'M') + n1(Math.cos(a) * q) + ' ' + n1(Math.sin(a) * q); } return '<path d="' + d + 'Z" '; }, // yıldız
+    function (c, r) { return '<path d="M0 ' + r * .9 + 'C' + -r * 1.4 + ' ' + -r * .1 + ' ' + -r * .5 + ' ' + -r * 1.1 + ' 0 ' + -r * .35 + 'C' + r * .5 + ' ' + -r * 1.1 + ' ' + r * 1.4 + ' ' + -r * .1 + ' 0 ' + r * .9 + 'Z" '; }, // kalp
+    function (c, r) { return '<path d="M0 ' + -r + 'L' + r * .8 + ' 0L0 ' + r + 'L' + -r * .8 + ' 0Z" '; }, // elmas
+    function (c, r) { return '<path d="M' + -r + ' ' + r * .7 + 'L' + -r + ' ' + -r * .2 + 'L' + -r * .5 + ' ' + r * .2 + 'L0 ' + -r * .8 + 'L' + r * .5 + ' ' + r * .2 + 'L' + r + ' ' + -r * .2 + 'L' + r + ' ' + r * .7 + 'Z" '; }, // taç (genel)
+    function (c, r) { return '<path d="M0 ' + -r + 'C' + r * .9 + ' ' + -r * .2 + ' ' + r * .7 + ' ' + r * .9 + ' 0 ' + r * .9 + 'C' + -r * .7 + ' ' + r * .9 + ' ' + -r * .9 + ' ' + -r * .2 + ' 0 ' + -r + 'Z" '; }, // alev/damla
+    function (c, r) { return '<path d="M' + r * .6 + ' ' + -r * .9 + 'A' + r + ' ' + r + ' 0 1 0 ' + r * .6 + ' ' + r * .9 + 'A' + r * .75 + ' ' + r * .75 + ' 0 1 1 ' + r * .6 + ' ' + -r * .9 + 'Z" '; }, // ay
+    function (c, r) { return '<path d="M' + -r + ' 0Q' + -r * .5 + ' ' + -r * .8 + ' 0 0T' + r + ' 0" fill="none" ' ; }, // dalga (stroke)
+    function (c, r) { return '<path d="M' + -r * .9 + ' ' + -r * .9 + 'H' + r * .9 + 'V' + r * .2 + 'Q' + r * .9 + ' ' + r * .8 + ' 0 ' + r + 'Q' + -r * .9 + ' ' + r * .8 + ' ' + -r * .9 + ' ' + r * .2 + 'Z" '; }, // kalkan
+    function (c, r) { return '<path d="M0 ' + -r + 'Q' + r + ' ' + -r * .6 + ' ' + r * .7 + ' ' + r * .5 + 'Q' + r * .3 + ' ' + r * .9 + ' 0 ' + r + 'Q' + -r * .3 + ' ' + r * .9 + ' ' + -r * .7 + ' ' + r * .5 + 'Q' + -r + ' ' + -r * .6 + ' 0 ' + -r + 'Z" '; }, // yaprak
+    function (c, r) { var d = '', i; for (i = 0; i < 16; i++) { var a = i * TAU / 16, q = i % 2 ? r * .78 : r; d += (i ? 'L' : 'M') + n1(Math.cos(a) * q) + ' ' + n1(Math.sin(a) * q); } return '<path d="' + d + 'Z" '; }, // dişli/güneş
+    function (c, r) { return '<path d="M' + -r + ' ' + r * .5 + 'L' + -r * .35 + ' ' + -r * .7 + 'L0 ' + r * .1 + 'L' + r * .35 + ' ' + -r * .7 + 'L' + r + ' ' + r * .5 + 'Z" '; } // zirve
+  ];
+  function sym(C, k, r, fill, line) {
+    var f = SYM[k % SYM.length](C, r), s = C.s;
+    if (/fill="none"/.test(f)) return f + 'stroke="' + line + '" stroke-width="' + n1(9 * s) + '" stroke-linecap="round"/>';
+    return f + 'fill="' + fill + '" stroke="' + line + '" stroke-width="' + n1(5 * s) + '" stroke-linejoin="round"/>';
+  }
+  function emblem(C, rr, p, ink) {
+    var cx = C.w * (C.port ? .5 : .68), cy = C.h * (C.port ? .42 : .5), r = Math.min(C.w, C.h) * .2, k = Math.floor(rr() * 12), o = '';
+    o += '<g transform="translate(' + n1(cx) + ' ' + n1(cy) + ')">';
+    o += '<circle r="' + n1(r * 1.55) + '" fill="' + p[2] + '" fill-opacity=".16"/><circle r="' + n1(r * 1.55) + '" fill="none" stroke="' + p[2] + '" stroke-opacity=".6" stroke-width="' + n1(2.5 * C.s) + '" stroke-dasharray="' + n1(10 * C.s) + ' ' + n1(7 * C.s) + '"/>';
+    o += '<g transform="translate(' + n1(5 * C.s) + ' ' + n1(7 * C.s) + ')" opacity=".35">' + sym(C, k, r, '#000', '#000') + '</g>' + sym(C, k, r, p[1], ink) + '</g>';
+    return o;
+  }
+  /* --- Cars: yarış pisti --- */
+  function cars(C, num, p, rr) {
+    var w = C.w, h = C.h, s = C.s, o = '', i;
+    C.body.push(R(C, LG(C, [[0, lit(p[0], -.55)], [.55, lit(p[0], -.15)], [1, lit(p[0], .1)]], 0, 0, 0, 1)));
+    // livery şeritleri
+    var ang = -20 + rr() * 40; o += '<g transform="rotate(' + n1(ang) + ' ' + w / 2 + ' ' + h / 2 + ')">';
+    for (i = 0; i < 3; i++) o += '<rect x="' + -w + '" y="' + n1(h * (.18 + i * .09 + rr() * .02)) + '" width="' + w * 3 + '" height="' + n1((10 + i * 8) * s) + '" fill="' + [p[1], p[2], '#fff'][i] + '" fill-opacity="' + [.85, .8, .4][i] + '"/>';
+    o += '</g>'; C.body.push(o); o = '';
+    // eğimli pist elipsleri
+    for (i = 0; i < 9; i++) o += '<ellipse cx="' + n1(w * .5) + '" cy="' + n1(h * 1.05) + '" rx="' + n1(w * (.35 + i * .12)) + '" ry="' + n1(h * (.12 + i * .09)) + '" fill="none" stroke="' + (i % 3 === 0 ? '#fff' : p[1]) + '" stroke-opacity="' + (i % 3 === 0 ? .5 : .22) + '" stroke-width="' + n1((i % 3 === 0 ? 4 : 2) * s) + '"' + (i % 3 === 0 ? ' stroke-dasharray="' + n1(26 * s) + ' ' + n1(18 * s) + '"' : '') + '/>';
+    C.body.push(o); o = '';
+    // ışık izleri
+    for (i = 0; i < 12; i++) { var y = h * (.1 + rr() * .6), x = w * (rr() * .5), L = w * (.25 + rr() * .5); o += '<path d="M' + n1(x) + ' ' + n1(y) + 'q' + n1(L * .5) + ' ' + n1(-30 * s - rr() * 60 * s) + ' ' + n1(L) + ' ' + n1(-10 * s) + '" fill="none" stroke="' + (i % 2 ? p[1] : p[2]) + '" stroke-opacity="' + n1(.25 + rr() * .5) + '" stroke-width="' + n1((2 + rr() * 5) * s) + '" stroke-linecap="round"/>'; }
+    C.body.push('<g filter="' + A.m.glow(C, 3 * s) + '">' + o + '</g>'); o = '';
+    // damalı bayrak şeridi
+    var cs = 16 * s, band = ''; for (i = 0; i < Math.ceil(w / cs); i++) { band += '<rect x="' + n1(i * cs) + '" y="0" width="' + n1(cs) + '" height="' + n1(cs) + '" fill="' + (i % 2 ? '#fff' : '#111') + '" fill-opacity=".9"/><rect x="' + n1(i * cs) + '" y="' + n1(cs) + '" width="' + n1(cs) + '" height="' + n1(cs) + '" fill="' + (i % 2 ? '#111' : '#fff') + '" fill-opacity=".9"/>'; }
+    C.body.push(band);
+    // jant (genel) arka plan
+    var cx = w * (C.port ? .5 : .68), cy = h * (C.port ? .42 : .5), rr0 = Math.min(w, h) * .36, sp = 5 + Math.floor(rr() * 4), hub = '<circle cx="' + n1(cx) + '" cy="' + n1(cy) + '" r="' + n1(rr0) + '" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="' + n1(22 * s) + '"/>';
+    for (i = 0; i < sp; i++) { var a = i * TAU / sp; hub += '<path d="M' + n1(cx + Math.cos(a) * rr0 * .25) + ' ' + n1(cy + Math.sin(a) * rr0 * .25) + 'L' + n1(cx + Math.cos(a) * rr0) + ' ' + n1(cy + Math.sin(a) * rr0) + '" stroke="#fff" stroke-opacity=".1" stroke-width="' + n1(12 * s) + '" stroke-linecap="round"/>'; }
+    C.body.push(hub);
+    var f = FILT(C, turb('0.9', 3, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('overlay', .35)));
+  }
+  /* --- Adventure Time: şekerleme diyarı --- */
+  function candy(C, num, p, rr) {
+    var w = C.w, h = C.h, s = C.s, o = '', i, k;
+    C.body.push(R(C, LG(C, [[0, lit(p[0], .05)], [.6, lit(p[1], .25)], [1, lit(p[1], .5)]], 0, 0, 0, 1)));
+    // güneş / ay
+    C.body.push('<circle cx="' + n1(w * (.2 + rr() * .6)) + '" cy="' + n1(h * (.14 + rr() * .1)) + '" r="' + n1(Math.min(w, h) * .1) + '" fill="' + p[2] + '" fill-opacity=".85"/>');
+    for (i = 0; i < 26; i++) { var x = rr() * w, y = rr() * h * .5, r = (3 + rr() * 7) * s; o += '<path d="M' + n1(x) + ' ' + n1(y - r) + 'Q' + n1(x) + ' ' + n1(y) + ' ' + n1(x + r) + ' ' + n1(y) + 'Q' + n1(x) + ' ' + n1(y) + ' ' + n1(x) + ' ' + n1(y + r) + 'Q' + n1(x) + ' ' + n1(y) + ' ' + n1(x - r) + ' ' + n1(y) + 'Q' + n1(x) + ' ' + n1(y) + ' ' + n1(x) + ' ' + n1(y - r) + 'Z" fill="#fff" fill-opacity="' + n1(.4 + rr() * .5) + '"/>'; }
+    C.body.push(o); o = '';
+    // bulutlar
+    for (i = 0; i < 4; i++) { var cx = rr() * w, cy = h * (.15 + rr() * .3), cw = (60 + rr() * 90) * s; o += '<g fill="#fff" fill-opacity=".8"><ellipse cx="' + n1(cx) + '" cy="' + n1(cy) + '" rx="' + n1(cw) + '" ry="' + n1(cw * .28) + '"/><circle cx="' + n1(cx - cw * .3) + '" cy="' + n1(cy - cw * .18) + '" r="' + n1(cw * .28) + '"/><circle cx="' + n1(cx + cw * .2) + '" cy="' + n1(cy - cw * .26) + '" r="' + n1(cw * .34) + '"/></g>'; }
+    C.body.push(o); o = '';
+    // tepeler (3 katman)
+    for (k = 0; k < 3; k++) { var y0 = h * (.55 + k * .14), d = 'M0 ' + h + 'V' + n1(y0), amp = (30 + rr() * 40) * s, ph = rr() * 6; for (i = 0; i <= 16; i++) d += 'L' + n1(i / 16 * w) + ' ' + n1(y0 + Math.sin(i * .6 + ph) * amp); d += 'V' + h + 'Z'; o += '<path d="' + d + '" fill="' + mix(p[1], p[2], .2 + k * .25) + '" stroke="#fff" stroke-opacity=".35" stroke-width="' + n1(3 * s) + '"/>'; }
+    C.body.push(o); o = '';
+    // şeker/ağaç yuvarlakları
+    for (i = 0; i < 9; i++) { var tx = rr() * w, ty = h * (.62 + rr() * .3), tr = (10 + rr() * 22) * s; o += '<path d="M' + n1(tx) + ' ' + n1(ty) + 'v' + n1(tr * 1.4) + '" stroke="' + lit(p[0], -.4) + '" stroke-width="' + n1(4 * s) + '"/><circle cx="' + n1(tx) + '" cy="' + n1(ty) + '" r="' + n1(tr) + '" fill="' + [p[0], p[2], '#fff'][i % 3] + '" stroke="' + lit(p[0], -.45) + '" stroke-width="' + n1(2.5 * s) + '"/>'; }
+    C.body.push(o);
+    var f = FILT(C, turb('0.05', 2, seedOf(C)) + GRAY); C.body.push(R(C, '#808080', ' filter="' + f + '"' + BM('soft-light', .35)));
+  }
+  /* --- Gumball: pop-art patlama --- */
+  function pop(C, num, p, rr) {
+    var w = C.w, h = C.h, s = C.s, o = '', i, cx = w * (C.port ? .5 : .68), cy = h * (C.port ? .42 : .5), N = 28 + Math.floor(rr() * 10);
+    C.body.push(R(C, p[0]));
+    for (i = 0; i < N; i += 2) { var a0 = i * TAU / N, a1 = (i + 1) * TAU / N, L = C.L * 1.4; o += '<path d="M' + n1(cx) + ' ' + n1(cy) + 'L' + n1(cx + Math.cos(a0) * L) + ' ' + n1(cy + Math.sin(a0) * L) + 'L' + n1(cx + Math.cos(a1) * L) + ' ' + n1(cy + Math.sin(a1) * L) + 'Z" fill="' + p[1] + '" fill-opacity=".9"/>'; }
+    C.body.push(o); o = '';
+    var hd = nid(C, 'ht'); C.defs.push('<pattern id="' + hd + '" width="' + n1(14 * s) + '" height="' + n1(14 * s) + '" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><circle cx="' + n1(7 * s) + '" cy="' + n1(7 * s) + '" r="' + n1(3.2 * s) + '" fill="#000" fill-opacity=".28"/></pattern>');
+    C.body.push('<rect width="' + w + '" height="' + h + '" fill="url(#' + hd + ')" mask="url(#' + (function () { var m = nid(C, 'mk'); C.defs.push('<mask id="' + m + '">' + '<rect width="' + w + '" height="' + h + '" fill="' + LG(C, [[0, '#000'], [1, '#fff']], 0, 0, 0, 1) + '"/></mask>'); return m; })() + ')"/>');
+    for (i = 0; i < 22; i++) { var x = rr() * w, y = rr() * h, r = (8 + rr() * 22) * s, t = Math.floor(rr() * 3); var col = [p[2], '#fff', p[1]][i % 3]; if (t === 0) o += '<circle cx="' + n1(x) + '" cy="' + n1(y) + '" r="' + n1(r) + '" fill="' + col + '" stroke="#111" stroke-width="' + n1(3.5 * s) + '"/>'; else if (t === 1) o += '<path d="M' + n1(x) + ' ' + n1(y - r) + 'L' + n1(x + r) + ' ' + n1(y + r) + 'L' + n1(x - r) + ' ' + n1(y + r) + 'Z" fill="' + col + '" stroke="#111" stroke-width="' + n1(3.5 * s) + '" stroke-linejoin="round"/>'; else o += '<path d="M' + n1(x - r) + ' ' + n1(y) + 'q' + n1(r / 2) + ' ' + n1(-r) + ' ' + n1(r) + ' 0t' + n1(r) + ' 0" fill="none" stroke="#111" stroke-width="' + n1(5 * s) + '" stroke-linecap="round"/>'; }
+    C.body.push(o);
+    C.body.push('<rect x="' + n1(10 * s) + '" y="' + n1(10 * s) + '" width="' + n1(w - 20 * s) + '" height="' + n1(h - 20 * s) + '" rx="' + n1(26 * s) + '" fill="none" stroke="#111" stroke-width="' + n1(7 * s) + '"/>');
+  }
+  /* --- Gaming: piksel dünya --- */
+  function pixel(C, num, p, rr) {
+    var w = C.w, h = C.h, s = C.s, u = Math.round(12 * s), o = '', x, y, bands = 7, bh = Math.ceil(h * .62 / bands);
+    for (y = 0; y < bands; y++) o += '<rect x="0" y="' + y * bh + '" width="' + w + '" height="' + (bh + 1) + '" fill="' + mix(lit(p[0], -.5), p[1], y / (bands - 1) * .8) + '"/>';
+    C.body.push(R(C, '#000') + o); o = '';
+    for (var i = 0; i < 40; i++) { x = Math.floor(rr() * w / u) * u; y = Math.floor(rr() * h * .5 / u) * u; o += '<rect x="' + x + '" y="' + y + '" width="' + u + '" height="' + u + '" fill="#fff" fill-opacity="' + n1(.4 + rr() * .5) + '"/>'; }
+    for (i = 0; i < 3; i++) { var cx = Math.floor(rr() * w / u) * u, cy = Math.floor((.12 + rr() * .3) * h / u) * u, cw = Math.floor(3 + rr() * 4); o += '<rect x="' + cx + '" y="' + cy + '" width="' + cw * u + '" height="' + u + '" fill="#fff"/><rect x="' + (cx + u) + '" y="' + (cy - u) + '" width="' + (cw - 2) * u + '" height="' + u + '" fill="#fff"/><rect x="' + (cx - u) + '" y="' + (cy + u) + '" width="' + (cw + 2) * u + '" height="' + u + '" fill="' + p[2] + '" fill-opacity=".4"/>'; }
+    var gy = Math.floor(h * .66 / u) * u; var hill = ''; for (x = 0; x < w; x += u) { var hh = Math.round(Math.sin(x / u * .5 + rr() * .2) * 2 + 2) * u; hill += '<rect x="' + x + '" y="' + (gy - hh) + '" width="' + u + '" height="' + hh + '" fill="' + mix(p[1], '#000', .35) + '"/>'; }
+    o += hill + '<rect x="0" y="' + gy + '" width="' + w + '" height="' + (h - gy) + '" fill="' + p[1] + '"/>';
+    for (y = gy; y < h; y += u * 2) for (x = ((y / u / 2) % 2) * u; x < w; x += u * 2) o += '<rect x="' + x + '" y="' + y + '" width="' + u * 2 + '" height="' + u * 2 + '" fill="none" stroke="#000" stroke-opacity=".5" stroke-width="' + n1(2 * s) + '"/><rect x="' + x + '" y="' + y + '" width="' + u * 2 + '" height="' + n1(u * .5) + '" fill="#fff" fill-opacity=".25"/>';
+    C.body.push(o);
+    var sl = ''; for (y = 0; y < h; y += 4 * s) sl += '<rect y="' + n1(y) + '" width="' + w + '" height="' + n1(1.6 * s) + '" fill="#000" fill-opacity=".2"/>';
+    C.body.push(sl);
+  }
+  function build(C, num) {
+    var p = PAL[num] || ['#444', '#888', '#ccc'], rr = A.rng(A.hash(C.item.id));
+    if (num <= 30) cars(C, num, p, rr); else if (num <= 50) candy(C, num, p, rr); else if (num <= 70) pop(C, num, p, rr); else pixel(C, num, p, rr);
+    C.body.push(emblem(C, rr, p, num > 50 && num <= 70 ? '#111' : '#fff'));
+    C.body.push(R(C, RG(C, [[0, '#000', 0], [.6, '#000', 0], [1, '#000', .4]], .5, .5, .8)));
+  }
+  root.__FNXA.chars = build; root.__FNXA.CHARPAL = PAL;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+(function (root) {
+  'use strict';
+  var A = root.__FNXA;
+  A.collect = function (item, w, h, P) {
+    var num = parseInt(String(item.id).slice(-3), 10), C = A.newCtx(item, w, h, P + 'a' + num + '_');
+    if (A.MAT[num]) A.MAT[num](C);
+    else if (num >= 311 && num <= 340) A.rug(C, num);
+    else if (A.CLUBS[num]) A.club(C, num);
+    else A.chars(C, num);
+    var isRug = num >= 311 && num <= 340;
+    // okunabilirlik için çok hafif üst/alt karartma (halıda yok: düz ışık kuralı)
+    if (!isRug) C.body.push('<rect width="' + w + '" height="' + h + '" fill="' + A.LG(C, [[0, '#000', .34], [.22, '#000', 0], [.7, '#000', 0], [1, '#000', .3]], 0, 0, 0, 1) + '"/>');
+    return { defs: C.defs.join(''), under: C.body.join('') };
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
 /* Forevye Nexus — Market kart yüzeyleri (skin). Kart editöründe BULUNMAYAN premium tasarımlar.
  * DOM'a bağımlı değildir: hem tarayıcıda (çizim) hem Worker'da (geçerli skin kimlikleri) kullanılır.
  * Bir skin takılı kartta kullanıcının kendi katmanları/yüzeyi çizilmez (kayıtlı tasarım silinmez; skin çıkarılınca geri gelir);
@@ -415,6 +1310,8 @@
       var label=xmlText(item.label),serial=xmlText(o.serial||'');
       var over='<g font-family="Jost,Segoe UI,Arial,sans-serif" fill="'+item.ink+'"><text x="'+(w*.95)+'" y="'+(h*.22)+'" text-anchor="end" font-size="'+Math.max(11,Math.min(18,w*.022))+'" letter-spacing="2.2" font-weight="700">'+label+'</text>'+(serial?'<text x="'+(w*.95)+'" y="'+(h*.26)+'" text-anchor="end" font-size="'+Math.max(10,Math.min(15,w*.018))+'" opacity=".76">No. '+serial+'</text>':'')+'<path d="M'+(w*.06)+' '+(h*.83)+'H'+(w*.94)+'" stroke="url(#'+P+'nxfoil)" stroke-width="1.2" opacity=".7"/></g>';
       var shine='<defs><linearGradient id="'+P+'nxshine" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".34"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect x="-'+w*.3+'" y="0" width="'+w*.22+'" height="'+h+'" fill="url(#'+P+'nxshine)" transform="skewX(-22)">'+(o.animate===false?'':'<animateTransform attributeName="transform" type="translate" values="0 0; '+(w*1.8)+' 0; '+(w*1.8)+' 0" keyTimes="0;.62;1" dur="8s" repeatCount="indefinite"/>')+'</rect>';
+      var art=(root.__FNXA&&root.__FNXA.collect)?root.__FNXA.collect(item,w,h,P):null;
+      if(art){return {defs:defs+art.defs,under:art.under,over:over+shine,edge:'<rect x="2" y="2" width="'+(w-4)+'" height="'+(h-4)+'" rx="'+Math.min(34,Math.min(w,h)*.065)+'" fill="none" stroke="url(#'+P+'nxfoil)" stroke-width="3" opacity=".9"/>'};}
       return {defs:defs,under:'<rect width="'+w+'" height="'+h+'" fill="url(#'+P+'nxbg)"/><rect width="'+w+'" height="'+h+'" fill="url(#'+P+'nxglow)"/><rect width="'+w+'" height="'+h+'" fill="url(#'+P+'nxgrid)"/><g>'+motif+'</g><circle cx="'+cx+'" cy="'+cy+'" r="'+(r*1.25)+'" fill="none" stroke="url(#'+P+'nxfoil)" stroke-width="2" opacity=".55"/>',over:over+shine,edge:'<rect x="2" y="2" width="'+(w-4)+'" height="'+(h-4)+'" rx="'+Math.min(34,Math.min(w,h)*.065)+'" fill="none" stroke="url(#'+P+'nxfoil)" stroke-width="3" opacity=".9"/>'};
     }};
   }
