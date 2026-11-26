@@ -71,11 +71,11 @@ test('market: SHOP_URL yoksa bilet 503; katalog tohumu ve fiyatlar sunucudan gel
   const black = list.find((p) => p.id === 'card_black');
   assert.equal(black.price, FN(40000)); assert.equal(black.stock_left, 50); assert.equal(black.skin, 'royal'); assert.equal(black.perks.limit_mult, 3);
   assert.ok(list.some((p) => p.kind === 'design') && list.some((p) => p.kind === 'function'));
-  assert.equal(list.filter((p) => p.kind === 'design').length, 325, '45 mevcut yüzey + 280 sınırlı koleksiyon ürünü sunulur');
+  assert.equal(list.filter((p) => p.kind === 'design').length, 355, '45 mevcut yüzey + 310 sınırlı koleksiyon ürünü sunulur');
   const limited = list.filter((p) => p.id.startsWith('nx250_') || p.id.startsWith('nx280_'));
-  assert.equal(limited.length, 280);
+  assert.equal(limited.length, 310);
   assert.ok(limited.every((p) => p.stock_total === 2 && p.max_qty === 1 && p.collection && ['portrait','landscape'].includes(p.orientation)));
-  assert.equal(new Set(limited.map((p) => p.id)).size, 280);
+  assert.equal(new Set(limited.map((p) => p.id)).size, 310);
   const imperial = list.find((p) => p.id === 'skin_imperial');
   assert.equal(imperial.skin, 'imperial'); assert.equal(imperial.price, FN(16500));
   assert.equal(imperial.stock_left, 28); assert.equal(imperial.stock_total, 28);
@@ -333,8 +333,8 @@ test('market yönetimi: katalog yazma yalnızca süper yönetici; skin/perk/stok
 
 test('kart yüzeyleri: tohum ürünleri geçerli skin kullanır, yazı rengi okunaklı, kullanıcı katmanları gizlenir', () => {
   const S = globalThis.FNXSkins, X = globalThis.FNXRender;
-  assert.equal(S.IDS.length, 328, '45 mevcut yüzey + 280 koleksiyon yüzeyi + 3 fonksiyonel kart yüzeyi');
-  assert.equal(SEED.filter((p) => p.kind === 'design').length, 325);
+  assert.equal(S.IDS.length, 358, '45 mevcut yüzey + 310 koleksiyon yüzeyi + 3 fonksiyonel kart yüzeyi');
+  assert.equal(SEED.filter((p) => p.kind === 'design').length, 355);
   for (const p of SEED.filter((x) => x.kind === 'design')) {
     const item = S.list.find((x) => x.productId === p.id);
     assert.ok(item, `${p.id}: editör ve Market kataloğunda görünmeli`);

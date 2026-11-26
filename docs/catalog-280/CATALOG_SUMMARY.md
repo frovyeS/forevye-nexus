@@ -16,5 +16,6 @@
 | Basketball Supporters — Türkiye | 15 |
 | Basketball Supporters — International | 15 |
 | Anatolian Turkish Rug Motifs | 30 |
+| Anatolian Turkish Rug Motifs II | 30 |
 
-**Toplam: 280 kart.**
+**Toplam: 310 kart.**
