@@ -183,11 +183,22 @@ export async function refreshPrice(env) {
     price_micro = Math.max(1, Math.round(previous * (10000 + moveBps) / 10000));
     source = `Çeyrek altın + BIST100/30 + banka/sanayi + USD/TRY + hacim + Nexus arz/talep + hediye emisyonu (${quote.provider || 'altın verisi'})`;
   } else if (signals && validPrev) {
-    // Altın servisi yokken de BIST/FX ve akış, fiyatı aşağı/yukarı taşıyabilir; kelepçe yok.
+    // Altın servisi yokken de BIST/FX ve akış, fiyatı aşağı/yukarı taşıyabilir.
     const impactBps = Math.round((bist.factor - 1) * 10000);
     moveBps = Math.max(-3000, Math.min(3000, Math.round(impactBps * 0.45)));
     price_micro = Math.max(1, Math.round(previous * (10000 + moveBps) / 10000));
     source = 'BIST100/30 + banka/sanayi + USD/TRY + hacim + Nexus alım/satım akışı';
+  } else if (env.MARKET_FALLBACK_ENABLED === 'true') {
+    // Dış piyasa sağlayıcıları tanımlı/erişilebilir değilse borsa donmasın:
+    // 5 dakikalık Cron adımlarında sanal piyasa dalgalanması + işlem akışı yön etkisi.
+    // Güncelleme başına sınırlandırılmış oynaklık; fiyat sıfıra düşmez ve eski fiyat korunur.
+    const fallbackVol = Math.max(10, Math.min(2500, cfgNum(env, 'MARKET_FALLBACK_VOLATILITY_BPS', 85)));
+    const flow = await marketFlowFactor(env, t);
+    const flowBps = Math.round((flow - 1) * 10000);
+    const noiseBps = Math.round((Math.random() * 2 - 1) * fallbackVol);
+    moveBps = Math.max(-fallbackVol, Math.min(fallbackVol, noiseBps + Math.max(-250, Math.min(250, flowBps))));
+    price_micro = Math.max(1, Math.round(previous * (10000 + moveBps) / 10000));
+    source = 'Nexus sanal piyasa simülasyonu + alım/satım akışı (dış fiyat kaynağı yok)';
   }
   const last = { model: quote ? 'nexus-dynamic-market-v5' : signals ? 'nexus-dynamic-bist-v5' : 'nexus-market-stable-v3', ts: t, price_micro, source, move_bps: moveBps, gold_quote_ts: quote?.ts || null, bist_ts: signals?.ts || null };
   await stateSet(env, 'last_price', JSON.stringify(last), t);

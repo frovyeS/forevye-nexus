@@ -1,34 +1,18 @@
-# FOREVYE NEXUS – Transfer migration numarası düzeltmesi
+# Kristal Borsası Oynaklık Düzeltmesi
 
-## Bu düzeltme neden gerekli?
-Kaynak projede `0013_nexus_rug_pack_2.sql` zaten mevcut. Önceki paketteki `0013_bank_access_and_transfer_notes.sql` aynı migration numarasını kullandığı için Wrangler migration sıralaması/uygulaması çakışabilir. Bu paket transfer migration'ını `0014` olarak yeniden numaralandırır.
+Kristal fiyatı 24 saat sabit kalıyordu çünkü kaynak ZIP'te dış altın API adresi tanımlanmamışken BIST API adresi de boş kalıyordu. `refreshPrice()` bu durumda fiyatı değiştirmeden bırakıyordu.
 
-## GitHub dosya işlemi
-1. Nexus Worker deposundaki **`migrations/0013_bank_access_and_transfer_notes.sql`** dosyasını sil.
-2. Bu ZIP içindeki **`migrations/0014_bank_access_and_transfer_notes.sql`** dosyasını aynı `migrations/` klasörüne ekle.
-3. `0013_nexus_rug_pack_2.sql` dosyasına dokunma.
-4. Commit et.
+Bu overlay iki dosyayı günceller:
+- `src/lib/market.js`: dış piyasa kaynakları yoksa etkinleştirilen sanal piyasa fallback'inde sınırlı dalgalanma + son 6 saat alış/satış akışının küçük etkisi.
+- `wrangler.toml`: fallback'i etkinleştiren ayar ve oynaklık (5 dakikalık adımda en fazla ±%0,85).
 
-## ÖNEMLİ: GitHub'a commit tek başına D1 migration'ını çalıştırmaz ve Worker deploy etmez.
+## GitHub üzerinden
+1. ZIP'i aç.
+2. `src/lib/market.js` ve `wrangler.toml` dosyalarını ana `forevye-nexus` Worker reposunda aynı yolların üzerine yükle.
+3. Commit et. GitHub Actions/otomatik deploy yapılandırman varsa Worker deploy'un tamamlanmasını bekle.
+4. Borsa ekranını yenile. Cron Trigger zaten `*/5 * * * *` olarak tanımlıdır; fallback devreye girdiğinde fiyat Cron adımlarında hareket eder.
 
-Cloudflare Worker projesi terminalinde önce D1 yedeği al. `wrangler.toml` içindeki D1 database adına göre migration listesini kontrol et:
+D1 migration yok; veri silmez veya bakiye/işlem kayıtlarına dokunmaz.
 
-```bash
-npx wrangler d1 migrations list forevye-nexus --remote
-```
-
-Listeyi kontrol et; 0014 beklemede görünüyorsa uygulama:
-
-```bash
-npx wrangler d1 migrations apply forevye-nexus --remote
-```
-
-Sonra Worker kodunu deploy et:
-
-```bash
-npx wrangler deploy
-```
-
-Komutlar gerçek Worker projesinin kök klasöründe çalıştırılmalıdır. Hesap kimliğini ve canlı DB'yi doğrulamadan başka DB'ye işlem uygulama. Yedek almadan migration çalıştırma. `0014` zaten uygulanmışsa tekrar uygulama.
-
-Bu migration transfer/banka token tablolarını ve transfers.description alanını oluşturmayı amaçlar; canlı transferin başarıyla çalıştığı henüz doğrulanmamıştır.
+## Kontrol
+Bu overlay ile JS syntax kontrolü başarılı. Paket hazırlanırken `npm test` çalıştırıldı: 107 test başarılı, 3 test başarısız. Üç başarısız test bu patch'ten bağımsız, kaynak ZIP'te önceden bulunan katalog sayısı / 100 KB migration / shop migration üretim uyuşmazlıklarıdır. Bu yama fiyat fallback testlerini değiştirmeden bu 3 mevcut test hatası dışında tüm testlerden geçti.

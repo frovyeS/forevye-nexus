@@ -57,6 +57,8 @@ MARKET_SPREAD_BPS = "50"          # alış/satış, orta fiyattan her yönde %0,
 MARKET_MAX_TRADE_MINOR = "1000000" # işlem başına en fazla 10.000 FN değerinde
 MARKET_REFRESH_SEC = "60"
 MARKET_STALE_SEC = "900"          # fiyat 15 dk güncellenmezse işlem durur
+MARKET_FALLBACK_ENABLED = "true"  # dış kaynak yokken sanal fiyat hareketi
+MARKET_FALLBACK_VOLATILITY_BPS = "85" # 5 dakikalık adımda azami ±%0,85
 # GOLD_BASE_USD = "..."           # İsteğe bağlı: baz altın fiyatını (USD/ons) elle sabitler. Boşsa ilk çekilen fiyat baz olur.
 # GOLD_API_URL = "https://api.gold-api.com/price/XAU"
 # Hediye kartı (kristal kartı) Mikro-Klima Worker'ında; Nexus ona imzalı istek atar.
