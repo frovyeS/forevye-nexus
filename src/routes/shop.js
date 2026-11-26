@@ -3,7 +3,7 @@
 //  2) POST /api/shop/exchange  (CORS: Market sitesi) bileti jetona çevirir (30 dk kayan, en çok 8 saat).
 //  3) GET  /api/shop/me | products | product | purchases, POST /api/shop/purchase | wishlist | equip   (Bearer jeton)
 // Jeton yalnızca /api/shop/* uçlarında geçerlidir; transfer/profil/şifre uçlarını açmaz. Fiyat, stok, sahiplik ve perk sunucuda doğrulanır.
-import { HttpError, json, readJson, str, parseAmount, now, newRef, isConstraint, MIN, HOUR, clientIp } from '../lib/util.js';
+import { HttpError, json, readJson, str, parseAmount, now, newRef, randomBase32, isConstraint, MIN, HOUR, clientIp } from '../lib/util.js';
 import { randomToken, sha256hex } from '../lib/crypto.js';
 import { rateLimit } from '../lib/rate.js';
 import { entryStmts, guardActiveStmt } from '../lib/ledger.js';
@@ -11,7 +11,7 @@ import { notifyStmt } from '../lib/auth.js';
 import { balanceOf } from './wallet.js';
 import { auditStmt } from './admin.js';
 import { grantAchievement } from './misc.js';
-import { ownCard, shape as cardShape, prepareCardCreation, ensureMarketCardDeliveries } from './cards.js';
+import { ownCard, shape as cardShape, prepareCardCreation, ensureMarketCardDeliveries, ensureCardNotListed } from './cards.js';
 import { suggestDisplayName } from '../../shared/card-contract.js';
 import { ensureShopSchema, parseData, cleanData, limitsFor, skinsOf, RARITIES, KINDS } from '../lib/shop.js';
 import { requireCardMoneySchema } from '../lib/card-money-schema.js';
@@ -62,9 +62,17 @@ async function entitlementsOf(env, userId) {
 async function cardsOf(env, user) {
   await requireCardMoneySchema(env);
   await ensureMarketCardDeliveries(env, user);
-  const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY is_default DESC, created_at ASC').bind(user.id).all()).results;
+  const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? AND deleted_at IS NULL ORDER BY is_default DESC, created_at ASC').bind(user.id).all()).results;
   const skins = await skinsOf(env, user.id);
-  return rows.map((c) => { const s = cardShape(c); return { id: s.id, label: s.label, display_name: s.display_name, card_token: s.card_token, status: s.status, balance: s.balance, is_default: s.is_default, design: s.design, skin: skins[c.id] || null }; });
+  return Promise.all(rows.map(async (c) => {
+    const listing = await env.DB.prepare("SELECT id, title, price_minor FROM card_market_listings WHERE card_id = ? AND status = 'active'").bind(c.id).first();
+    const delivery = await env.DB.prepare(`SELECT d.purchase_id, p.price FROM shop_card_deliveries d JOIN shop_purchases p ON p.id = d.purchase_id
+      WHERE d.card_id = ? AND d.user_id = ? AND p.status = 'success' LIMIT 1`).bind(c.id, user.id).first();
+    const s = cardShape(c);
+    return { id: s.id, label: s.label, display_name: s.display_name, card_token: s.card_token, status: s.status, balance: s.balance, is_default: s.is_default, design: s.design, skin: skins[c.id] || null,
+      market_listing: listing || null, market_return: delivery ? { purchase_id: delivery.purchase_id, refund_minor: Number(delivery.price || 0) } : null,
+      can_sell: !listing && !delivery && !skins[c.id] && !c.is_default && c.status === 'active' && Number(c.balance || 0) === 0 };
+  }));
 }
 
 async function purchaseResult(env, ref, replayed) {
@@ -94,6 +102,7 @@ async function purchaseResult(env, ref, replayed) {
 export async function equipSkin(env, user, cardId, productId) {
   await ensureShopSchema(env);
   const card = await ownCard(env, user.id, cardId);
+  await ensureCardNotListed(env, card.id);
   if (productId === null || productId === undefined) {
     await env.DB.prepare('DELETE FROM shop_card_skins WHERE card_id = ? AND user_id = ?').bind(card.id, user.id).run();
     return null;
@@ -131,6 +140,22 @@ export async function createShopTicket(env, user, productId = null) {
   if (productId) target.searchParams.set('product_id', String(productId));
   target.hash = `t=${ticket}`;
   return { url: target.toString(), expires_in: TICKET_TTL / 1000 };
+}
+
+const listingShape = (row) => ({
+  id: row.id, card_id: row.card_id, title: row.title, description: row.description,
+  price: Number(row.price_minor) / 100, price_minor: Number(row.price_minor),
+  commission_minor: Number(row.commission_minor), seller_proceeds_minor: Number(row.seller_proceeds_minor),
+  status: row.status, created_at: row.created_at, seller: { username: row.seller_username },
+  card: { display_name: row.display_name, label: row.label, design: cardShape(row).design },
+});
+
+async function communityRows(env, where = "l.status = 'active'", binds = []) {
+  const rows = (await env.DB.prepare(`SELECT l.*, c.label, c.display_name, c.design_json, c.design_version, c.card_token, c.status AS card_status,
+      c.balance, c.is_default, c.user_id, c.updated_at, u.username AS seller_username
+    FROM card_market_listings l JOIN cards c ON c.id = l.card_id JOIN users u ON u.id = l.seller_id
+    WHERE ${where} AND c.deleted_at IS NULL ORDER BY l.created_at DESC LIMIT 100`).bind(...binds).all()).results;
+  return rows.map(listingShape);
 }
 
 export const shopRoutes = {
@@ -200,6 +225,151 @@ export const shopRoutes = {
     return json({ products: rows.map(shapeProduct) });
   },
 
+  async community(req, env) {
+    const { user } = await useToken(env, req);
+    await requireCardMoneySchema(env);
+    const items = await communityRows(env);
+    return json({ items, commission_pct: 30, current_user: user.username });
+  },
+
+  async communityMine(req, env) {
+    const { user } = await useToken(env, req);
+    await requireCardMoneySchema(env);
+    await ensureMarketCardDeliveries(env, user);
+    const items = await communityRows(env, 'l.seller_id = ?', [user.id]);
+    const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC').bind(user.id).all()).results;
+    const skins = await skinsOf(env, user.id);
+    const cards = await Promise.all(rows.map(async (c) => {
+      const listing = await env.DB.prepare("SELECT id, title, price_minor, status FROM card_market_listings WHERE card_id = ? AND status = 'active'").bind(c.id).first();
+      const delivery = await env.DB.prepare(`SELECT d.purchase_id FROM shop_card_deliveries d JOIN shop_purchases p ON p.id = d.purchase_id
+        WHERE d.card_id = ? AND d.user_id = ? AND p.status = 'success' LIMIT 1`).bind(c.id, user.id).first();
+      const s = cardShape(c);
+      return { id: s.id, label: s.label, display_name: s.display_name, balance: s.balance, status: s.status, is_default: s.is_default,
+        design: s.design, skin: skins[c.id] || null, listing: listing || null,
+        can_sell: !listing && !delivery && !skins[c.id] && !c.is_default && c.status === 'active' && Number(c.balance || 0) === 0 };
+    }));
+    return json({ listings: items, cards, commission_pct: 30 });
+  },
+
+  async communityList(req, env) {
+    const { user } = await useToken(env, req);
+    await requireCardMoneySchema(env);
+    const b = await readJson(req);
+    const cardId = str(b.card_id, { min: 8, max: 64, name: 'card_id' });
+    const title = str(b.title, { min: 2, max: 60, name: 'title' });
+    const description = typeof b.description === 'string' ? b.description.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 260) : '';
+    const price = parseAmount(b.price);
+    const fee = Math.floor(price * 30 / 100), proceeds = price - fee;
+    if (proceeds < 1) throw new HttpError(400, 'price_too_low', 'Satış fiyatı komisyon sonrası en az 0,01 FN bırakmalı.');
+    await rateLimit(env, `communitylist:${user.id}`, 15, 10 * MIN);
+    const card = await ownCard(env, user.id, cardId);
+    await ensureCardNotListed(env, card.id);
+    if (card.status !== 'active') throw new HttpError(400, 'card_disabled', 'Yalnızca aktif kartlar satışa çıkarılabilir.');
+    if (card.is_default) throw new HttpError(409, 'default_card', 'Önce başka bir kartı varsayılan yap.');
+    if (Number(card.balance || 0) !== 0) throw new HttpError(409, 'card_has_balance', 'Satıştan önce kart bakiyesini sıfırla.');
+    const delivered = await env.DB.prepare(`SELECT 1 AS x FROM shop_card_deliveries d JOIN shop_purchases p ON p.id = d.purchase_id
+      WHERE d.card_id = ? AND d.user_id = ? AND p.status = 'success' LIMIT 1`).bind(card.id, user.id).first();
+    const paidSkin = await env.DB.prepare('SELECT 1 AS x FROM shop_card_skins WHERE card_id = ? AND user_id = ? LIMIT 1').bind(card.id, user.id).first();
+    if (delivered || paidSkin) throw new HttpError(409, 'not_community_card', 'Topluluk pazarında yalnızca kendi oluşturduğun ve ücretli yüzey takılı olmayan kartları satabilirsin.');
+    const t = now(env), id = `NXCML-${randomBase32(10)}`;
+    try {
+      await env.DB.batch([
+        env.DB.prepare(`INSERT INTO card_market_guard (ok) SELECT CASE WHEN EXISTS (
+          SELECT 1 FROM cards c WHERE c.id = ? AND c.user_id = ? AND c.deleted_at IS NULL AND c.status = 'active'
+            AND c.is_default = 0 AND c.balance = 0
+            AND NOT EXISTS (SELECT 1 FROM shop_card_deliveries d JOIN shop_purchases p ON p.id = d.purchase_id WHERE d.card_id = c.id AND p.status = 'success')
+            AND NOT EXISTS (SELECT 1 FROM shop_card_skins s WHERE s.card_id = c.id)
+        ) THEN 1 ELSE 0 END`).bind(card.id, user.id),
+        env.DB.prepare(`INSERT INTO card_market_listings (id, card_id, seller_id, title, description, price_minor, commission_minor, seller_proceeds_minor, status, created_at, updated_at)
+          VALUES (?,?,?,?,?,?,?,?,'active',?,?)`).bind(id, card.id, user.id, title, description, price, fee, proceeds, t, t),
+        env.DB.prepare('DELETE FROM card_market_guard'),
+        notifyStmt(env, user.id, 'community_card_listed', 'Kartın topluluk pazarında', `${title} ilanı ${ (price / 100).toFixed(2) } FN fiyatla yayınlandı. Satışta %30 komisyon uygulanır.`),
+      ]);
+    } catch (err) {
+      if (isConstraint(err, 'idx_card_market_one_active_per_card') || isConstraint(err, 'card_market_listings.card_id') || String(err.message || err).includes('UNIQUE constraint failed: card_market_listings.card_id'))
+        throw new HttpError(409, 'already_listed', 'Bu kart zaten satışta.');
+      if (isConstraint(err, 'card_market_guard.ok') || String(err.message || err).includes('CHECK constraint failed') || String(err.message || err).includes('malformed JSON'))
+        throw new HttpError(409, 'card_state_changed', 'Kartın satış koşulları değişti; yeniden kontrol et.');
+      throw err;
+    }
+    return json({ ok: true, listing: { id, title, price_minor: price, commission_minor: fee, seller_proceeds_minor: proceeds } }, 201);
+  },
+
+  async communityCancel(req, env, url, auth, params) {
+    const { user } = await useToken(env, req);
+    const listingId = str(params.id, { min: 8, max: 64, name: 'listing_id' });
+    const listing = await env.DB.prepare("SELECT * FROM card_market_listings WHERE id = ? AND seller_id = ? AND status = 'active'").bind(listingId, user.id).first();
+    if (!listing) throw new HttpError(404, 'listing_not_found', 'Aktif ilan bulunamadı.');
+    await env.DB.batch([
+      env.DB.prepare("UPDATE card_market_listings SET status = 'cancelled', updated_at = ? WHERE id = ? AND seller_id = ? AND status = 'active'").bind(now(env), listingId, user.id),
+    ]);
+    return json({ ok: true, cancelled: true });
+  },
+
+  async communityBuy(req, env, url, auth, params) {
+    const { user } = await useToken(env, req);
+    await requireCardMoneySchema(env);
+    const b = await readJson(req);
+    const idem = str(b.idem, { min: 8, max: 80, name: 'idem' });
+    if (!/^[A-Za-z0-9_-]+$/.test(idem)) throw new HttpError(400, 'invalid_idem', 'Geçersiz işlem anahtarı.');
+    const listingId = str(params.id, { min: 8, max: 64, name: 'listing_id' });
+    const prior = await env.DB.prepare('SELECT * FROM card_market_sales WHERE buyer_id = ? AND idempotency_key = ?').bind(user.id, idem).first();
+    if (prior) {
+      if (prior.listing_id !== listingId) throw new HttpError(409, 'key_reuse', 'Bu işlem anahtarı başka bir ilan için kullanılmış.');
+      return json({ ok: true, replayed: true, sale: prior, balance: await balanceOf(env, user.id) });
+    }
+    await rateLimit(env, `communitybuy:${user.id}`, 25, 10 * MIN);
+    const listing = await env.DB.prepare("SELECT l.*, c.design_json, c.design_version, c.display_name, c.label, c.balance AS card_balance, c.status AS card_status, c.is_default, c.deleted_at, c.user_id AS card_owner, u.username AS seller_username FROM card_market_listings l JOIN cards c ON c.id = l.card_id JOIN users u ON u.id = l.seller_id WHERE l.id = ? AND l.status = 'active'").bind(listingId).first();
+    if (!listing || listing.deleted_at != null || listing.card_owner !== listing.seller_id) throw new HttpError(404, 'listing_not_found', 'Bu ilan artık satışta değil.');
+    if (listing.seller_id === user.id) throw new HttpError(400, 'own_listing', 'Kendi ilanını satın alamazsın.');
+    if (listing.card_status !== 'active' || Number(listing.card_balance) !== 0 || listing.is_default) throw new HttpError(409, 'listing_unavailable', 'İlanın kart koşulları artık uygun değil.');
+    const maxCards = (await limitsFor(env, user.id)).max_cards;
+    const count = Number((await env.DB.prepare('SELECT COUNT(*) AS c FROM cards WHERE user_id = ? AND deleted_at IS NULL').bind(user.id).first())?.c || 0);
+    if (count >= maxCards) throw new HttpError(409, 'card_limit', `Kart alanın dolu. En fazla ${maxCards} kartın olabilir.`);
+    const balance = await balanceOf(env, user.id);
+    if (balance < listing.price_minor) throw new HttpError(400, 'insufficient', 'Ana cüzdanında bu alışveriş için yeterli FN yok.');
+    const fee = Number(listing.commission_minor), proceeds = Number(listing.seller_proceeds_minor), gross = Number(listing.price_minor);
+    const ref = newRef('NXCM'), t = now(env), card = await ownCard(env, listing.seller_id, listing.card_id);
+    const design = { ...cardShape(card).design, designId: card.id, ownerId: user.id, version: 1 };
+    const statements = [
+      guardActiveStmt(env, user.id, listing.seller_id),
+      env.DB.prepare(`INSERT INTO card_market_guard (ok) SELECT CASE WHEN EXISTS (
+        SELECT 1 FROM card_market_listings l JOIN cards c ON c.id = l.card_id
+        WHERE l.id = ? AND l.status = 'active' AND l.seller_id = ? AND c.user_id = l.seller_id
+          AND c.deleted_at IS NULL AND c.status = 'active' AND c.balance = 0 AND c.is_default = 0
+          AND (SELECT balance FROM wallets WHERE user_id = ?) >= ?
+          AND (SELECT COUNT(*) FROM cards WHERE user_id = ? AND deleted_at IS NULL) < ?
+      ) THEN 1 ELSE 0 END`).bind(listingId, listing.seller_id, user.id, gross, user.id, maxCards),
+      env.DB.prepare("UPDATE card_market_listings SET status = 'sold', buyer_id = ?, sold_at = ?, updated_at = ? WHERE id = ? AND status = 'active'").bind(user.id, t, t, listingId),
+      env.DB.prepare(`INSERT INTO card_market_sales (id, listing_id, buyer_id, seller_id, card_id, gross_minor, commission_minor, seller_minor, idempotency_key, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(ref, listingId, user.id, listing.seller_id, listing.card_id, gross, fee, proceeds, idem, t),
+      ...entryStmts(env, { ref, userId: user.id, type: 'purchase', amount: -gross, counterparty: listing.seller_id, desc: `Nexus Topluluk Pazarı: ${listing.title}` }),
+      ...entryStmts(env, { ref, userId: listing.seller_id, type: 'transfer_in', amount: proceeds, counterparty: user.id, desc: `Kart satışı (%30 komisyon): ${listing.title}` }),
+      env.DB.prepare('DELETE FROM card_design_history WHERE card_id = ?').bind(listing.card_id),
+      env.DB.prepare('UPDATE cards SET user_id = ?, card_token = ?, design_json = ?, design_version = 1, is_default = 0, status = \'active\', updated_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
+        .bind(user.id, `NXC-${randomBase32(4)}-${randomBase32(4)}`, JSON.stringify(design), t, listing.card_id, listing.seller_id),
+      env.DB.prepare('INSERT INTO card_design_history (id, card_id, user_id, version, display_name, design_json, created_at) VALUES (?,?,?,?,?,?,?)')
+        .bind(crypto.randomUUID(), listing.card_id, user.id, 1, card.display_name, JSON.stringify(design), t),
+      env.DB.prepare('DELETE FROM shop_card_skins WHERE card_id = ?').bind(listing.card_id),
+      env.DB.prepare('DELETE FROM card_market_guard'),
+      notifyStmt(env, user.id, 'community_card_bought', 'Topluluk kartı satın alındı', `${listing.title} kartı koleksiyonuna eklendi. Satıcı: @${listing.seller_username}.`),
+      notifyStmt(env, listing.seller_id, 'community_card_sold', 'Kartın satıldı', `${listing.title} kartın satıldı. %30 komisyon kesildi; ${ (proceeds / 100).toFixed(2) } FN bakiyene aktarıldı.`),
+    ];
+    try { await env.DB.batch(statements); }
+    catch (err) {
+      if (isConstraint(err, 'wallet_nonneg')) throw new HttpError(400, 'insufficient', 'Ana cüzdanında bu alışveriş için yeterli FN yok.');
+      if (isConstraint(err, 'card_market_sales.buyer_id') || isConstraint(err, 'card_market_sales.listing_id')) {
+        const again = await env.DB.prepare('SELECT * FROM card_market_sales WHERE buyer_id = ? AND idempotency_key = ?').bind(user.id, idem).first();
+        if (again?.listing_id === listingId) return json({ ok: true, replayed: true, sale: again, balance: await balanceOf(env, user.id) });
+      }
+      if (isConstraint(err, 'card_market_guard.ok') || String(err.message || err).includes('CHECK constraint failed') || String(err.message || err).includes('malformed JSON'))
+        throw new HttpError(409, 'listing_changed', 'İlan bu sırada satılmış veya kart koşulları değişmiş. Listeyi yenile.');
+      throw err;
+    }
+    const sale = await env.DB.prepare('SELECT * FROM card_market_sales WHERE id = ?').bind(ref).first();
+    return json({ ok: true, replayed: false, sale, balance: await balanceOf(env, user.id) }, 201);
+  },
+
   async product(req, env, url) {
     await useToken(env, req);
     const id = str(url.searchParams.get('id') || '', { min: 1, max: 64, name: 'id' });
@@ -239,6 +409,7 @@ export const shopRoutes = {
     let card = null;
     if (cardId) {
       card = await ownCard(env, user.id, cardId);
+      await ensureCardNotListed(env, card.id);
       if (card.status !== 'active') return json({ ok: false, code: 'card_disabled' });
       if (card.balance < p.price) return json({ ok: false, code: 'insufficient_card', card_balance: card.balance, missing: p.price - card.balance });
     } else {

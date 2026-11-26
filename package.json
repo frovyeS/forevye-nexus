@@ -10,7 +10,7 @@
     "db:migrate:local": "wrangler d1 migrations apply forevye-nexus --local",
     "db:migrate:remote": "wrangler d1 migrations apply forevye-nexus --remote",
     "sync-shared": "cp shared/card-contract.js public/js/card-contract.js && cp shared/card-rules.js public/js/card-rules.js && cp shared/card-skins.js public/js/card-skins.js",
-    "test": "node --test test/app.test.mjs test/market.test.mjs test/editor.test.mjs test/pass.test.mjs test/shop.test.mjs test/card-money.test.mjs test/card-render.test.mjs test/timer-reward.test.mjs test/collection-assets.test.mjs test/bank-access.test.mjs test/origins.test.mjs test/d1-limits.test.mjs"
+    "test": "node --test test/app.test.mjs test/market.test.mjs test/editor.test.mjs test/pass.test.mjs test/shop.test.mjs test/card-money.test.mjs test/community-market.test.mjs test/card-render.test.mjs test/timer-reward.test.mjs test/collection-assets.test.mjs test/bank-access.test.mjs test/origins.test.mjs test/d1-limits.test.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

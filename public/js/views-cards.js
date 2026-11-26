@@ -14,14 +14,14 @@ export async function openEditor(cardId, label) {
 
 export function cardsList(screen) {
   const holder = h('div');
-  mount(screen, h('div', { class: 'topbar' }, h('h1', { text: 'Kartlarım' }), h('div', { class: 'row wrap' }, h('a', { class: 'btn small', href: '#/scan' }, icon('qrcode', 18), 'QR okut'), h('a', { class: 'btn small', href: '#/cards/pay' }, icon('send', 18), 'Kartla ödeme'), h('a', { class: 'btn small primary', href: '#/cards/new' }, icon('plus', 18), 'Yeni kart'))), holder,
+  mount(screen, h('div', { class: 'topbar' }, h('h1', { text: 'Kartlarım' }), h('div', { class: 'row wrap' }, h('a', { class: 'btn small', href: '#/scan' }, icon('qrcode', 18), 'QR okut'), h('a', { class: 'btn small', href: '#/cards/pay' }, icon('send', 18), 'Kartla ödeme'), h('a', { class: 'btn small', href: '#/shop-launch' }, 'Nexus Market'), h('a', { class: 'btn small primary', href: '#/cards/new' }, icon('plus', 18), 'Yeni kart'))), holder,
     h('p', { class: 'virtual', text: 'Bunlar yalnızca oyun içi sanal kartlardır; gerçek ödeme kartı değildir.' }));
   load(holder, () => api.get('/api/cards'), (d) => {
     if (!d.cards.length) return empty('Henüz kartın yok', 'İlk sanal kartını oluştur.');
     return h('div', { class: 'cards-grid' }, d.cards.map((c) => h('a', { class: 'card-tile', href: `#/cards/${c.id}`, style: { textDecoration: 'none', color: 'inherit' } },
       renderCard(c.design, c),
       h('div', { class: 'row between', style: { padding: '8px 4px 0' } }, h('span', { class: 'strong', text: c.label || c.display_name }),
-        h('span', {}, c.is_default ? h('span', { class: 'chip ok', text: 'Varsayılan' }) : null, ' ', c.status === 'disabled' ? h('span', { class: 'chip bad', text: 'Devre dışı' }) : null)),
+        h('span', {}, c.is_default ? h('span', { class: 'chip ok', text: 'Varsayılan' }) : null, ' ', c.status === 'disabled' ? h('span', { class: 'chip bad', text: 'Devre dışı' }) : null, c.market_listing ? h('span', { class: 'chip', text: 'Market’te satışta' }) : null)),
       h('div', { class: 'muted small', style: { padding: '2px 4px 4px' }, text: `Kart bakiyesi: ${money(c.balance || 0, cur())}` }))));
   });
 }
@@ -64,7 +64,17 @@ function buildDetail(card) {
     h('div', { class: 'row wrap' },
       !card.is_default && card.status === 'active' ? h('button', { class: 'btn small', type: 'button', text: 'Varsayılan yap', onClick: async () => { try { await api.post(`/api/cards/${card.id}/default`); await refreshMe(); toast('Varsayılan kart güncellendi', 'ok'); location.reload(); } catch (e) { toast(e.message, 'error'); } } }) : null,
       h('button', { class: `btn small ${card.status === 'active' ? 'danger' : ''}`, type: 'button', text: card.status === 'active' ? 'Geçici olarak devre dışı bırak' : 'Yeniden etkinleştir', onClick: async () => { try { await api.post(`/api/cards/${card.id}/status`, { status: card.status === 'active' ? 'disabled' : 'active' }); location.reload(); } catch (e) { toast(e.message, 'error'); } } }),
-      h('a', { class: 'btn small primary', href: '#/cards/pay' }, icon('send', 16), 'Kartla ödeme')));
+      h('a', { class: 'btn small primary', href: '#/cards/pay' }, icon('send', 16), 'Kartla ödeme'),
+      card.market_return ? h('button', { class: 'btn small', type: 'button', text: `Market’e iade et · ${money(card.market_return.refund_minor, cur())}`, onClick: async (e) => busy(e.currentTarget, async () => {
+        if (!confirm(`Bu kartı iade edip ${money(card.market_return.refund_minor, cur())} FN geri almak istiyor musun? Kart arşivlenecek.`)) return;
+        try { const r = await api.post(`/api/cards/${card.id}/market-return`, {}); await refreshMe(); toast(`${money(r.refund_minor, cur())} FN iade edildi`, 'ok'); location.hash = '#/cards'; }
+        catch (er) { toast(er.message, 'error'); }
+      }) }) : null,
+      card.can_delete ? h('button', { class: 'btn small danger', type: 'button', text: 'Kartı sil', onClick: async (e) => busy(e.currentTarget, async () => {
+        if (!confirm('Kart arşivlenecek ve listenden kaldırılacak. Devam edilsin mi?')) return;
+        try { await api.post(`/api/cards/${card.id}/delete`, {}); await refreshMe(); toast('Kart silindi', 'ok'); location.hash = '#/cards'; }
+        catch (er) { toast(er.message, 'error'); }
+      }) }) : null));
 
   const hist = h('div', { class: 'panel' }, h('h3', { text: 'Tasarım geçmişi' }));
   const body = h('div'); hist.append(body);

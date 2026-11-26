@@ -4,6 +4,8 @@ import { notifyStmt } from '../lib/auth.js';
 import { randomBase32 } from '../lib/util.js';
 import { ensureShopSchema, limitsFor, parseData, skinsOf } from '../lib/shop.js';
 import { requireCardMoneySchema } from '../lib/card-money-schema.js';
+import { entryStmts, guardActiveStmt } from '../lib/ledger.js';
+import { shopRevokeStmts } from '../lib/shop.js';
 import { validateDesign, validateDisplayName, validateLabel, defaultDesign, defaultPortraitDesign, readStoredDesign, suggestDisplayName } from '../../shared/card-contract.js';
 
 // Veritabanındaki tasarım (eski sürüm 1 dahil) her zaman sürüm 2 olarak sunulur.
@@ -13,7 +15,7 @@ export const shape = (c) => ({
 });
 
 export async function ownCard(env, userId, id) {
-  const c = await env.DB.prepare('SELECT * FROM cards WHERE id = ? AND user_id = ?').bind(id, userId).first();
+  const c = await env.DB.prepare('SELECT * FROM cards WHERE id = ? AND user_id = ? AND deleted_at IS NULL').bind(id, userId).first();
   if (!c) throw new HttpError(404, 'not_found', 'Kart bulunamadı.'); // başkasının kartı da aynı yanıtı alır
   return c;
 }
@@ -34,7 +36,7 @@ export async function prepareCardCreation(env, user, { label = '', design, displ
   await requireCardMoneySchema(env);
   const bonus = Math.max(0, Math.min(10, Math.trunc(Number(additionalSlots) || 0)));
   const max = (await limitsFor(env, user.id)).max_cards + bonus;
-  const count = Number((await env.DB.prepare('SELECT COUNT(*) AS c FROM cards WHERE user_id = ?').bind(user.id).first())?.c || 0);
+  const count = Number((await env.DB.prepare('SELECT COUNT(*) AS c FROM cards WHERE user_id = ? AND deleted_at IS NULL').bind(user.id).first())?.c || 0);
   if (count >= max) throw new HttpError(400, 'card_limit', `En fazla ${max} sanal kart oluşturabilirsiniz. Önce bir kart alanı açın.`);
   const lb = validateLabel(label);
   if (!lb.ok) throw new HttpError(400, 'invalid_label', lb.error);
@@ -100,7 +102,7 @@ export async function ensureMarketCardDeliveries(env, user) {
     }
 
     const max = (await limitsFor(env, user.id)).max_cards;
-    const count = Number((await env.DB.prepare('SELECT COUNT(*) AS c FROM cards WHERE user_id = ?').bind(user.id).first())?.c || 0);
+    const count = Number((await env.DB.prepare('SELECT COUNT(*) AS c FROM cards WHERE user_id = ? AND deleted_at IS NULL').bind(user.id).first())?.c || 0);
     if (count >= max) continue; // Limit doluysa alışverişi etkilemeden kullanıcıya alan açma fırsatı bırak.
 
     const prepared = await prepareCardCreation(env, user, {
@@ -127,6 +129,7 @@ export async function ensureMarketCardDeliveries(env, user) {
 
 // Yalnızca tasarım + kartta görünen ad + özel ad değişir. Kart adı her zaman tasarımın `userDisplayName` alanıyla aynıdır.
 export async function updateCard(env, user, card, { label, display_name, design }) {
+  await ensureCardNotListed(env, card.id);
   let dName = card.display_name, lb = card.label, changedDesign = false;
   let current = readStoredDesign(card.design_json, card.display_name, card.design_version);
   if (label !== undefined) { const l = validateLabel(label); if (!l.ok) throw new HttpError(400, 'invalid_label', l.error); lb = l.value; }
@@ -150,19 +153,43 @@ export async function updateCard(env, user, card, { label, display_name, design 
   return ownCard(env, user.id, card.id);
 }
 
+// İlan süresince tasarım, durum ve ödeme gibi kart mutasyonlarını durdurur.
+export async function ensureCardNotListed(env, cardId) {
+  const row = await env.DB.prepare("SELECT 1 AS x FROM card_market_listings WHERE card_id = ? AND status = 'active' LIMIT 1").bind(cardId).first();
+  if (row) throw new HttpError(409, 'card_listed', 'Bu kart Market’te satışta. Önce ilanı geri çek.');
+}
+
 export const cardRoutes = {
   async list(req, env, ctx, { user }) {
     await requireCardMoneySchema(env);
     await ensureMarketCardDeliveries(env, user);
-    const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY is_default DESC, created_at ASC').bind(user.id).all()).results;
+    const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? AND deleted_at IS NULL ORDER BY is_default DESC, created_at ASC').bind(user.id).all()).results;
     const skins = await skinsOf(env, user.id);
-    return json({ cards: rows.map((c) => ({ ...shape(c), skin: skins[c.id] || null })), max_cards: (await limitsFor(env, user.id)).max_cards });
+    const cards = await Promise.all(rows.map(async (c) => {
+      const delivery = await env.DB.prepare(`SELECT d.purchase_id, p.price, p.status AS purchase_status
+        FROM shop_card_deliveries d JOIN shop_purchases p ON p.id = d.purchase_id
+        WHERE d.card_id = ? AND d.user_id = ? AND p.status = 'success' LIMIT 1`).bind(c.id, user.id).first();
+      const listing = await env.DB.prepare("SELECT id, title, price_minor, status FROM card_market_listings WHERE card_id = ? AND status = 'active'").bind(c.id).first();
+      return { ...shape(c), skin: skins[c.id] || null, market_listing: listing || null,
+        market_return: delivery ? { purchase_id: delivery.purchase_id, refund_minor: Number(delivery.price || 0) } : null,
+        can_delete: Number(c.balance || 0) === 0 && !listing && !delivery };
+    }));
+    return json({ cards, max_cards: (await limitsFor(env, user.id)).max_cards });
   },
 
   async get(req, env, ctx, { user }, params) {
     await requireCardMoneySchema(env);
     const c = await ownCard(env, user.id, params.id);
-    return json({ ...shape(c), skin: (await skinsOf(env, user.id))[c.id] || null });
+    const [skinMap, delivery, listing] = await Promise.all([
+      skinsOf(env, user.id),
+      env.DB.prepare(`SELECT d.purchase_id, p.price FROM shop_card_deliveries d JOIN shop_purchases p ON p.id = d.purchase_id
+        WHERE d.card_id = ? AND d.user_id = ? AND p.status = 'success' LIMIT 1`).bind(c.id, user.id).first(),
+      env.DB.prepare("SELECT id, title, price_minor, status FROM card_market_listings WHERE card_id = ? AND status = 'active'").bind(c.id).first(),
+    ]);
+    return json({ ...shape(c), skin: skinMap[c.id] || null,
+      market_listing: listing || null,
+      market_return: delivery ? { purchase_id: delivery.purchase_id, refund_minor: Number(delivery.price || 0) } : null,
+      can_delete: Number(c.balance || 0) === 0 && !listing && !delivery });
   },
 
   async resolve(req, env, url, { user }) {
@@ -191,6 +218,7 @@ export const cardRoutes = {
     await requireCardMoneySchema(env);
     const b = await readJson(req, 96 * 1024);
     const card = await ownCard(env, user.id, params.id);
+    await ensureCardNotListed(env, card.id);
     const allowed = new Set(['label', 'display_name', 'design']);
     for (const k of Object.keys(b)) if (!allowed.has(k)) throw new HttpError(400, 'protected_field', `“${k}” alanı değiştirilemez.`);
     await rateLimit(env, `cardedit:${user.id}`, 60, 10 * MIN);
@@ -200,6 +228,7 @@ export const cardRoutes = {
 
   async setDefault(req, env, ctx, { user }, params) {
     const card = await ownCard(env, user.id, params.id);
+    await ensureCardNotListed(env, card.id);
     if (card.status !== 'active') throw new HttpError(400, 'card_disabled', 'Devre dışı kart varsayılan yapılamaz.');
     await env.DB.batch([
       env.DB.prepare('UPDATE cards SET is_default = 0 WHERE user_id = ?').bind(user.id),
@@ -212,14 +241,92 @@ export const cardRoutes = {
     const b = await readJson(req);
     if (!['active', 'disabled'].includes(b.status)) throw new HttpError(400, 'invalid', 'Geçersiz durum.');
     const card = await ownCard(env, user.id, params.id);
+    await ensureCardNotListed(env, card.id);
     const stmts = [env.DB.prepare('UPDATE cards SET status = ?, updated_at = ? WHERE id = ? AND user_id = ?').bind(b.status, now(env), card.id, user.id)];
     if (b.status === 'disabled' && card.is_default) {
       // Varsayılan kart devre dışı kalırsa varsayılan bayrağı başka bir aktif karta devredilir (varsa).
       stmts.push(env.DB.prepare('UPDATE cards SET is_default = 0 WHERE id = ?').bind(card.id));
-      stmts.push(env.DB.prepare(`UPDATE cards SET is_default = 1 WHERE id = (SELECT id FROM cards WHERE user_id = ? AND status = 'active' AND id != ? ORDER BY created_at LIMIT 1)`).bind(user.id, card.id));
+      stmts.push(env.DB.prepare(`UPDATE cards SET is_default = 1 WHERE id = (SELECT id FROM cards WHERE user_id = ? AND deleted_at IS NULL AND status = 'active' AND id != ? ORDER BY created_at LIMIT 1)`).bind(user.id, card.id));
     }
     await env.DB.batch(stmts);
     return json({ ok: true });
+  },
+
+  async delete(req, env, ctx, { user }, params) {
+    await requireCardMoneySchema(env);
+    const card = await ownCard(env, user.id, params.id);
+    await ensureCardNotListed(env, card.id);
+    if (Number(card.balance || 0) !== 0) throw new HttpError(409, 'card_has_balance', 'Kartı silmeden önce bakiyesini sıfırla.');
+    const delivered = await env.DB.prepare(`SELECT d.purchase_id FROM shop_card_deliveries d JOIN shop_purchases p ON p.id = d.purchase_id
+      WHERE d.card_id = ? AND d.user_id = ? AND p.status = 'success' LIMIT 1`).bind(card.id, user.id).first();
+    if (delivered) throw new HttpError(409, 'market_return_required', 'Bu kart Market’ten satın alınmış. Silmeden önce Market iadesini kullan.');
+    const t = now(env);
+    const stmts = [
+      env.DB.prepare('UPDATE cards SET deleted_at = ?, is_default = 0, updated_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL').bind(t, t, card.id, user.id),
+      env.DB.prepare('DELETE FROM shop_card_skins WHERE card_id = ? AND user_id = ?').bind(card.id, user.id),
+    ];
+    if (card.is_default) stmts.push(env.DB.prepare(`UPDATE cards SET is_default = 1 WHERE id = (
+      SELECT id FROM cards WHERE user_id = ? AND deleted_at IS NULL AND status = 'active' AND id != ? ORDER BY created_at LIMIT 1
+    )`).bind(user.id, card.id));
+    stmts.push(notifyStmt(env, user.id, 'card_deleted', 'Kart silindi', `${card.display_name} kartı arşive alındı.`));
+    await env.DB.batch(stmts);
+    return json({ ok: true, deleted: true });
+  },
+
+  // Yalnızca Nexus Market'ten alınmış ve bakiyesi boş kartlarda anlık FN iadesi.
+  async marketReturn(req, env, ctx, { user }, params) {
+    await requireCardMoneySchema(env);
+    await ensureShopSchema(env);
+    const card = await ownCard(env, user.id, params.id);
+    if (Number(card.balance || 0) !== 0) throw new HttpError(409, 'card_has_balance', 'İade için kart bakiyesini sıfırla.');
+    await ensureCardNotListed(env, card.id);
+    const delivery = await env.DB.prepare(`SELECT d.purchase_id, p.price, p.name, p.status
+      FROM shop_card_deliveries d JOIN shop_purchases p ON p.id = d.purchase_id
+      WHERE d.card_id = ? AND d.user_id = ? AND p.status = 'success' LIMIT 1`).bind(card.id, user.id).first();
+    if (!delivery) throw new HttpError(404, 'not_market_card', 'Bu kart iade edilebilir bir Market satın alımı değil.');
+
+    const purchaseRef = delivery.purchase_id;
+    const payment = await env.DB.prepare(`SELECT card_id FROM card_ledger WHERE tx_ref = ? AND user_id = ? AND type = 'payment' AND amount < 0`).bind(purchaseRef, user.id).first();
+    const originalPayCard = payment && await env.DB.prepare('SELECT id FROM cards WHERE id = ? AND user_id = ? AND deleted_at IS NULL').bind(payment.card_id, user.id).first();
+    const refundToCard = originalPayCard && payment.card_id !== card.id;
+    const t = now(env), ref = `NXR-${randomBase32(12)}`;
+    const stmts = [
+      guardActiveStmt(env, user.id),
+      env.DB.prepare(`SELECT json_extract(CASE WHEN EXISTS (
+        SELECT 1 FROM shop_purchases p JOIN shop_card_deliveries d ON d.purchase_id = p.id
+        JOIN cards c ON c.id = d.card_id
+        WHERE p.id = ? AND p.user_id = ? AND p.status = 'success' AND d.card_id = ? AND d.user_id = ?
+          AND c.user_id = ? AND c.deleted_at IS NULL AND c.balance = 0
+      ) THEN '{}' ELSE 'x' END, '$')`).bind(purchaseRef, user.id, card.id, user.id, user.id),
+    ];
+    if (refundToCard) {
+      stmts.push(
+        env.DB.prepare('UPDATE cards SET balance = balance + ?, updated_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL').bind(delivery.price, t, payment.card_id, user.id),
+        env.DB.prepare(`INSERT INTO card_ledger
+          (id, tx_ref, user_id, card_id, type, amount, balance_after, counterparty_id, idempotency_key, description, created_at)
+          VALUES (?, ?, ?, ?, 'fund_in', ?, (SELECT balance FROM cards WHERE id = ? AND user_id = ?), NULL, ?, ?, ?)`).bind(
+            crypto.randomUUID(), ref, user.id, payment.card_id, delivery.price, payment.card_id, user.id,
+            `community_return_${purchaseRef}`, `Nexus Market kart iadesi: ${delivery.name}`, t),
+      );
+    } else {
+      stmts.push(...entryStmts(env, { ref, userId: user.id, type: 'refund', amount: delivery.price, desc: `Nexus Market kart iadesi: ${delivery.name}` }));
+    }
+    stmts.push(
+      ...await shopRevokeStmts(env, purchaseRef),
+      env.DB.prepare('UPDATE cards SET deleted_at = ?, is_default = 0, updated_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL').bind(t, t, card.id, user.id),
+      env.DB.prepare('DELETE FROM shop_card_skins WHERE card_id = ? AND user_id = ?').bind(card.id, user.id),
+      notifyStmt(env, user.id, 'market_card_return', 'Market kart iadesi tamamlandı', `${delivery.name} kartı iade edildi. ${refundToCard ? 'Tutar ödeme yaptığın karta aktarıldı.' : 'Tutar ana cüzdanına aktarıldı.'}`),
+    );
+    if (card.is_default) stmts.push(env.DB.prepare(`UPDATE cards SET is_default = 1 WHERE id = (
+      SELECT id FROM cards WHERE user_id = ? AND deleted_at IS NULL AND status = 'active' AND id != ? ORDER BY created_at LIMIT 1
+    )`).bind(user.id, card.id));
+    try { await env.DB.batch(stmts); }
+    catch (err) {
+      if (String(err.message || err).includes('malformed JSON') || String(err.message || err).includes('card_ledger.user_id'))
+        throw new HttpError(409, 'not_refundable', 'Bu kart zaten iade edilmiş veya iade koşulları değişti.');
+      throw err;
+    }
+    return json({ ok: true, ref, refund_minor: delivery.price, refunded_to: refundToCard ? 'card' : 'wallet', balance: await env.DB.prepare('SELECT balance FROM wallets WHERE user_id = ?').bind(user.id).first().then(x => Number(x?.balance || 0)) }, 201);
   },
 
   async history(req, env, ctx, { user }, params) {
@@ -232,6 +339,7 @@ export const cardRoutes = {
     await requireCardMoneySchema(env);
     const b = await readJson(req);
     const card = await ownCard(env, user.id, params.id);
+    await ensureCardNotListed(env, card.id);
     const h = await env.DB.prepare('SELECT display_name, design_json FROM card_design_history WHERE card_id = ? AND version = ?').bind(card.id, Number(b.version)).first();
     if (!h) throw new HttpError(404, 'not_found', 'Sürüm bulunamadı.');
     const old = readStoredDesign(h.design_json, h.display_name);   // eski kayıt (sürüm 1 dahil) güncel biçime çevrilir ve yeniden kurulur

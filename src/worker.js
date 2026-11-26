@@ -85,6 +85,8 @@ add('POST', '/api/cards/:id/pay', cardMoneyRoutes.pay);
 add('GET', '/api/cards/:id/transactions', cardMoneyRoutes.transactions);
 add('GET', '/api/cards/:id/history', cardRoutes.history);
 add('POST', '/api/cards/:id/revert', cardRoutes.revert);
+add('POST', '/api/cards/:id/delete', cardRoutes.delete, 'bank');
+add('POST', '/api/cards/:id/market-return', cardRoutes.marketReturn, 'bank');
 
 add('POST', '/api/shop/ticket', shopRoutes.ticket);
 add('GET', '/api/shop/mine', shopRoutes.mine);
@@ -97,6 +99,11 @@ add('GET', '/api/shop/purchases', shopRoutes.purchases, 'shop');
 add('POST', '/api/shop/purchase', shopRoutes.purchase, 'shop');
 add('POST', '/api/shop/wishlist', shopRoutes.wishlist, 'shop');
 add('POST', '/api/shop/equip', shopRoutes.equip, 'shop');
+add('GET', '/api/shop/community', shopRoutes.community, 'shop');
+add('GET', '/api/shop/community/mine', shopRoutes.communityMine, 'shop');
+add('POST', '/api/shop/community/list', shopRoutes.communityList, 'shop');
+add('POST', '/api/shop/community/:id/buy', shopRoutes.communityBuy, 'shop');
+add('POST', '/api/shop/community/:id/cancel', shopRoutes.communityCancel, 'shop');
 add('POST', '/api/cards/:id/skin', cardSkinRoute);
 add('POST', '/api/pass/ticket', passRoutes.ticket);
 add('GET', '/api/pass/mine', passRoutes.mine);
@@ -173,17 +180,22 @@ async function handleApi(req, env) {
 
 // Ayrı siteler (kart editörü, Nexus Pass) için CORS: yalnızca EDITOR_URL / PASS_URL (+ *_ORIGINS) kaynağına izin verilir. Çerez gönderilmez; kimlik bilet/Bearer jetondadır.
 const BANK_PATHS = new Set(['/api/bank/exchange', '/api/bank/market-ticket', '/api/editor/ticket', '/api/cards', '/api/me', '/api/notifications', '/api/notifications/read', '/api/vault', '/api/wallet', '/api/transactions', '/api/transfers/lookup', '/api/transfers', '/api/transfers/recent', '/api/market', '/api/market/history', '/api/market/trades', '/api/market/trade']);
+const BANK_PATH_RE = [/^\/api\/cards\/[^/]+\/(?:delete|market-return)$/];
 const EDITOR_PATHS = new Set(['/api/editor/exchange', '/api/editor/card']);
 const EDITOR_SHOP_PATHS = new Set(['/api/editor/shop-ticket']);
 const PASS_PATHS = new Set(['/api/pass/exchange', '/api/pass/me', '/api/pass/products', '/api/pass/product', '/api/pass/purchases', '/api/pass/purchase']);
-const SHOP_PATHS = new Set(['/api/shop/exchange', '/api/shop/bank-ticket', '/api/shop/me', '/api/shop/products', '/api/shop/product', '/api/shop/purchases', '/api/shop/purchase', '/api/shop/wishlist', '/api/shop/equip']);
+const SHOP_PATHS = new Set(['/api/shop/exchange', '/api/shop/bank-ticket', '/api/shop/me', '/api/shop/products', '/api/shop/product', '/api/shop/purchases', '/api/shop/purchase', '/api/shop/wishlist', '/api/shop/equip', '/api/shop/community', '/api/shop/community/mine', '/api/shop/community/list']);
+const SHOP_PATH_RE = [/^\/api\/shop\/community\/[^/]+\/(?:buy|cancel)$/];
+const isBankPath = (p) => BANK_PATHS.has(p) || BANK_PATH_RE.some((r) => r.test(p));
+const isShopPath = (p) => SHOP_PATHS.has(p) || SHOP_PATH_RE.some((r) => r.test(p));
 const CORS_PATHS = new Set([...BANK_PATHS, ...EDITOR_PATHS, ...EDITOR_SHOP_PATHS, ...PASS_PATHS, ...SHOP_PATHS]);
+const corsPath = (p) => CORS_PATHS.has(p) || isBankPath(p) || isShopPath(p);
 function siteCors(req, env, url) {
-  if (!CORS_PATHS.has(url.pathname)) return null;
-  const allowed = BANK_PATHS.has(url.pathname) ? bankOrigins(env) : SHOP_PATHS.has(url.pathname) ? shopOrigins(env) : PASS_PATHS.has(url.pathname) ? passOrigins(env) : editorOrigins(env);
+  if (!corsPath(url.pathname)) return null;
+  const allowed = isBankPath(url.pathname) ? bankOrigins(env) : isShopPath(url.pathname) ? shopOrigins(env) : PASS_PATHS.has(url.pathname) ? passOrigins(env) : editorOrigins(env);
   const o = req.headers.get('origin') || '';
   if (!o || !allowed.includes(o)) return null;
-  return { 'access-control-allow-origin': o, 'access-control-allow-methods': 'GET, POST, PUT, OPTIONS', 'access-control-allow-headers': 'content-type, authorization', 'access-control-max-age': '86400', vary: 'Origin', 'cross-origin-resource-policy': 'cross-origin' };
+  return { 'access-control-allow-origin': o, 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'access-control-allow-headers': 'content-type, authorization', 'access-control-max-age': '86400', vary: 'Origin', 'cross-origin-resource-policy': 'cross-origin' };
 }
 
 export default {
@@ -193,7 +205,7 @@ export default {
       return env.ASSETS ? env.ASSETS.fetch(req) : new Response('Not found', { status: 404 });
     }
     const cors = siteCors(req, env, url);
-    if (req.method === 'OPTIONS' && CORS_PATHS.has(url.pathname)) return new Response(null, { status: cors ? 204 : 403, headers: cors || {} });
+    if (req.method === 'OPTIONS' && corsPath(url.pathname)) return new Response(null, { status: cors ? 204 : 403, headers: cors || {} });
     try {
       const res = url.pathname.startsWith('/api/ext/timer-reward/')
         ? await externalCrystalRoutes.handle(req, env, url)

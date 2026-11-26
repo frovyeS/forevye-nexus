@@ -5,7 +5,7 @@ import { verifyPassword } from '../lib/crypto.js';
 import { rateLimit } from '../lib/rate.js';
 import { entryStmts, guardActiveStmt } from '../lib/ledger.js';
 import { notifyStmt } from '../lib/auth.js';
-import { ownCard } from './cards.js';
+import { ownCard, ensureCardNotListed } from './cards.js';
 import { limitsFor } from '../lib/shop.js';
 import { requireCardMoneySchema } from '../lib/card-money-schema.js';
 
@@ -39,6 +39,7 @@ export const cardMoneyRoutes = {
     const b = await readJson(req);
     await rateLimit(env, `cardfund:${user.id}`, 30, 10 * MIN);
     const card = await ownCard(env, user.id, params.id);
+    await ensureCardNotListed(env, card.id);
     const amount = parseAmount(b.amount);
     const key = validateKey(b.idempotency_key);
     const direction = b.direction === undefined ? 'load' : b.direction;
@@ -90,6 +91,7 @@ export const cardMoneyRoutes = {
     const b = await readJson(req);
     await rateLimit(env, `cardpay:${user.id}`, 20, 10 * MIN);
     const card = await ownCard(env, user.id, params.id);
+    await ensureCardNotListed(env, card.id);
     if (card.status !== 'active') throw new HttpError(400, 'card_disabled', 'Devre dışı kartla ödeme yapılamaz.');
     const amount = parseAmount(b.amount);
     const key = validateKey(b.idempotency_key);

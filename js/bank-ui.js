@@ -28,9 +28,14 @@
         const rows = d.cards || [];
         const cards = rows.map(c => {
           const svg = root.FNXRender && root.FNXRender.cardSvg ? root.FNXRender.cardSvg(c.design, { last4: c.card_token ? c.card_token.slice(-4) : '••••', cardToken: c.card_token || '', skin: c.skin && c.skin.skin || null, skinSerial: c.skin && c.skin.serial || '' }, { prefix: 'bank' + String(c.id).replace(/[^a-z0-9]/gi,''), animate: false }) : '';
-          return `<article class="bank-card-item"><div class="bank-card-art">${svg}</div><div class="bank-card-meta"><div class="row between"><b>${esc(c.label || c.display_name || 'Sanal kart')}</b><span class="chip ${c.status === 'active' ? 'ok' : 'bad'}">${c.status === 'active' ? 'Aktif' : 'Devre dışı'}</span></div><small>${c.skin && c.skin.name ? esc(c.skin.name) + ' · ' : ''}${c.is_default ? 'Varsayılan kart · ' : ''}Kart bakiyesi</small><strong>${money(c.balance || 0)} FN</strong><button class="btn primary" type="button" data-card-edit="${esc(c.id)}">Kart editöründe düzenle</button></div></article>`;
+          const actions = [
+            `<button class="btn primary" type="button" data-card-edit="${esc(c.id)}">Kart editöründe düzenle</button>`,
+            c.market_return ? `<button class="btn" type="button" data-card-return="${esc(c.id)}" data-refund="${Number(c.market_return.refund_minor || 0)}">Market’e iade et · ${money(c.market_return.refund_minor)} FN</button>` : '',
+            c.can_delete ? `<button class="btn danger" type="button" data-card-delete="${esc(c.id)}">Kartı sil</button>` : '',
+          ].filter(Boolean).join('');
+          return `<article class="bank-card-item"><div class="bank-card-art">${svg}</div><div class="bank-card-meta"><div class="row between"><b>${esc(c.label || c.display_name || 'Sanal kart')}</b><span class="chip ${c.status === 'active' ? 'ok' : 'bad'}">${c.status === 'active' ? 'Aktif' : 'Devre dışı'}</span></div><small>${c.skin && c.skin.name ? esc(c.skin.name) + ' · ' : ''}${c.is_default ? 'Varsayılan kart · ' : ''}Kart bakiyesi</small><strong>${money(c.balance || 0)} FN</strong>${actions}</div></article>`;
         }).join('');
-        box.innerHTML = `<section class="panel"><div class="row between"><div><h2 class="panel-h">Kartlarım</h2><p class="note">Market’ten aldığın kart tasarımları da burada görünür. Kartını seçip editörde düzenleyebilirsin.</p></div><button class="btn" type="button" data-card-new>+ Yeni kart</button></div>${cards ? `<div class="bank-card-grid">${cards}</div>` : '<p class="muted">Henüz kartın yok. Market’ten kart aldığında burada görünür.</p>'}<p class="note">${rows.length} / ${d.max_cards || 0} kart alanı kullanılıyor. Kartlar oyun içi sanal kartlardır.</p></section>`;
+        box.innerHTML = `<section class="panel"><div class="row between"><div><h2 class="panel-h">Kartlarım</h2><p class="note">Market’ten aldığın ve kendi tasarladığın kartlar burada görünür. İade edilebilir Market kartını FN karşılığında geri verebilir, boş özel kartını silebilirsin.</p></div><div class="row wrap"><button class="btn" type="button" data-bank-route="market">Nexus Market</button><button class="btn" type="button" data-card-new>+ Yeni kart</button></div></div>${cards ? `<div class="bank-card-grid">${cards}</div>` : '<p class="muted">Henüz kartın yok. Market’ten kart aldığında burada görünür.</p>'}<p class="note">${rows.length} / ${d.max_cards || 0} kart alanı kullanılıyor. Kartlar oyun içi sanal kartlardır.</p></section>`;
       } else if (route === 'home') {
         const [w,m,tx] = await Promise.all([req('GET','/api/wallet'), req('GET','/api/market'), req('GET','/api/transactions?limit=5')]);
         cache.home={w,m,tx};
@@ -38,7 +43,7 @@
       } else if (route === 'wallet') {
         const [m,tr] = await Promise.all([req('GET','/api/market'),req('GET','/api/market/trades?limit=20')]); cache.wallet={m,tr};
         const q=m.you?.qty/(m.qty_scale||10000), val=m.you?.value_minor||0, pnl=m.you?.pnl_minor||0;
-        box.innerHTML=`<section class="panel crystal-panel"><span class="muted">Toplam kristal</span><div class="bank-big crystal-text">◇ ${crystal(q)} <small>KRS</small></div><div class="bank-stats"><div><small>Güncel değer</small><b>${money(val)} FN</b></div><div><small>Alış maliyeti</small><b>${money(m.you?.cost_minor)} FN</b></div><div><small>Değişim</small><b class="${pnl>=0?'pos':'neg'}">${pnl>=0?'+':''}${money(pnl)} FN</b></div></div><p class="note">Kristal oyun içi dijital varlıktır; gerçek para veya mevduat değildir.</p><button class="btn primary" data-market-open>Kristal borsasını aç</button></section><section class="panel"><h2 class="panel-h">Kristal işlemleri</h2>${tr.items.length?`<ul class="bank-list">${tr.items.map(t=>`<li data-crystal-detail="${esc(t.ref)}"><span><b>${t.side==='buy'?'Kristal alımı':'Kristal satışı'}</b><small>${date(t.created_at)} · Ref: ${esc(t.ref)}</small></span><strong>${t.side==='buy'?'+':'−'}${crystal(Number(t.qty)/(m.qty_scale||10000))} KRS</strong></li>`).join('')}</ul>`:'<p class="muted">Henüz kristal işlemin yok.</p>'}</section>`;
+        box.innerHTML=`<section class="panel crystal-panel"><span class="muted">Toplam kristal</span><div class="bank-big crystal-text">◇ ${crystal(q)} <small>KRS</small></div><div class="bank-stats"><div><small>Güncel değer</small><b>${money(val)} FN</b></div><div><small>Alış maliyeti</small><b>${money(m.you?.cost_minor)} FN</b></div><div><small>Değişim</small><b class="${pnl>=0?'pos':'neg'}">${pnl>=0?'+':''}${money(pnl)} FN</b></div></div><p class="note">Kristal oyun içi dijital varlıktır; gerçek para veya mevduat değildir.</p><button class="btn primary" data-exchange-open>Kristal borsasını aç</button></section><section class="panel"><h2 class="panel-h">Kristal işlemleri</h2>${tr.items.length?`<ul class="bank-list">${tr.items.map(t=>`<li data-crystal-detail="${esc(t.ref)}"><span><b>${t.side==='buy'?'Kristal alımı':'Kristal satışı'}</b><small>${date(t.created_at)} · Ref: ${esc(t.ref)}</small></span><strong>${t.side==='buy'?'+':'−'}${crystal(Number(t.qty)/(m.qty_scale||10000))} KRS</strong></li>`).join('')}</ul>`:'<p class="muted">Henüz kristal işlemin yok.</p>'}</section>`;
       } else if (route === 'activity') {
         const d=await req('GET','/api/transactions?limit=50'); cache.activity=d;
         box.innerHTML=`<section class="panel"><h2 class="panel-h">Bakiye hareketleri</h2>${d.items.length?`<ul class="bank-list">${d.items.map(txRow).join('')}</ul>`:'<p class="muted">Henüz işlem yok.</p>'}</section>`;
@@ -59,7 +64,20 @@
     if(e.target.closest('[data-reload]')){paint();return;}
     const editCard=e.target.closest('[data-card-edit]'); if(editCard){try{const r=await req('POST','/api/editor/ticket',{card_id:editCard.dataset.cardEdit});location.href=r.url;}catch(err){root.FNXToast(err.message);}return;}
     if(e.target.closest('[data-card-new]')){try{const r=await req('POST','/api/editor/ticket',{label:'NEXUS'});location.href=r.url;}catch(err){root.FNXToast(err.message);}return;}
-    if(e.target.closest('[data-market-open]')){openMarket();return;}
+    const returnCard=e.target.closest('[data-card-return]'); if(returnCard){
+      const amount=money(Number(returnCard.dataset.refund||0));
+      if(!confirm(`Bu Market kartını iade edip ${amount} FN anında geri almak istiyor musun? Kart arşivlenecek ve yeniden kullanılamayacak.`)) return;
+      returnCard.disabled=true;
+      try{const r=await req('POST',`/api/cards/${returnCard.dataset.cardReturn}/market-return`,{});root.FNXToast(`${money(r.refund_minor)} FN iade edildi.`);await paint();}
+      catch(err){root.FNXToast(err.message);returnCard.disabled=false;} return;
+    }
+    const deleteCard=e.target.closest('[data-card-delete]'); if(deleteCard){
+      if(!confirm('Bu kart kalıcı listeden kaldırılacak ve arşivlenecek. İşlem geri alınamaz. Devam edilsin mi?')) return;
+      deleteCard.disabled=true;
+      try{await req('POST',`/api/cards/${deleteCard.dataset.cardDelete}/delete`,{});root.FNXToast('Kart silindi.');await paint();}
+      catch(err){root.FNXToast(err.message);deleteCard.disabled=false;} return;
+    }
+    if(e.target.closest('[data-exchange-open]')){openExchange();return;}
     if(e.target.closest('[data-read-all]')){try{await req('POST','/api/notifications/read',{all:true});paint();}catch(err){root.FNXToast(err.message);}return;}
     const tr=e.target.closest('[data-tx]'); if(tr){const x=(cache.activity?.items||cache.home?.tx?.items||[]).find(z=>z.id===tr.dataset.tx);if(x)detail('İşlem ayrıntısı',`<dl class="bank-detail"><dt>İşlem</dt><dd>${esc(x.type)}</dd><dt>Tutar</dt><dd>${x.amount<0?'−':'+'}${money(Math.abs(x.amount))} FN</dd><dt>${x.amount>0?'Gönderen':'Alıcı / karşı taraf'}</dt><dd>${esc(x.counterparty||'—')}</dd><dt>Açıklama</dt><dd>${esc(x.description||'Açıklama eklenmemiş.')}</dd><dt>Durum</dt><dd>${esc(x.status||'success')}</dd><dt>Tarih</dt><dd>${date(x.created_at)}</dd><dt>Referans</dt><dd>${esc(x.tx_ref||'—')}</dd></dl>`);return;}
     const no=e.target.closest('[data-notification]');if(no){const n=(cache.notifications?.items||[]).find(z=>z.id===no.dataset.notification);if(n){if(!n.read_at)req('POST','/api/notifications/read',{ids:[n.id]}).catch(()=>{});const isTransfer = /^transfer_(sent|received)$/.test(n.type||'');
@@ -67,6 +85,8 @@
       detail(n.title,`<section class="transfer-receipt"><div class="receipt-kicker">${isTransfer?'TRANSFER MAKBUZU':'BİLDİRİM AYRINTISI'}</div><p class="receipt-body">${esc(n.body||'Ayrıntı bulunmuyor.')}</p><dl class="bank-detail"><dt>İşlem türü</dt><dd>${isTransfer?(n.type==='transfer_sent'?'Gönderilen transfer':'Alınan transfer'):esc(n.type||'Bildirim')}</dd><dt>Bildirim zamanı</dt><dd>${date(n.created_at)}</dd>${ref?`<dt>İşlem referansı</dt><dd>${esc(ref[1])}</dd>`:''}<dt>Durum</dt><dd>Başarılı bildirim</dd></dl><p class="note">Bu makbuz, transfer sırasında kaydedilen tutar, karşı taraf, açıklama ve referans bilgisini gösterir.</p></section>`);}return;}
     const cd=e.target.closest('[data-crystal-detail]');if(cd){const t=(cache.wallet?.tr?.items||[]).find(z=>z.ref===cd.dataset.crystalDetail);if(t)detail(t.side==='buy'?'Kristal alım ayrıntısı':'Kristal satış ayrıntısı',`<dl class="bank-detail"><dt>Miktar</dt><dd>${crystal(Number(t.qty)/(cache.wallet.m.qty_scale||10000))} KRS</dd><dt>İşlem fiyatı</dt><dd>${money(t.price_micro/10000)} FN</dd><dt>Toplam</dt><dd>${money(t.total)} FN</dd><dt>Tarih</dt><dd>${date(t.created_at)}</dd><dt>Referans</dt><dd>${esc(t.ref)}</dd></dl>`);}
   }
+  // Kristal borsası Nexus uygulamasındadır (#/market = "Borsa"); Market (mağaza) sitesi ayrı bir yerdir. Oturum yoksa Nexus girişten sonra buraya döner.
+  function openExchange(){ if (!C || !C.nexusUrl) { root.FNXToast('Nexus adresi ayarlı değil.'); return; } location.href = C.nexusUrl + '/#/market'; }
   async function openMarket(){try{const r=await req('POST','/api/bank/market-ticket',{});location.href=r.url;}catch(e){root.FNXToast(e.message);}}
   function start(data){me=data.me;{const r=C&&C.state&&C.state.bankRoute;if(['home','cards','wallet','activity','achievements','notifications'].includes(r))route=r;}root.FNXBankUI={refresh:paint,request:req};shell();window.addEventListener('hashchange',()=>{});}
   root.FNXBankUI={start};

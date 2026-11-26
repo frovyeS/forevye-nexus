@@ -34,10 +34,10 @@ test('koleksiyon SVG vitrinleri resmî arma veya lisanslı karakter görseli iç
 
 import '../public/js/card-skins.js';
 
-test('280 kart yüzeyinin tamamı render edilebilir; yıldız motifi özgün takımyıldız geometrisi üretir', () => {
+test('310 kart yüzeyinin tamamı render edilebilir; yıldız motifi özgün takımyıldız geometrisi üretir', () => {
   const entries = globalThis.FNXSkins.catalog.filter(x => /^nx(?:250|280)_/.test(x.id));
-  assert.equal(entries.length, 280);
-  assert.equal(new Set(entries.map(x => x.id)).size, 280);
+  assert.equal(entries.length, 310);
+  assert.equal(new Set(entries.map(x => x.id)).size, 310);
   for (const item of entries) {
     const skin = globalThis.FNXSkins.get(item.id);
     assert.ok(skin && typeof skin.build === 'function', item.id);
