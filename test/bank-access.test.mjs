@@ -4,7 +4,7 @@ import { makeEnv, client, register, fund, one } from './helpers.mjs';
 import { grantAchievement } from '../src/routes/misc.js';
 
 test('banka tek kullanımlık bileti kapsamlı banka oturumuna çevirir; Market bileti üretebilir', async () => {
-  const env = makeEnv({ BANK_URL: 'https://mhaforevye.github.io/forevye_nexus_bank/', SHOP_URL: 'https://mhaforevye.github.io/nexus-market/' });
+  const env = makeEnv({ BANK_URL: 'https://mhaforevye.github.io/forevye_nexus_bank/', EDITOR_URL: 'https://mhaforevye.github.io/forevye_nexus_bank/', SHOP_URL: 'https://mhaforevye.github.io/nexus-market/' });
   const { cl, me } = await register(env, 'bank-access@example.com', 'bank_access', { keepWelcomeCrystals: true });
   const ticket = await cl.post('/api/bank/ticket');
   assert.equal(ticket.status, 200);
@@ -16,6 +16,12 @@ test('banka tek kullanımlık bileti kapsamlı banka oturumuna çevirir; Market 
   const balance = await cl.get('/api/wallet', headers);
   assert.equal(balance.status, 200);
   assert.equal(balance.data.balance, 0);
+  const cards = await cl.get('/api/cards', headers);
+  assert.equal(cards.status, 200, 'banka jetonu Kartlarım listesini okuyabilmeli');
+  assert.ok(Array.isArray(cards.data.cards));
+  assert.equal(cards.res.headers.get('access-control-allow-origin'), 'https://mhaforevye.github.io');
+  assert.equal((await cl.post('/api/editor/ticket', { card_id: cards.data.cards[0].id }, headers)).status, 200, 'banka uygulaması seçilen kart için editör bileti alabilmeli');
+  assert.equal((await cl.get('/api/cards', { ...headers, origin: 'https://evil.example' })).res.headers.get('access-control-allow-origin'), null, 'kart listesi CORS yalnızca banka kaynağına açık olmalı');
   const market = await cl.post('/api/bank/market-ticket', {}, headers);
   assert.equal(market.status, 200);
   assert.match(market.data.url, /nexus-market/);

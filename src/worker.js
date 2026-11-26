@@ -67,11 +67,11 @@ add('GET', '/api/market/history', marketRoutes.history, 'bank');
 add('GET', '/api/market/trades', marketRoutes.trades, 'bank');
 add('POST', '/api/market/trade', marketRoutes.trade, 'bank');
 
-add('GET', '/api/cards', cardRoutes.list);
+add('GET', '/api/cards', cardRoutes.list, 'bank');
 add('GET', '/api/cards/resolve', cardRoutes.resolve);
 add('POST', '/api/cards', cardRoutes.create);
 add('GET', '/api/card-templates', cardRoutes.templates);
-add('POST', '/api/editor/ticket', editorRoutes.ticket);
+add('POST', '/api/editor/ticket', editorRoutes.ticket, 'bank');
 add('POST', '/api/editor/exchange', editorRoutes.exchange, 'editor');
 add('GET', '/api/editor/card', editorRoutes.card, 'editor');
 add('PUT', '/api/editor/card', editorRoutes.save, 'editor');
@@ -172,7 +172,7 @@ async function handleApi(req, env) {
 }
 
 // Ayrı siteler (kart editörü, Nexus Pass) için CORS: yalnızca EDITOR_URL / PASS_URL (+ *_ORIGINS) kaynağına izin verilir. Çerez gönderilmez; kimlik bilet/Bearer jetondadır.
-const BANK_PATHS = new Set(['/api/bank/exchange', '/api/bank/market-ticket', '/api/me', '/api/notifications', '/api/notifications/read', '/api/vault', '/api/wallet', '/api/transactions', '/api/transfers/lookup', '/api/transfers', '/api/transfers/recent', '/api/market', '/api/market/history', '/api/market/trades', '/api/market/trade']);
+const BANK_PATHS = new Set(['/api/bank/exchange', '/api/bank/market-ticket', '/api/editor/ticket', '/api/cards', '/api/me', '/api/notifications', '/api/notifications/read', '/api/vault', '/api/wallet', '/api/transactions', '/api/transfers/lookup', '/api/transfers', '/api/transfers/recent', '/api/market', '/api/market/history', '/api/market/trades', '/api/market/trade']);
 const EDITOR_PATHS = new Set(['/api/editor/exchange', '/api/editor/card']);
 const EDITOR_SHOP_PATHS = new Set(['/api/editor/shop-ticket']);
 const PASS_PATHS = new Set(['/api/pass/exchange', '/api/pass/me', '/api/pass/products', '/api/pass/product', '/api/pass/purchases', '/api/pass/purchase']);

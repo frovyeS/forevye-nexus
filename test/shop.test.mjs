@@ -81,8 +81,8 @@ test('market: SHOP_URL yoksa bilet 503; katalog tohumu ve fiyatlar sunucudan gel
   assert.equal(imperial.stock_left, 28); assert.equal(imperial.stock_total, 28);
 });
 
-test('market: satın alma FN düşer, defterde görünür; çift sahiplik ve çift gönderim engellenir', async () => {
-  const { env, token, uid } = await setup();
+test('market: satın alma FN düşer, defterde görünür; kart tasarımı doğrudan banka kartına teslim edilir', async () => {
+  const { env, u, token, uid } = await setup();
   const poor = (await buy(env, token, 'skin_onyx')).data;
   assert.equal(poor.code, 'insufficient'); assert.equal(poor.missing, FN(1800));
   await fund(env, uid, FN(5000));
@@ -90,6 +90,10 @@ test('market: satın alma FN düşer, defterde görünür; çift sahiplik ve çi
   const key = 'idem-stable-shop-1';
   const r1 = await buy(env, token, 'skin_onyx', key);
   assert.equal(r1.status, 201); assert.equal(r1.data.ok, true); assert.equal(r1.data.balance, FN(3200));
+  assert.ok(r1.data.delivery?.card?.id, 'tasarım kartı satın alımında gerçek banka kartı teslim edilmeli');
+  assert.equal(r1.data.delivery.card.skin.skin, 'onyx');
+  const bankList = (await u.cl.get('/api/cards')).data;
+  assert.ok(bankList.cards.some((c) => c.id === r1.data.delivery.card.id && c.skin?.product_id === 'skin_onyx'), 'teslim edilen kart Kartlarım listesinde görünmeli');
   const led = await one(env, 'SELECT type, amount, description FROM ledger_entries WHERE tx_ref = ?', r1.data.purchase.id);
   assert.equal(led.type, 'purchase'); assert.equal(led.amount, -FN(1800)); assert.match(led.description, /Nexus Market: Oniks Mat/);
   const r2 = await buy(env, token, 'skin_onyx', key);                    // aynı anahtar: tekrar düşmez
@@ -306,6 +310,42 @@ test('eski fonksiyonel kart sahipliği: banka kart listesi açılınca otomatik 
   const delivered = list.cards.find((c) => c.skin?.product_id === 'card_black');
   assert.ok(delivered, 'eski satın alma banka kartına dönüşmeli');
   assert.equal(delivered.skin.skin, 'royal');
+  assert.equal((await one(env, 'SELECT COUNT(*) AS c FROM shop_card_deliveries WHERE purchase_id = ?', ref)).c, 1);
+  await u.cl.get('/api/cards');
+  assert.equal((await one(env, 'SELECT COUNT(*) AS c FROM cards WHERE user_id = ?', uid)).c, 2, 'yeniden listeleme ikinci kart üretmemeli');
+});
+
+test('yeni Market dikey tasarım alımı anında dikey banka kartı teslim eder', async () => {
+  const { env, u, token, uid } = await setup({}, 'portraitpurchase');
+  const product = SEED.find((p) => p.kind === 'design' && p.data?.orientation === 'portrait');
+  assert.ok(product);
+  await fund(env, uid, FN(7000));
+  const bought = await buy(env, token, product.id);
+  assert.equal(bought.status, 201);
+  assert.ok(bought.data.delivery?.card?.id, 'tasarım satın alma yanıtı teslim edilen kartı içermeli');
+  assert.equal(bought.data.delivery.card.design.orientation, 'portrait');
+  const list = (await u.cl.get('/api/cards')).data;
+  assert.ok(list.cards.some((c) => c.id === bought.data.delivery.card.id && c.skin?.product_id === product.id));
+});
+
+test('eski tasarım sahipliği: Kartlarım açılınca kart üretir; dikey yönü korur', async () => {
+  const { env, u, uid } = await setup({}, 'legacydesign');
+  const product = SEED.find((p) => p.kind === 'design' && p.data?.orientation === 'portrait');
+  assert.ok(product, 'dikey bir tasarım ürünü katalogda olmalı');
+  const ref = 'NXM-LEGACY-DESIGN-DELIVERY';
+  const t = env.__NOW;
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO shop_purchases (id, user_id, product_id, name, kind, price, serial, status, created_at)
+      VALUES (?,?,?,?,?,?,1,'success',?)`).bind(ref, uid, product.id, product.name, 'design', product.price, t),
+    env.DB.prepare(`INSERT INTO shop_entitlements (id, user_id, product_id, qty, serial, acquired_at, tx_ref)
+      VALUES (?,?,?,?,1,?,?)`).bind('legacy-design-entitlement', uid, product.id, 1, t, ref),
+    env.DB.prepare('UPDATE shop_products SET stock_sold = stock_sold + 1 WHERE id = ?').bind(product.id),
+  ]);
+  const list = (await u.cl.get('/api/cards')).data;
+  const delivered = list.cards.find((c) => c.skin?.product_id === product.id);
+  assert.ok(delivered, 'eski tasarım ürünü banka kartına dönüşmeli');
+  assert.equal(delivered.design.orientation, 'portrait', 'dikey kart yönü korunmalı');
+  assert.equal(delivered.skin.skin, product.data.skin);
   assert.equal((await one(env, 'SELECT COUNT(*) AS c FROM shop_card_deliveries WHERE purchase_id = ?', ref)).c, 1);
   await u.cl.get('/api/cards');
   assert.equal((await one(env, 'SELECT COUNT(*) AS c FROM cards WHERE user_id = ?', uid)).c, 2, 'yeniden listeleme ikinci kart üretmemeli');

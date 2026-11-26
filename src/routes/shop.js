@@ -11,7 +11,7 @@ import { notifyStmt } from '../lib/auth.js';
 import { balanceOf } from './wallet.js';
 import { auditStmt } from './admin.js';
 import { grantAchievement } from './misc.js';
-import { ownCard, shape as cardShape, prepareCardCreation, ensureFunctionalCardDeliveries } from './cards.js';
+import { ownCard, shape as cardShape, prepareCardCreation, ensureMarketCardDeliveries } from './cards.js';
 import { suggestDisplayName } from '../../shared/card-contract.js';
 import { ensureShopSchema, parseData, cleanData, limitsFor, skinsOf, RARITIES, KINDS } from '../lib/shop.js';
 import { requireCardMoneySchema } from '../lib/card-money-schema.js';
@@ -61,7 +61,7 @@ async function entitlementsOf(env, userId) {
 }
 async function cardsOf(env, user) {
   await requireCardMoneySchema(env);
-  await ensureFunctionalCardDeliveries(env, user);
+  await ensureMarketCardDeliveries(env, user);
   const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY is_default DESC, created_at ASC').bind(user.id).all()).results;
   const skins = await skinsOf(env, user.id);
   return rows.map((c) => { const s = cardShape(c); return { id: s.id, label: s.label, display_name: s.display_name, card_token: s.card_token, status: s.status, balance: s.balance, is_default: s.is_default, design: s.design, skin: skins[c.id] || null }; });
@@ -248,11 +248,12 @@ export const shopRoutes = {
 
     const t = now(env), ref = newRef('NXM');
     const productData = parseData(p.data);
-    const isDeliverableCard = p.kind === 'function' && !!productData.skin;
+    const isDeliverableCard = !!productData.skin;
     const preparedCard = isDeliverableCard ? await prepareCardCreation(env, user, {
       label: p.name,
       displayName: suggestDisplayName(user.username),
       additionalSlots: Number(productData.perks?.extra_cards || 0),
+      orientation: productData.orientation || 'landscape',
     }) : null;
     const serialSql = '(SELECT CASE WHEN stock_total IS NOT NULL THEN stock_sold END FROM shop_products WHERE id = ?)';
     const stmts = [

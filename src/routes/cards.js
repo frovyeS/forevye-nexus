@@ -4,7 +4,7 @@ import { notifyStmt } from '../lib/auth.js';
 import { randomBase32 } from '../lib/util.js';
 import { ensureShopSchema, limitsFor, parseData, skinsOf } from '../lib/shop.js';
 import { requireCardMoneySchema } from '../lib/card-money-schema.js';
-import { validateDesign, validateDisplayName, validateLabel, defaultDesign, readStoredDesign, suggestDisplayName } from '../../shared/card-contract.js';
+import { validateDesign, validateDisplayName, validateLabel, defaultDesign, defaultPortraitDesign, readStoredDesign, suggestDisplayName } from '../../shared/card-contract.js';
 
 // Veritabanındaki tasarım (eski sürüm 1 dahil) her zaman sürüm 2 olarak sunulur.
 export const shape = (c) => ({
@@ -30,7 +30,7 @@ const canon = (d) => JSON.stringify({ ...d, designId: '', ownerId: '', version: 
 
 // Kart oluşturma SQL'ini tek bir hazırlık fonksiyonunda üretir. Market satın alımı,
 // ödeme/entitlement/kart teslimini aynı D1 batch içinde atomik olarak tamamlayabilir.
-export async function prepareCardCreation(env, user, { label = '', design, displayName, additionalSlots = 0 } = {}) {
+export async function prepareCardCreation(env, user, { label = '', design, displayName, additionalSlots = 0, orientation = 'landscape' } = {}) {
   await requireCardMoneySchema(env);
   const bonus = Math.max(0, Math.min(10, Math.trunc(Number(additionalSlots) || 0)));
   const max = (await limitsFor(env, user.id)).max_cards + bonus;
@@ -38,7 +38,8 @@ export async function prepareCardCreation(env, user, { label = '', design, displ
   if (count >= max) throw new HttpError(400, 'card_limit', `En fazla ${max} sanal kart oluşturabilirsiniz. Önce bir kart alanı açın.`);
   const lb = validateLabel(label);
   if (!lb.ok) throw new HttpError(400, 'invalid_label', lb.error);
-  let d = design ? checkDesign(design) : defaultDesign(displayName || 'NEXUS');
+  const baseDesign = orientation === 'portrait' ? defaultPortraitDesign(displayName || 'NEXUS') : defaultDesign(displayName || 'NEXUS');
+  let d = design ? checkDesign(design) : baseDesign;
   if (displayName !== undefined) {
     const dn = validateDisplayName(displayName);
     if (!dn.ok) throw new HttpError(400, 'invalid_display_name', dn.error);
@@ -64,22 +65,23 @@ export async function createCard(env, user, options = {}) {
   return ownCard(env, user.id, prepared.id);
 }
 
-// Eski Market satın alımlarını da banka kartına dönüştürür. Böylece daha önce alınan
-// fonksiyonel kartlar için tekrar satın alma veya tasarım editörüne uğrama gerekmez.
-export async function ensureFunctionalCardDeliveries(env, user) {
+// Market'teki hem tasarım hem fonksiyon ürünlerini gerçek banka kartına dönüştürür.
+// Önceden alınmış tasarım ürünleri de kart listesi açıldığında otomatik teslim edilir.
+export async function ensureMarketCardDeliveries(env, user) {
   await ensureShopSchema(env);
   const entitlements = (await env.DB.prepare(`
     SELECT e.product_id, e.tx_ref AS purchase_id, p.name, p.data
     FROM shop_entitlements e
-    JOIN shop_products p ON p.id = e.product_id AND p.kind = 'function'
+    JOIN shop_products p ON p.id = e.product_id
     JOIN shop_purchases x ON x.id = e.tx_ref AND x.user_id = e.user_id AND x.status = 'success'
     WHERE e.user_id = ?
     ORDER BY e.acquired_at ASC
   `).bind(user.id).all()).results;
 
   for (const item of entitlements) {
-    const skin = parseData(item.data).skin;
-    if (!skin) continue; // Ek Kart Hakkı gibi fiziksel kart vermeyen fonksiyonlar.
+    const productData = parseData(item.data);
+    const skin = productData.skin;
+    if (!skin) continue; // Ek Kart Hakkı gibi kart yüzeyi olmayan ürünler.
     const exists = await env.DB.prepare('SELECT card_id FROM shop_card_deliveries WHERE purchase_id = ? AND user_id = ?').bind(item.purchase_id, user.id).first();
     if (exists) continue;
 
@@ -104,6 +106,7 @@ export async function ensureFunctionalCardDeliveries(env, user) {
     const prepared = await prepareCardCreation(env, user, {
       label: item.name,
       displayName: suggestDisplayName(user.username),
+      orientation: productData.orientation || 'landscape',
     });
     const t = now(env);
     try {
@@ -150,7 +153,7 @@ export async function updateCard(env, user, card, { label, display_name, design 
 export const cardRoutes = {
   async list(req, env, ctx, { user }) {
     await requireCardMoneySchema(env);
-    await ensureFunctionalCardDeliveries(env, user);
+    await ensureMarketCardDeliveries(env, user);
     const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY is_default DESC, created_at ASC').bind(user.id).all()).results;
     const skins = await skinsOf(env, user.id);
     return json({ cards: rows.map((c) => ({ ...shape(c), skin: skins[c.id] || null })), max_cards: (await limitsFor(env, user.id)).max_cards });
