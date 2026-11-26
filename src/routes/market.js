@@ -8,7 +8,9 @@ import { requireCardMoneySchema } from '../lib/card-money-schema.js';
 
 const publicPrice = (env, p) => ({
   price_micro: p.mid_micro, buy_micro: p.buy_micro, sell_micro: p.sell_micro, spread_bps: p.spread_bps,
+  base_spread_bps: p.base_spread_bps, spread_pressure_bps: p.spread_pressure_bps,
   updated_at: p.ts, stale: p.stale, source: p.source, move_bps: p.move_bps,
+  flow_stats: p.flow_stats, flow_pressure: p.flow_pressure, admin_index: p.admin_index,
 });
 
 function position(h, p) {

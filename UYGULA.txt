@@ -1,4 +1,19 @@
-NEXUS WORKER YAMASI v2 (önceki nexus-yama-seti.zip'in yerine geçer; içindekilerin hepsi + Borsa ekranına "Kristal cüzdanı (Sanal Banka)" dönüş butonu)
-Dosyaları Worker deposunun köküne AYNI YOL ile üzerine yaz, commit et (GitHub Actions deploy eder) ya da: npx wrangler deploy
-Kontrol: https://forevye-nexus.forevyenexus.workers.dev/api/health -> "ok": true
-Sonra Ctrl+Shift+R ile yenile.
+FOREVYE NEXUS — DİNAMİK KRİSTAL BORSASI YAMASI v6
+
+UYGULAMA
+1. ZIP içindeki forevye-nexus-main klasörünün içeriğini mevcut Worker deposunun köküne aynı klasör yollarını koruyarak aktar ve üzerine yaz.
+2. Değişiklikleri GitHub deposuna gönder; mevcut GitHub Actions dağıtımını kullan. Actions yoksa projedeki normal Wrangler dağıtım sürecini kullan.
+3. Dağıtım tamamlandıktan sonra uygulamayı Ctrl+Shift+R ile yenile.
+4. Sağlık kontrolü: https://forevye-nexus.forevyenexus.workers.dev/api/health
+
+BU YAMADA
+- FN→KRS alış talebi ve KRS→FN satış arzı fiyatı etkiler.
+- Son 1 saat ve 24 saatlik işlem hacmi, yön dengesi ve talebe bağlı makas gösterilir.
+- Yönetici endeksi: bugünün puanı, Türkiye takvimine göre son 7 gün ortalaması ve tüm zamanların ortalaması.
+- Grafik: 24 saat / 7 gün / 30 gün; imleç kılavuzları, mikro-FN hassasiyetinde fiyat, tarih-saat ve seçili dönem başlangıcına göre değişim.
+- Piyasa kaynakları ve son güncelleme zamanı şeffaflık bölümünde gösterilir.
+
+VERİTABANI NOTU
+Yeni bir SQL komutunu D1 konsoluna yapıştırman gerekmez. Yeni bir tablo veya yeni bir migration eklenmedi. Mevcut market_admin_sentiment puanlama tablosu korunur; bu tabloyu silme veya sıfırlama. Pakette, eski iki göç dosyasındaki yinelenen transfers.description sütun eklemesini engelleyen geriye dönük uyumlu bir düzeltme de bulunur.
+
+32 FN yalnızca yeni kurulum için ilk fiyat referansıdır; tavan, taban veya fiyatın geri dönmek zorunda olduğu sabit denge değildir.

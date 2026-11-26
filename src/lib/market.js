@@ -17,15 +17,15 @@ export const cfg = (env) => ({
   spreadBps: cfgNum(env, 'MARKET_SPREAD_BPS', 50),            // her iki yön için orta fiyattan sapma
   maxTradeMinor: cfgNum(env, 'MARKET_MAX_TRADE_MINOR', 1000000),
   slipBps: cfgNum(env, 'MARKET_SLIPPAGE_BPS', 100),           // istemcinin gördüğü fiyattan en fazla %1 sapma
-  volatilityBps: cfgNum(env, 'MARKET_VOLATILITY_BPS', 45),   // güncelleme başına azami ±%0,45
   initialPriceMicro: cfgNum(env, 'MARKET_INITIAL_PRICE_MICRO', 32000000), // başlangıç: 32,0000 FN/KRS
-  reversionBps: cfgNum(env, 'MARKET_REVERSION_BPS', 200),    // eski simülasyon için geri çekim
   goldApiUrl: env.MARKET_GOLD_API_URL || '',
   goldRefreshMs: cfgNum(env, 'MARKET_GOLD_REFRESH_SEC', 300) * 1000,
   maxStepBps: cfgNum(env, 'MARKET_MAX_STEP_BPS', 150),      // normalde en fazla %1,50; BIST şoklarında dinamik yükselir
   shockStepBps: cfgNum(env, 'MARKET_SHOCK_STEP_BPS', 500),  // sert piyasa hareketlerinde en fazla %5
   bistApiUrl: env.MARKET_BIST_API_URL || (env.MARKET_GOLD_API_URL ? 'https://query1.finance.yahoo.com/v8/finance/chart/' : ''),
   retentionDays: cfgNum(env, 'MARKET_RETENTION_DAYS', 35),
+  spreadPressureBps: cfgNum(env, 'MARKET_SPREAD_PRESSURE_BPS', 75),
+  maxSpreadBps: cfgNum(env, 'MARKET_MAX_SPREAD_BPS', 250),
 });
 
 // ---------- Altın + BIST verileriyle deterministik fiyat modeli ----------
@@ -100,19 +100,92 @@ function bistFactor(signals) {
   return { factor: Math.max(0.90, Math.min(1.10, 1 + impact)), shockBps: Math.round(shock * 10000), detail: `BIST endeksleri: ${(impact * 100).toFixed(2)}%` };
 }
 
-async function marketFlowFactor(env, t) {
-  // Son 6 saatteki alış/satış miktarı; işlem yönü baskısı fiyat hedefine küçük etki eder.
-  const since = t - 6 * 60 * MIN;
+export async function marketFlowStats(env, t = now(env)) {
+  const since1h = t - 60 * MIN;
+  const since24h = t - 24 * 60 * MIN;
+  const empty = {
+    hour: { buy_qty: 0, sell_qty: 0, total_qty: 0, volume_minor: 0, buy_volume_minor: 0, sell_volume_minor: 0, trade_count: 0, imbalance: 0 },
+    day: { buy_qty: 0, sell_qty: 0, total_qty: 0, volume_minor: 0, buy_volume_minor: 0, sell_volume_minor: 0, trade_count: 0, imbalance: 0 },
+  };
   try {
-    const r = await env.DB.prepare(`SELECT COALESCE(SUM(CASE WHEN side='buy' THEN qty ELSE 0 END),0) AS buys,
-      COALESCE(SUM(CASE WHEN side='sell' THEN qty ELSE 0 END),0) AS sells FROM crystal_trades WHERE created_at >= ?`).bind(since).first();
-    const buys = Number(r?.buys || 0), sells = Number(r?.sells || 0), total = buys + sells;
-    const imbalance = total ? Math.max(-1, Math.min(1, (buys - sells) / total)) : 0;
-    return 1 + imbalance * 0.025; // %2,5 maksimum hedef etkisi
-  } catch { return 1; }
+    const row = await env.DB.prepare(`SELECT
+      COALESCE(SUM(CASE WHEN created_at >= ? AND side = 'buy' THEN qty ELSE 0 END),0) AS buy_qty_1h,
+      COALESCE(SUM(CASE WHEN created_at >= ? AND side = 'sell' THEN qty ELSE 0 END),0) AS sell_qty_1h,
+      COALESCE(SUM(CASE WHEN created_at >= ? THEN total ELSE 0 END),0) AS volume_minor_1h,
+      COALESCE(SUM(CASE WHEN created_at >= ? AND side = 'buy' THEN total ELSE 0 END),0) AS buy_volume_minor_1h,
+      COALESCE(SUM(CASE WHEN created_at >= ? AND side = 'sell' THEN total ELSE 0 END),0) AS sell_volume_minor_1h,
+      COALESCE(SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END),0) AS trade_count_1h,
+      COALESCE(SUM(CASE WHEN side = 'buy' THEN qty ELSE 0 END),0) AS buy_qty_24h,
+      COALESCE(SUM(CASE WHEN side = 'sell' THEN qty ELSE 0 END),0) AS sell_qty_24h,
+      COALESCE(SUM(total),0) AS volume_minor_24h,
+      COALESCE(SUM(CASE WHEN side = 'buy' THEN total ELSE 0 END),0) AS buy_volume_minor_24h,
+      COALESCE(SUM(CASE WHEN side = 'sell' THEN total ELSE 0 END),0) AS sell_volume_minor_24h,
+      COUNT(*) AS trade_count_24h
+      FROM crystal_trades WHERE created_at >= ?`)
+      .bind(since1h, since1h, since1h, since1h, since1h, since1h, since24h).first();
+    const make = (buyQty, sellQty, volume, buyVolume, sellVolume, count) => {
+      const totalQty = buyQty + sellQty;
+      return {
+        buy_qty: buyQty, sell_qty: sellQty, total_qty: totalQty,
+        volume_minor: volume, buy_volume_minor: buyVolume, sell_volume_minor: sellVolume,
+        trade_count: count, imbalance: totalQty ? (buyQty - sellQty) / totalQty : 0,
+      };
+    };
+    return {
+      hour: make(Number(row?.buy_qty_1h || 0), Number(row?.sell_qty_1h || 0), Number(row?.volume_minor_1h || 0), Number(row?.buy_volume_minor_1h || 0), Number(row?.sell_volume_minor_1h || 0), Number(row?.trade_count_1h || 0)),
+      day: make(Number(row?.buy_qty_24h || 0), Number(row?.sell_qty_24h || 0), Number(row?.volume_minor_24h || 0), Number(row?.buy_volume_minor_24h || 0), Number(row?.sell_volume_minor_24h || 0), Number(row?.trade_count_24h || 0)),
+    };
+  } catch {
+    return empty;
+  }
 }
-function goldTargetMicro(quote, base, bist, supplyFactor = 1) {
-  // 32 FN yalnızca başlangıç ankrajıdır. Fiyatın 25'e dönmesi veya belirli aralıkta kalması zorlanmaz.
+
+function marketFlowFactor(stats) {
+  // Bir saatlik akış kısa vadede daha etkili; 24 saatlik akış tek seferlik sıçramaları dengeler.
+  const pressure = Math.max(-1, Math.min(1, stats.hour.imbalance * 0.65 + stats.day.imbalance * 0.35));
+  return { factor: 1 + pressure * 0.025, pressure };
+}
+
+export async function adminSentimentStats(env, t = now(env)) {
+  try {
+    const localToday = new Date(t + 3 * 60 * MIN);
+    const day = localToday.toISOString().slice(0, 10);
+    const sevenDaysAgo = new Date(localToday.getTime() - 6 * 24 * 60 * MIN).toISOString().slice(0, 10);
+    const [recent, lifetime, today] = await Promise.all([
+      env.DB.prepare('SELECT day, score FROM market_admin_sentiment WHERE day >= ? AND day <= ? ORDER BY day DESC').bind(sevenDaysAgo, day).all(),
+      env.DB.prepare('SELECT ROUND(AVG(score),1) AS average, COUNT(*) AS count FROM market_admin_sentiment').first(),
+      env.DB.prepare('SELECT score FROM market_admin_sentiment WHERE day = ?').bind(day).first(),
+    ]);
+    const rows = recent.results || [];
+    const longTermAverage = Number(lifetime?.average ?? 50);
+    const last7Average = rows.length ? rows.reduce((sum, row) => sum + Number(row.score), 0) / rows.length : longTermAverage;
+    // Kısa vadeli kararlar %70, geçmiş dönemin denge eğilimi %30 ağırlık taşır.
+    const effectiveAverage = rows.length ? last7Average * 0.70 + longTermAverage * 0.30 : longTermAverage;
+    return {
+      last7_average: Math.round(last7Average * 10) / 10,
+      long_term_average: Math.round(longTermAverage * 10) / 10,
+      effective_average: Math.round(effectiveAverage * 10) / 10,
+      recent_count: rows.length,
+      total_count: Number(lifetime?.count || 0),
+      latest_score: rows.length ? Number(rows[0].score) : null,
+      today_score: today ? Number(today.score) : null,
+      today_day: day,
+    };
+  } catch {
+    return { last7_average: 50, long_term_average: 50, effective_average: 50, recent_count: 0, total_count: 0, latest_score: null, today_score: null, today_day: new Date(t + 3 * 60 * MIN).toISOString().slice(0, 10) };
+  }
+}
+
+async function adminSentimentFactor(env) {
+  const stats = await adminSentimentStats(env);
+  // 50 nötr; 0–100 aralığı en fazla yaklaşık ±20% hedef fiyat etkisi verir.
+  const factor = Math.pow(1.2, (stats.effective_average - 50) / 50);
+  const pressureBps = Math.round((stats.effective_average - 50) * 0.35);
+  return { ...stats, factor, pressureBps, average: stats.effective_average };
+}
+
+function goldTargetMicro(quote, base, bist, supplyFactor, anchorMicro) {
+  // Yapılandırılmış ilk kurulum fiyatı yalnızca referanstır; mutlak fiyat tavanı/tabanı oluşturmaz.
   const q = quote.quarter / base.quarter;
   const g = quote.gram / base.gram;
   const usd = quote.usd && base.usd ? quote.usd / base.usd : 1;
@@ -123,7 +196,7 @@ function goldTargetMicro(quote, base, bist, supplyFactor = 1) {
   // Metal/FX kümülatif sinyali: toplam altın ağırlığı %55; BIST/FX eklenir.
   const goldFactor = Math.pow(q, 0.35) * Math.pow(g, 0.15) * Math.pow(usd, 0.10)
     * Math.pow(premiumNow / premiumBase, 0.05) * Math.pow(silverRatioNow / silverRatioBase, 0.05);
-  return Math.round(32000000 * goldFactor * (bist?.factor || 1) * supplyFactor);
+  return Math.round(anchorMicro * goldFactor * (bist?.factor || 1) * supplyFactor);
 }
 
 async function giftEmissionFactor(env, t) {
@@ -140,22 +213,6 @@ async function giftEmissionFactor(env, t) {
   } catch { return 1; }
 }
 
-async function adminSentimentFactor(env, t) {
-  try {
-    const rows = (await env.DB.prepare('SELECT score FROM market_admin_sentiment ORDER BY day DESC LIMIT 7').all()).results;
-    if (!rows.length) return { factor: 1, pressureBps: 0, average: 50 };
-    const average = rows.reduce((sum, row) => sum + Number(row.score), 0) / rows.length;
-    // 0 puan yaklaşık -%16,7; 100 puan +%20 denge hedefi etkisi.
-    const factor = Math.pow(1.2, (average - 50) / 50);
-    // Dış veri olmayan adımlarda hissedilen küçük yön baskısı; puan tek başına fiyatı kilitlemez.
-    const pressureBps = Math.round((average - 50) * 0.35);
-    return { factor, pressureBps, average: Math.round(average * 10) / 10 };
-  } catch {
-    // Migration uygulanmamışsa mevcut piyasa davranışı bozulmasın.
-    return { factor: 1, pressureBps: 0, average: 50 };
-  }
-}
-
 export async function refreshPrice(env) {
   const c = cfg(env), t = now(env), prev = await readLast(env);
   const validPrev = prev && Number.isSafeInteger(prev.price_micro) && prev.price_micro > 0;
@@ -163,6 +220,8 @@ export async function refreshPrice(env) {
   const quote = await getGoldQuote(env, c, t);
   const signals = await getBistSignals(env, c, t);
   const bist = bistFactor(signals);
+  const [flowStats, sentiment] = await Promise.all([marketFlowStats(env, t), adminSentimentFactor(env)]);
+  const flow = marketFlowFactor(flowStats);
   let moveBps = 0, price_micro = previous, source = 'Nexus piyasası: dış veri geçici olarak yok';
   if (quote) {
     let base = null;
@@ -187,40 +246,37 @@ export async function refreshPrice(env) {
         * Math.pow(ret(signals.xusin, bistBase.xusin), 0.10)
         * Math.pow(ret(signals.usdtry, bistBase.usdtry), 0.15);
     }
-    const flow = await marketFlowFactor(env, t);
     const emission = await giftEmissionFactor(env, t);
-    const target = Math.round(goldTargetMicro(quote, base, { factor: bistCumulative }, emission) * flow * sentiment.factor);
+    const target = Math.round(goldTargetMicro(quote, base, { factor: bistCumulative }, emission, c.initialPriceMicro) * flow.factor * sentiment.factor);
     // Dinamik fiyat keşfi: sabit 25'e geri dönüş, mutlak fiyat tavanı/tabanı yok. Hareket limiti yalnız tek adım içindir.
     const diffBps = ((target - previous) / previous) * 10000;
-    const volatility = Math.max(150, Math.min(3000, Math.abs(diffBps)));
     const stepCap = (bist.shockBps >= 250 || Math.abs(diffBps) >= 1200) ? 3000 : Math.max(c.maxStepBps, 1200);
     moveBps = Math.round(diffBps * 0.45);
     moveBps = Math.max(-stepCap, Math.min(stepCap, moveBps));
     price_micro = Math.max(1, Math.round(previous * (10000 + moveBps) / 10000));
-    source = `Çeyrek altın + BIST + USD/TRY + arz/talep + hediye emisyonu + yönetici güven endeksi (${sentiment.average}/100) (${quote.provider || 'altın verisi'})`;
+    source = `Çeyrek altın + BIST100/30 + XBANK + XUSIN + USD/TRY + arz/talep + hediye emisyonu + yönetici güven endeksi (${sentiment.average}/100) (${quote.provider || 'altın verisi'})`;
   } else if (signals && validPrev) {
     // Altın servisi yokken de BIST/FX ve akış, fiyatı aşağı/yukarı taşıyabilir.
     const impactBps = Math.round((bist.factor - 1) * 10000);
-    moveBps = Math.max(-3000, Math.min(3000, Math.round(impactBps * 0.45) + sentiment.pressureBps));
+    moveBps = Math.max(-3000, Math.min(3000, Math.round(impactBps * 0.45) + Math.round(flow.pressure * 25) + sentiment.pressureBps));
     price_micro = Math.max(1, Math.round(previous * (10000 + moveBps) / 10000));
-    source = `BIST + USD/TRY + alım/satım akışı + yönetici güven endeksi (${sentiment.average}/100)`;
+    source = `BIST100/30 + XBANK + XUSIN + USD/TRY + alım/satım akışı + yönetici güven endeksi (${sentiment.average}/100)`;
   } else if (env.MARKET_FALLBACK_ENABLED === 'true') {
-    // Dış piyasa sağlayıcıları tanımlı/erişilebilir değilse borsa donmasın:
-    // 5 dakikalık Cron adımlarında sanal piyasa dalgalanması + işlem akışı yön etkisi.
-    // Güncelleme başına sınırlandırılmış oynaklık; fiyat sıfıra düşmez ve eski fiyat korunur.
+    // Harici veri yoksa sanal piyasa kullanılır. Başlangıç fiyatı tekrar eden bir çapa değildir;
+    // arz/talep ve yönetici endeksi fiyatı iki yönde de serbestçe taşır.
     const fallbackVol = Math.max(10, Math.min(2500, cfgNum(env, 'MARKET_FALLBACK_VOLATILITY_BPS', 85)));
-    const flow = await marketFlowFactor(env, t);
-    const flowBps = Math.round((flow - 1) * 10000);
+    const flowBps = Math.round(flow.pressure * 125);
     const noiseBps = Math.round((Math.random() * 2 - 1) * fallbackVol);
-    // Dış veri yokken 32 FN yalnızca yumuşak referans noktasıdır; puan bu dengeyi ± yönde değiştirir.
-    // Yaklaşma hızı küçük tutulur; 1 veya 200 gibi fiyatlar da mümkündür, sert bir taban/tavan yoktur.
-    const softAnchor = 32000000 * sentiment.factor;
-    const anchorDriftBps = Math.round(Math.max(-fallbackVol, Math.min(fallbackVol, ((softAnchor - previous) / previous) * 10000 * 0.025)));
-    moveBps = Math.max(-fallbackVol, Math.min(fallbackVol, noiseBps + anchorDriftBps + Math.max(-250, Math.min(250, flowBps)) + sentiment.pressureBps));
+    moveBps = Math.max(-fallbackVol - 250, Math.min(fallbackVol + 250, noiseBps + flowBps + sentiment.pressureBps));
     price_micro = Math.max(1, Math.round(previous * (10000 + moveBps) / 10000));
-    source = `Nexus sanal piyasa + alım/satım akışı + yönetici güven endeksi (${sentiment.average}/100) (dış fiyat kaynağı yok)`;
+    source = `Nexus sanal piyasa + 1s/24s alım-satım akışı + yönetici güven endeksi (${sentiment.average}/100) (dış fiyat kaynağı yok)`;
+  } else if (validPrev && (Math.abs(flow.pressure) > 0 || sentiment.pressureBps !== 0)) {
+    // Dış piyasa verisi kapalı olsa bile gerçekleşen FN↔KRS işlemleri ve yönetici puanı fiyat keşfini sürdürür.
+    moveBps = Math.max(-3000, Math.min(3000, Math.round(flow.pressure * 250) + sentiment.pressureBps));
+    price_micro = Math.max(1, Math.round(previous * (10000 + moveBps) / 10000));
+    source = `Nexus iç piyasa + FN/KRS arz-talep akışı + yönetici güven endeksi (${sentiment.average}/100)`;
   }
-  const last = { model: quote ? 'nexus-dynamic-market-v5' : signals ? 'nexus-dynamic-bist-v5' : 'nexus-market-stable-v3', ts: t, price_micro, source, move_bps: moveBps, gold_quote_ts: quote?.ts || null, bist_ts: signals?.ts || null };
+  const last = { model: quote ? 'nexus-dynamic-market-v6' : signals ? 'nexus-dynamic-bist-v6' : 'nexus-market-stable-v4', ts: t, price_micro, source, move_bps: moveBps, gold_quote_ts: quote?.ts || null, bist_ts: signals?.ts || null, admin_index: sentiment, flow_pressure: flow.pressure };
   await stateSet(env, 'last_price', JSON.stringify(last), t);
   const lastSnap = await env.DB.prepare('SELECT ts FROM market_prices ORDER BY ts DESC LIMIT 1').first();
   if (!lastSnap || t - lastSnap.ts >= c.snapshotMs) {
@@ -245,10 +301,19 @@ export async function currentPrice(env, { refresh = true, spreadBps } = {}) {
   }
   if (!last) return null;
   const mid = last.price_micro;
-  const half = spreadBps ?? c.spreadBps;
+  const [flowStats, sentiment] = await Promise.all([marketFlowStats(env, t), adminSentimentStats(env)]);
+  const flow = marketFlowFactor(flowStats);
+  const baseSpread = spreadBps ?? c.spreadBps;
+  const spreadPressure = Math.round(Math.abs(flow.pressure) * Math.max(0, c.spreadPressureBps));
+  const half = Math.max(5, Math.min(c.maxSpreadBps, Math.round(baseSpread + spreadPressure)));
   const buy = Math.ceil((mid * (10000 + half)) / 10000);
   const sell = Math.max(1, Math.floor((mid * (10000 - half)) / 10000));
-  return { ...last, mid_micro: mid, buy_micro: buy, sell_micro: sell, spread_bps: half, stale: t - last.ts > c.staleMs, age_ms: t - last.ts };
+  return {
+    ...last, mid_micro: mid, buy_micro: buy, sell_micro: sell,
+    spread_bps: half, base_spread_bps: baseSpread, spread_pressure_bps: spreadPressure,
+    flow_stats: flowStats, flow_pressure: flow.pressure, admin_index: sentiment,
+    stale: t - last.ts > c.staleMs, age_ms: t - last.ts,
+  };
 }
 
 export async function pruneOld(env) {

@@ -6,6 +6,7 @@ import { validateDesign, readStoredDesign } from '../../shared/card-contract.js'
 import { giftcardStatus } from '../integrations/giftcard.js';
 import { balanceOf } from './wallet.js';
 import { shopRevokeStmts } from '../lib/shop.js';
+import { adminSentimentStats } from '../lib/market.js';
 
 // Değiştirilemez denetim kaydı: yönetici ID'si, eylem, hedef, zaman, gerekçe, sonuç.
 export function auditStmt(env, adminId, action, target, reason, result = 'success', detail = null) {
@@ -183,11 +184,18 @@ export const adminRoutes = {
   // Günlük yönetici piyasa değerlendirmesi: her yönetici günde bir kez puan verebilir.
   async marketSentiment(req, env, ctx, { user }) {
     const day = new Date(now(env) + 3 * HOUR).toISOString().slice(0, 10); // Türkiye günü
-    const today = await env.DB.prepare('SELECT score, created_at FROM market_admin_sentiment WHERE day = ?').bind(day).first();
-    const stats = await env.DB.prepare(`SELECT ROUND(AVG(score), 1) AS average, COUNT(*) AS count
-      FROM (SELECT score FROM market_admin_sentiment ORDER BY day DESC LIMIT 7)`).first();
-    const history = (await env.DB.prepare('SELECT day, score, created_at FROM market_admin_sentiment ORDER BY day DESC LIMIT 30').all()).results;
-    return json({ day, submitted: Boolean(today), today: today || null, average: Number(stats?.average ?? 50), count: Number(stats?.count || 0), history });
+    const [today, stats, history] = await Promise.all([
+      env.DB.prepare('SELECT score, created_at FROM market_admin_sentiment WHERE day = ?').bind(day).first(),
+      adminSentimentStats(env),
+      env.DB.prepare('SELECT day, score, created_at FROM market_admin_sentiment ORDER BY day DESC LIMIT 30').all(),
+    ]);
+    return json({
+      day, submitted: Boolean(today), today: today || null,
+      average: stats.last7_average, count: stats.recent_count,
+      last7_average: stats.last7_average, long_term_average: stats.long_term_average,
+      effective_average: stats.effective_average, total_count: stats.total_count,
+      history: history.results || [],
+    });
   },
 
   async submitMarketSentiment(req, env, ctx, { user }) {

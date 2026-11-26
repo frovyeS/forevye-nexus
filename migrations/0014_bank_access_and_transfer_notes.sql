@@ -14,4 +14,4 @@ CREATE TABLE IF NOT EXISTS bank_tokens (
   expires_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_bank_tokens_exp ON bank_tokens(expires_at);
-ALTER TABLE transfers ADD COLUMN description TEXT NOT NULL DEFAULT '';
+-- transfers.description sütunu 0013_bank_access_and_transfer_notes.sql içinde eklenmiştir.
