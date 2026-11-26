@@ -15,6 +15,7 @@ import { ownCard, shape as cardShape, prepareCardCreation, ensureMarketCardDeliv
 import { suggestDisplayName } from '../../shared/card-contract.js';
 import { ensureShopSchema, parseData, cleanData, limitsFor, skinsOf, RARITIES, KINDS } from '../lib/shop.js';
 import { requireCardMoneySchema } from '../lib/card-money-schema.js';
+import { ensureCommunityMarketSchema } from '../lib/community-market-schema.js';
 import { siteOrigins } from '../lib/origins.js';
 
 const TICKET_TTL = 5 * MIN, TOKEN_SLIDE = 30 * MIN, TOKEN_MAX = 8 * HOUR;
@@ -60,6 +61,7 @@ async function entitlementsOf(env, userId) {
   return rows.map((e) => shapeEnt(e, e));
 }
 async function cardsOf(env, user) {
+  await ensureCommunityMarketSchema(env);
   await requireCardMoneySchema(env);
   await ensureMarketCardDeliveries(env, user);
   const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? AND deleted_at IS NULL ORDER BY is_default DESC, created_at ASC').bind(user.id).all()).results;
@@ -151,6 +153,7 @@ const listingShape = (row) => ({
 });
 
 async function communityRows(env, where = "l.status = 'active'", binds = []) {
+  await ensureCommunityMarketSchema(env);
   const rows = (await env.DB.prepare(`SELECT l.*, c.label, c.display_name, c.design_json, c.design_version, c.card_token, c.status AS card_status,
       c.balance, c.is_default, c.user_id, c.updated_at, u.username AS seller_username
     FROM card_market_listings l JOIN cards c ON c.id = l.card_id JOIN users u ON u.id = l.seller_id
@@ -245,7 +248,7 @@ export const shopRoutes = {
         WHERE d.card_id = ? AND d.user_id = ? AND p.status = 'success' LIMIT 1`).bind(c.id, user.id).first();
       const s = cardShape(c);
       return { id: s.id, label: s.label, display_name: s.display_name, balance: s.balance, status: s.status, is_default: s.is_default,
-        design: s.design, skin: skins[c.id] || null, listing: listing || null,
+        design: s.design, skin: skins[c.id] || null, market_listing: listing || null,
         can_sell: !listing && !delivery && !skins[c.id] && !c.is_default && c.status === 'active' && Number(c.balance || 0) === 0 };
     }));
     return json({ listings: items, cards, commission_pct: 30 });
@@ -296,6 +299,7 @@ export const shopRoutes = {
   },
 
   async communityCancel(req, env, url, auth, params) {
+    await ensureCommunityMarketSchema(env);
     const { user } = await useToken(env, req);
     const listingId = str(params.id, { min: 8, max: 64, name: 'listing_id' });
     const listing = await env.DB.prepare("SELECT * FROM card_market_listings WHERE id = ? AND seller_id = ? AND status = 'active'").bind(listingId, user.id).first();
@@ -307,6 +311,7 @@ export const shopRoutes = {
   },
 
   async communityBuy(req, env, url, auth, params) {
+    await ensureCommunityMarketSchema(env);
     const { user } = await useToken(env, req);
     await requireCardMoneySchema(env);
     const b = await readJson(req);

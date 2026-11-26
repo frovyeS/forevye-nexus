@@ -4,6 +4,7 @@ import { notifyStmt } from '../lib/auth.js';
 import { randomBase32 } from '../lib/util.js';
 import { ensureShopSchema, limitsFor, parseData, skinsOf } from '../lib/shop.js';
 import { requireCardMoneySchema } from '../lib/card-money-schema.js';
+import { ensureCommunityMarketSchema } from '../lib/community-market-schema.js';
 import { entryStmts, guardActiveStmt } from '../lib/ledger.js';
 import { shopRevokeStmts } from '../lib/shop.js';
 import { validateDesign, validateDisplayName, validateLabel, defaultDesign, defaultPortraitDesign, readStoredDesign, suggestDisplayName } from '../../shared/card-contract.js';
@@ -15,6 +16,7 @@ export const shape = (c) => ({
 });
 
 export async function ownCard(env, userId, id) {
+  await ensureCommunityMarketSchema(env);
   const c = await env.DB.prepare('SELECT * FROM cards WHERE id = ? AND user_id = ? AND deleted_at IS NULL').bind(id, userId).first();
   if (!c) throw new HttpError(404, 'not_found', 'Kart bulunamadı.'); // başkasının kartı da aynı yanıtı alır
   return c;
@@ -33,6 +35,7 @@ const canon = (d) => JSON.stringify({ ...d, designId: '', ownerId: '', version: 
 // Kart oluşturma SQL'ini tek bir hazırlık fonksiyonunda üretir. Market satın alımı,
 // ödeme/entitlement/kart teslimini aynı D1 batch içinde atomik olarak tamamlayabilir.
 export async function prepareCardCreation(env, user, { label = '', design, displayName, additionalSlots = 0, orientation = 'landscape' } = {}) {
+  await ensureCommunityMarketSchema(env);
   await requireCardMoneySchema(env);
   const bonus = Math.max(0, Math.min(10, Math.trunc(Number(additionalSlots) || 0)));
   const max = (await limitsFor(env, user.id)).max_cards + bonus;
@@ -70,6 +73,7 @@ export async function createCard(env, user, options = {}) {
 // Market'teki hem tasarım hem fonksiyon ürünlerini gerçek banka kartına dönüştürür.
 // Önceden alınmış tasarım ürünleri de kart listesi açıldığında otomatik teslim edilir.
 export async function ensureMarketCardDeliveries(env, user) {
+  await ensureCommunityMarketSchema(env);
   await ensureShopSchema(env);
   const entitlements = (await env.DB.prepare(`
     SELECT e.product_id, e.tx_ref AS purchase_id, p.name, p.data
@@ -155,12 +159,14 @@ export async function updateCard(env, user, card, { label, display_name, design 
 
 // İlan süresince tasarım, durum ve ödeme gibi kart mutasyonlarını durdurur.
 export async function ensureCardNotListed(env, cardId) {
+  await ensureCommunityMarketSchema(env);
   const row = await env.DB.prepare("SELECT 1 AS x FROM card_market_listings WHERE card_id = ? AND status = 'active' LIMIT 1").bind(cardId).first();
   if (row) throw new HttpError(409, 'card_listed', 'Bu kart Market’te satışta. Önce ilanı geri çek.');
 }
 
 export const cardRoutes = {
   async list(req, env, ctx, { user }) {
+    await ensureCommunityMarketSchema(env);
     await requireCardMoneySchema(env);
     await ensureMarketCardDeliveries(env, user);
     const rows = (await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? AND deleted_at IS NULL ORDER BY is_default DESC, created_at ASC').bind(user.id).all()).results;
@@ -193,13 +199,14 @@ export const cardRoutes = {
   },
 
   async resolve(req, env, url, { user }) {
+    await ensureCommunityMarketSchema(env);
     const token = (url.searchParams.get('token') || '').trim().toUpperCase();
     if (!/^NXC-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/.test(token)) throw new HttpError(400, 'invalid_card_code', 'QR kodundaki kart kodu geçersiz.');
     await rateLimit(env, `cardscan:${user.id}`, 30, 10 * MIN);
     const card = await env.DB.prepare(
       `SELECT c.card_token, c.display_name, c.label, c.status, u.username
        FROM cards c JOIN users u ON u.id = c.user_id
-       WHERE c.card_token = ? AND c.status = 'active'`,
+       WHERE c.card_token = ? AND c.status = 'active' AND c.deleted_at IS NULL`,
     ).bind(token).first();
     if (!card) throw new HttpError(404, 'card_not_found', 'Aktif sanal kart bulunamadı.');
     return json({ card_token: card.card_token, display_name: card.display_name, label: card.label, username: card.username, status: card.status });

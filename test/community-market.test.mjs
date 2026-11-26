@@ -31,6 +31,15 @@ test('topluluk pazarı: özel kart tek sahipte devredilir, %30 komisyon ve %70 s
   const buyer = await register(env, 'community-buyer@example.com', 'community_buyer');
   const sellerToken = await tokenFor(env, seller);
   const buyerToken = await tokenFor(env, buyer);
+  const preflight = await worker.fetch(new Request(`${NEXUS}/api/shop/community/NXCML-TEST000000/buy`, {
+    method: 'OPTIONS', headers: { origin: SHOP_ORIGIN, 'access-control-request-method': 'POST', 'access-control-request-headers': 'authorization,content-type' },
+  }), env, {});
+  assert.equal(preflight.status, 204, 'dinamik satın alma rotası tarayıcı CORS ön kontrolünü geçmeli');
+  assert.equal(preflight.headers.get('access-control-allow-origin'), SHOP_ORIGIN);
+  const denied = await worker.fetch(new Request(`${NEXUS}/api/shop/community/NXCML-TEST000000/buy`, {
+    method: 'OPTIONS', headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' },
+  }), env, {});
+  assert.equal(denied.status, 403, 'topluluk pazarı CORS kaynağı dış sitelere açılmamalı');
   const cardRes = await seller.cl.post('/api/cards', { display_name: 'AURORA CUSTOM' });
   assert.equal(cardRes.status, 201, JSON.stringify(cardRes.data));
   const cardId = cardRes.data.id;
@@ -47,6 +56,9 @@ test('topluluk pazarı: özel kart tek sahipte devredilir, %30 komisyon ve %70 s
   assert.equal(listed.status, 201, JSON.stringify(listed.data));
   assert.equal(listed.data.listing.commission_minor, 3600);
   assert.equal(listed.data.listing.seller_proceeds_minor, 8400);
+  const sellerDesk = await shop(env, 'GET', '/api/shop/community/mine', sellerToken);
+  assert.equal(sellerDesk.status, 200, JSON.stringify(sellerDesk.data));
+  assert.equal(sellerDesk.data.cards.find((x) => x.id === cardId).market_listing.id, listed.data.listing.id, 'satışa çıkarılan kart satıcı masasındaki ilanıyla eşleşmeli');
   const market = await shop(env, 'GET', '/api/shop/community', buyerToken);
   assert.equal(market.status, 200);
   const item = market.data.items.find((x) => x.id === listed.data.listing.id);
