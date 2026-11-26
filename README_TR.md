@@ -1,13 +1,34 @@
-# FOREVYE NEXUS – Transfer sunucu hatası kontrol/düzeltme paketi
+# FOREVYE NEXUS – Transfer migration numarası düzeltmesi
 
-Kaynak kod incelemesinde transfer kayıtlarının `transfers.description` sütununa yazıldığı, bu sütunun `0013_bank_access_and_transfer_notes.sql` migration'ında eklendiği görüldü. Canlı D1'de bu migration uygulanmamışsa transfer uçları SQL hatası verebilir.
+## Bu düzeltme neden gerekli?
+Kaynak projede `0013_nexus_rug_pack_2.sql` zaten mevcut. Önceki paketteki `0013_bank_access_and_transfer_notes.sql` aynı migration numarasını kullandığı için Wrangler migration sıralaması/uygulaması çakışabilir. Bu paket transfer migration'ını `0014` olarak yeniden numaralandırır.
 
-## Güvenli uygulama
-1. Cloudflare D1 veritabanının yedeğini alın.
-2. **Önce** Cloudflare Worker projesinin terminalinde `npx wrangler d1 migrations list <DB_ADI> --remote` ile migration durumunu kontrol edin. `<DB_ADI>` yerine wrangler.toml'deki gerçek D1 database adını yazın.
-3. `0013_bank_access_and_transfer_notes.sql` uygulanmamış görünüyorsa, ana `forevye-nexus-main` projesindeki migrations klasöründe bulunan bu dosyanın aynısını kullanarak `npx wrangler d1 migrations apply <DB_ADI> --remote` komutunu çalıştırın. Komut bütün bekleyen migration'ları uygulayabilir; listede başka bekleyen migration varsa önce onları inceleyin.
-4. Bu pakette migration dosyası kopya referans olarak verilmiştir. **Migration zaten uygulanmışsa tekrar çalıştırmayın.** `ALTER TABLE ... ADD COLUMN` tekrar çalıştırıldığında hata verir.
-5. Mevcut Worker kaynak kodunu deploy edin. Migration uygulanmışsa, kod değişikliği gerekmiyorsa transfer için sırf bu paket adına yeni deploy zorunlu değildir.
+## GitHub dosya işlemi
+1. Nexus Worker deposundaki **`migrations/0013_bank_access_and_transfer_notes.sql`** dosyasını sil.
+2. Bu ZIP içindeki **`migrations/0014_bank_access_and_transfer_notes.sql`** dosyasını aynı `migrations/` klasörüne ekle.
+3. `0013_nexus_rug_pack_2.sql` dosyasına dokunma.
+4. Commit et.
 
-## Not
-Bu olası kök nedeni hedefleyen bir kontrol/düzeltme paketidir; canlı D1 üzerinde doğrulanmadı. Transfer sorununu başka bir SQL hatası, token/CORS/Worker sürüm uyuşmazlığı da oluşturabilir. Gerçek hata Cloudflare Worker Logs üzerinden doğrulanmalıdır.
+## ÖNEMLİ: GitHub'a commit tek başına D1 migration'ını çalıştırmaz ve Worker deploy etmez.
+
+Cloudflare Worker projesi terminalinde önce D1 yedeği al. `wrangler.toml` içindeki D1 database adına göre migration listesini kontrol et:
+
+```bash
+npx wrangler d1 migrations list forevye-nexus --remote
+```
+
+Listeyi kontrol et; 0014 beklemede görünüyorsa uygulama:
+
+```bash
+npx wrangler d1 migrations apply forevye-nexus --remote
+```
+
+Sonra Worker kodunu deploy et:
+
+```bash
+npx wrangler deploy
+```
+
+Komutlar gerçek Worker projesinin kök klasöründe çalıştırılmalıdır. Hesap kimliğini ve canlı DB'yi doğrulamadan başka DB'ye işlem uygulama. Yedek almadan migration çalıştırma. `0014` zaten uygulanmışsa tekrar uygulama.
+
+Bu migration transfer/banka token tablolarını ve transfers.description alanını oluşturmayı amaçlar; canlı transferin başarıyla çalıştığı henüz doğrulanmamıştır.
