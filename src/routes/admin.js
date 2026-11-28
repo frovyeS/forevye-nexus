@@ -1,6 +1,6 @@
 import { HttpError, json, readJson, now, HOUR, isSuspended, str } from '../lib/util.js';
 import { notifyStmt } from '../lib/auth.js';
-import { reverseRef, runBatch, entryStmts } from '../lib/ledger.js';
+import { reverseRef, runBatch, entryStmts, fmtMinor } from '../lib/ledger.js';
 import { newRef } from '../lib/util.js';
 import { validateDesign, readStoredDesign } from '../../shared/card-contract.js';
 import { giftcardStatus } from '../integrations/giftcard.js';
@@ -115,12 +115,51 @@ export const adminRoutes = {
     const ref = newRef('NXA');
     try {
       await runBatch(env, [
-        ...entryStmts(env, { ref, userId: u.id, type: 'adjustment', amount, desc: 'Yönetici düzeltmesi' }),
-        notifyStmt(env, u.id, 'adjustment', 'Bakiye düzeltmesi', `Hesabınıza bir düzeltme kaydı işlendi. Ref: ${ref}`),
+        ...entryStmts(env, { ref, userId: u.id, type: 'adjustment', amount, desc: `Yönetici düzeltmesi: ${reason}`.slice(0, 180) }),
+        notifyStmt(env, u.id, 'adjustment', 'Bakiye düzeltmesi', `Hesabınıza ${amount < 0 ? fmtMinor(-amount) + ' kesinti' : fmtMinor(amount) + ' ekleme'} işlendi. Açıklama: ${reason}. Ref: ${ref}`),
         auditStmt(env, user.id, 'ledger.adjust', u.id, reason, 'success', `ref=${ref};amount=${amount}`),
       ]);
     } catch (err) {
       await auditStmt(env, user.id, 'ledger.adjust', u.id, reason, 'failed', String(err.code || err.message).slice(0, 100)).run().catch(() => {});
+      throw err;
+    }
+    return json({ ok: true, ref });
+  },
+
+  // Tüm kullanıcılar + sanal bakiye + kristal varlığı (salt okunur; yönetici rolü yeterli).
+  async balances(req, env, url, { user }) {
+    const q = (url.searchParams.get('q') || '').trim().toLowerCase().replace(/[%_\\]/g, '');
+    const sort = url.searchParams.get('sort') === 'name' ? 'u.username_lower ASC' : 'balance DESC, u.username_lower ASC';
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1), 100);
+    const offset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10) || 0, 0);
+    const where = q.length >= 1 ? 'WHERE u.username_lower LIKE ? OR u.email LIKE ?' : '';
+    const args = q.length >= 1 ? [`${q}%`, `${q}%`] : [];
+    const rows = (await env.DB.prepare(
+      `SELECT u.id, u.username, u.email, u.role, u.status, COALESCE(w.balance, 0) AS balance, COALESCE(h.qty, 0) AS crystal_qty
+       FROM users u LEFT JOIN wallets w ON w.user_id = u.id LEFT JOIN crystal_holdings h ON h.user_id = u.id
+       ${where} ORDER BY ${sort} LIMIT ? OFFSET ?`,
+    ).bind(...args, limit, offset).all()).results;
+    const tot = await env.DB.prepare('SELECT COUNT(*) AS users, COALESCE(SUM(balance), 0) AS total FROM wallets').first();
+    await auditStmt(env, user.id, 'balances.view', null, null, 'success', `q=${q.slice(0, 40)};offset=${offset}`).run();
+    return json({ users: rows, totals: { users: tot.users, balance: tot.total }, limit, offset });
+  },
+
+  // Para kesme: bakiyeden düşer, gerekçe kullanıcının hareketinde ve bildiriminde görünür.
+  async deduct(req, env, ctx, { user }) {
+    const b = await readJson(req);
+    const reason = reasonOf(b);
+    const u = await targetUser(env, String(b.user_id || ''));
+    const amount = -Math.abs(signedAmount(String(b.amount ?? '').replace(',', '.').replace(/^[+-]/, '')));
+    const ref = newRef('NXD');
+    try {
+      await runBatch(env, [
+        ...entryStmts(env, { ref, userId: u.id, type: 'adjustment', amount, desc: `Yönetici kesintisi: ${reason}`.slice(0, 180) }),
+        notifyStmt(env, u.id, 'adjustment', 'Bakiyenizden kesinti yapıldı', `${fmtMinor(-amount)} kesildi. Açıklama: ${reason}. Ref: ${ref}`),
+        auditStmt(env, user.id, 'ledger.deduct', u.id, reason, 'success', `ref=${ref};amount=${amount}`),
+      ]);
+    } catch (err) {
+      await auditStmt(env, user.id, 'ledger.deduct', u.id, reason, 'failed', String(err.code || err.message).slice(0, 100)).run().catch(() => {});
+      if (String(err.message || '').includes('wallet_nonneg')) throw new HttpError(400, 'insufficient_funds', 'Kullanıcının bakiyesi bu kesinti için yetersiz.');
       throw err;
     }
     return json({ ok: true, ref });

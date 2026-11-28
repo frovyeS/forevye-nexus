@@ -125,6 +125,8 @@ add('POST', '/api/admin/users/:id/suspend', adminRoutes.suspend, 'admin');
 add('POST', '/api/admin/users/:id/unsuspend', adminRoutes.unsuspend, 'admin');
 add('POST', '/api/admin/ledger/reverse', adminRoutes.reverse, 'super');
 add('POST', '/api/admin/ledger/adjust', adminRoutes.adjust, 'super');
+add('POST', '/api/admin/ledger/deduct', adminRoutes.deduct, 'super');
+add('GET', '/api/admin/balances', adminRoutes.balances, 'admin');
 add('GET', '/api/admin/announcements', adminRoutes.listAnnouncements, 'admin');
 add('POST', '/api/admin/announcements', adminRoutes.createAnnouncement, 'admin');
 add('POST', '/api/admin/announcements/:id/deactivate', adminRoutes.deactivateAnnouncement, 'admin');

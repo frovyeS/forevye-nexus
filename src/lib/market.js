@@ -15,7 +15,7 @@ export const cfg = (env) => ({
   snapshotMs: cfgNum(env, 'MARKET_SNAPSHOT_SEC', 300) * 1000,
   staleMs: cfgNum(env, 'MARKET_STALE_SEC', 900) * 1000,
   spreadBps: cfgNum(env, 'MARKET_SPREAD_BPS', 50),            // her iki yön için orta fiyattan sapma
-  maxTradeMinor: cfgNum(env, 'MARKET_MAX_TRADE_MINOR', 1000000),
+  maxTradeMinor: cfgNum(env, 'MARKET_MAX_TRADE_MINOR', 8900000),
   slipBps: cfgNum(env, 'MARKET_SLIPPAGE_BPS', 100),           // istemcinin gördüğü fiyattan en fazla %1 sapma
   initialPriceMicro: cfgNum(env, 'MARKET_INITIAL_PRICE_MICRO', 32000000), // başlangıç: 32,0000 FN/KRS
   goldApiUrl: env.MARKET_GOLD_API_URL || '',
