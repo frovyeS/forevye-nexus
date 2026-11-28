@@ -54,7 +54,7 @@ SESSION_TTL_DAYS = "14"
 OLD_NAME_RESERVE_DAYS = "30"
 # Kristal borsası (kristal = oyunun "altın"ı; fiyatı gerçek altını izler, baz altın fiyatı = 1 FN)
 MARKET_SPREAD_BPS = "50"          # alış/satış, orta fiyattan her yönde %0,50 sapar
-MARKET_MAX_TRADE_MINOR = "1000000" # işlem başına en fazla 10.000 FN değerinde
+MARKET_MAX_TRADE_MINOR = "8900000" # işlem başına en fazla 89.000 FN değerinde
 MARKET_REFRESH_SEC = "60"
 MARKET_INITIAL_PRICE_MICRO = "32000000" # Yeni kurulum başlangıç referansı: 32 FN; mevcut fiyatı sıfırlamaz.
 MARKET_STALE_SEC = "900"          # fiyat 15 dk güncellenmezse işlem durur
