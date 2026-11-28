@@ -81,3 +81,17 @@ export async function busy(btn, fn) {
   btn.disabled = true; btn.classList.add('loading'); btn.setAttribute('aria-busy', 'true');
   try { return await fn(); } finally { btn.disabled = false; btn.classList.remove('loading'); btn.removeAttribute('aria-busy'); }
 }
+
+// Alttan açılan / ortalanan ayrıntı penceresi (prompt() yerine). Esc ve dış alana tıklama ile kapanır.
+export function sheet(title, ...content) {
+  const prev = document.activeElement;
+  const close = () => { document.removeEventListener('keydown', onKey); veil.remove(); if (prev && prev.focus) prev.focus(); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const box = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+    h('div', { class: 'sheet-h' }, h('h2', { text: title }), h('button', { class: 'btn icon ghost', type: 'button', 'aria-label': 'Kapat', onClick: close }, icon('x', 18))),
+    h('div', { class: 'sheet-b' }, ...content));
+  const veil = h('div', { class: 'sheet-veil', onClick: (e) => { if (e.target === veil) close(); } }, box);
+  document.body.append(veil); document.addEventListener('keydown', onKey);
+  const first = box.querySelector('input,textarea,button.primary'); if (first) first.focus();
+  return { close, box };
+}

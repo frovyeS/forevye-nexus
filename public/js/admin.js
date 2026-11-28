@@ -1,5 +1,5 @@
 import { api, onUnauth } from './api.js';
-import { h, mount, toast, money, dt, load, field, pwField, busy, empty, icon, back } from './ui.js';
+import { h, mount, toast, money, dt, load, field, pwField, busy, empty, icon, back, sheet } from './ui.js';
 import { renderCard } from './cardview.js';
 import { defaultDesign, validateDesign } from './card-contract.js';
 
@@ -20,11 +20,11 @@ async function init() {
     if (e.status === 401) return loginGate();
     return mount(root, h('div', { class: 'auth' }, h('div', { class: 'notice bad', role: 'alert', text: 'Bu sayfaya erişim yetkiniz yok.' }), h('a', { class: 'btn block', href: '/', text: 'Uygulamaya dön' })));
   }
-  const tabs = [['sentiment', 'Piyasa değerlendirmesi'], ['users', 'Kullanıcılar'], ['announce', 'Duyurular'], ['templates', 'Kart şablonları'], ['audit', 'Denetim kaydı'], ['gift', 'Entegrasyon'], ['pass', 'Nexus Pass']];
+  const tabs = [['sentiment', 'Piyasa değerlendirmesi'], ['balances', 'Bakiyeler'], ['users', 'Kullanıcılar'], ['announce', 'Duyurular'], ['templates', 'Kart şablonları'], ['audit', 'Denetim kaydı'], ['gift', 'Entegrasyon'], ['pass', 'Nexus Pass']];
   if (isSuper()) tabs.push(['roles', 'Yetkililer']);
   const body = h('div'); let current = 'sentiment';
   const bar = h('div', { class: 'seg' });
-  const show = (k) => { current = k; for (const b of bar.children) b.setAttribute('aria-pressed', String(b.dataset.k === k)); ({ sentiment: sentimentTab, users: usersTab, announce: announceTab, templates: templatesTab, audit: auditTab, gift: giftTab, pass: passTab, roles: rolesTab })[k](body); };
+  const show = (k) => { current = k; for (const b of bar.children) b.setAttribute('aria-pressed', String(b.dataset.k === k)); ({ sentiment: sentimentTab, balances: balancesTab, users: usersTab, announce: announceTab, templates: templatesTab, audit: auditTab, gift: giftTab, pass: passTab, roles: rolesTab })[k](body); };
   tabs.forEach(([k, l]) => bar.append(h('button', { type: 'button', 'data-k': k, 'aria-pressed': 'false', text: l, onClick: () => show(k) })));
   mount(root, h('div', { class: 'shell' }, h('main', { class: 'screen' }, h('div', { class: 'topbar' }, h('h1', { text: 'FOREVYE NEXUS • Yönetim' }), h('span', { class: 'chip', text: `${admin.username} (${admin.role})` })), bar, body, h('p', { class: 'virtual' }, back('/', 'Uygulamaya dön')))));
   show('sentiment');
@@ -68,6 +68,55 @@ function sentimentTab(body) {
   load(holder, () => api.get('/api/admin/market-sentiment'), render);
 }
 
+// Para kesme penceresi (prompt yerine): tutar + zorunlu gerekçe; gerekçe kullanıcının hareketinde görünür.
+function deductDialog(u, onDone) {
+  const amt = h('input', { type: 'text', inputmode: 'decimal', placeholder: '0,00', autocomplete: 'off' });
+  const why = h('textarea', { rows: '3', maxlength: '150', placeholder: 'Kullanıcının göreceği açıklama (en az 3 karakter)' });
+  const err = h('p', { class: 'err-text', role: 'alert' });
+  const ok = h('button', { class: 'btn danger grow', type: 'button', text: 'Parayı kes' });
+  const sh = sheet(`Para kes: @${u.username}`,
+    h('p', { class: 'muted', text: `Mevcut bakiye: ${money(u.balance)}` }),
+    field('Kesilecek tutar (FN)', amt), field('Gerekçe', why, 'Kullanıcı bu açıklamayı hareketlerinde ve bildiriminde görür.'), err,
+    h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', text: 'Vazgeç', onClick: () => sh.close() }), ok));
+  ok.addEventListener('click', () => busy(ok, async () => {
+    err.textContent = '';
+    try {
+      const v = amt.value.trim().replace(',', '.');
+      if (!/^\d{1,9}(\.\d{1,2})?$/.test(v) || Number(v) <= 0) throw new Error('Geçerli bir tutar girin.');
+      if (why.value.trim().length < 3) throw new Error('Gerekçe en az 3 karakter olmalı.');
+      if (Math.round(Number(v) * 100) > u.balance) throw new Error('Tutar kullanıcının bakiyesinden büyük.');
+      const x = await api.post('/api/admin/ledger/deduct', { user_id: u.id, amount: v, reason: why.value.trim() });
+      toast(`Kesinti işlendi • ${x.ref}`, 'ok'); sh.close(); if (onDone) onDone();
+    } catch (ex) { err.textContent = ex.message; }
+  }));
+}
+
+function balancesTab(body) {
+  const q = h('input', { type: 'search', placeholder: 'Kullanıcı adı veya e-posta ile filtrele' });
+  const sum = h('div', { class: 'stat-grid' }); const res = h('div'); let sort = 'balance'; let offset = 0;
+  const sortBtns = h('div', { class: 'seg' }, [['balance', 'Bakiyeye göre'], ['name', 'Ada göre']].map(([k, l]) => h('button', { type: 'button', 'aria-pressed': String(k === sort), 'data-k': k, text: l, onClick: (e) => { sort = k; offset = 0; for (const b of sortBtns.children) b.setAttribute('aria-pressed', String(b.dataset.k === k)); refresh(); } })));
+  const refresh = () => load(res, () => api.get(`/api/admin/balances?q=${encodeURIComponent(q.value.trim())}&sort=${sort}&offset=${offset}&limit=50`), (d) => {
+    mount(sum, h('div', { class: 'stat' }, h('span', { text: 'Toplam kullanıcı' }), h('b', { text: String(d.totals.users) })), h('div', { class: 'stat' }, h('span', { text: 'Dolaşımdaki toplam FN' }), h('b', { text: money(d.totals.balance) })));
+    if (!d.users.length) return empty('Sonuç yok');
+    const max = Math.max(1, ...d.users.map((u) => u.balance));
+    return h('div', {},
+      h('div', { class: 'tablewrap' }, h('table', { class: 'bal-table' }, h('thead', {}, h('tr', {}, ['Kullanıcı', 'Bakiye', 'Kristal', 'Durum', ''].map((x) => h('th', { text: x })))),
+        h('tbody', {}, d.users.map((u) => h('tr', {},
+          h('td', {}, h('div', { class: 'strong', text: `@${u.username}` }), h('div', { class: 'muted small', text: u.email })),
+          h('td', {}, h('div', { class: 'strong num', text: money(u.balance) }), h('div', { class: 'bar' }, h('i', { style: { width: `${Math.max(2, Math.round((u.balance / max) * 100))}%` } }))),
+          h('td', { class: 'num', text: (u.crystal_qty / 10000).toLocaleString('tr-TR', { maximumFractionDigits: 4 }) }),
+          h('td', {}, h('span', { class: `chip ${u.status === 'active' ? 'ok' : 'warn'}`, text: u.status === 'active' ? 'Aktif' : 'Askıda' })),
+          h('td', {}, h('div', { class: 'row wrap' },
+            h('button', { class: 'btn small', type: 'button', text: 'Hareketler', onClick: () => { const tab = document.querySelector('.screen > .seg button[data-k="users"]'); if (tab) tab.click(); setTimeout(() => { const i = body.querySelector('input[type=search]'); if (i) { i.value = u.username; i.form.requestSubmit(); } }, 0); } }),
+            isSuper() ? h('button', { class: 'btn small danger', type: 'button', text: 'Para kes', onClick: () => deductDialog(u, refresh) }) : null))))))),
+      h('div', { class: 'row', style: { marginTop: '12px' } },
+        h('button', { class: 'btn', type: 'button', text: 'Önceki', disabled: offset === 0, onClick: () => { offset = Math.max(0, offset - 50); refresh(); } }),
+        h('button', { class: 'btn', type: 'button', text: 'Sonraki', disabled: d.users.length < 50, onClick: () => { offset += 50; refresh(); } })));
+  });
+  mount(body, sum, h('form', { class: 'panel', onSubmit: (e) => { e.preventDefault(); offset = 0; refresh(); } }, field('Ara', q), sortBtns, h('button', { class: 'btn primary', type: 'submit', text: 'Listele' })), res);
+  refresh();
+}
+
 function usersTab(body) {
   const q = h('input', { type: 'search', placeholder: 'Kullanıcı adı veya e-posta (en az 2 karakter)' }); const res = h('div'); const detail = h('div');
   mount(body, h('form', { class: 'panel', onSubmit: async (e) => { e.preventDefault(); load(res, () => api.get(`/api/admin/users?q=${encodeURIComponent(q.value)}`), (d) => d.users.length ? h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, ['Kullanıcı', 'E-posta', 'Rol', 'Durum', ''].map((x) => h('th', { text: x })))), h('tbody', {}, d.users.map((u) => h('tr', {}, h('td', { text: u.username }), h('td', { text: u.email }), h('td', { text: u.role }), h('td', { text: u.status }), h('td', {}, h('button', { class: 'btn small', type: 'button', text: 'Aç', onClick: () => openUser(u.id, detail) }))))))) : empty('Sonuç yok')); } }, field('Ara', q), h('button', { class: 'btn primary', type: 'submit', text: 'Ara' })), res, detail);
@@ -82,6 +131,7 @@ function openUser(id, holder) {
       h('div', { class: 'row wrap', style: { margin: '12px 0' } },
         d.suspended ? act('Askıyı kaldır', async () => { const r = ask('Gerekçe (en az 3 karakter):'); if (!r) throw new Error('Gerekçe zorunlu'); await api.post(`/api/admin/users/${id}/unsuspend`, { reason: r }); toast('Askı kaldırıldı', 'ok'); })
           : act('Askıya al', async () => { const r = ask('Gerekçe (en az 3 karakter):'); if (!r) throw new Error('Gerekçe zorunlu'); const hrs = prompt('Süre (saat). Süresiz için boş bırakın:'); await api.post(`/api/admin/users/${id}/suspend`, { reason: r, ...(hrs ? { hours: Number(hrs) } : {}) }); toast('Hesap askıya alındı', 'ok'); }, true),
+        isSuper() ? h('button', { class: 'btn small danger', type: 'button', text: 'Para kes', onClick: () => deductDialog({ id, username: u.username, balance: d.balance }, () => openUser(id, holder)) }) : null,
         isSuper() ? act('Bakiye düzeltmesi (+/−)', async () => { const a = prompt('Tutar (örn. 25.00 veya -10.50):'); if (!a) return; const r = ask('Gerekçe:'); if (!r) throw new Error('Gerekçe zorunlu'); const x = await api.post('/api/admin/ledger/adjust', { user_id: id, amount: a, reason: r }); toast(`Kayıt: ${x.ref}`, 'ok'); }, true) : null),
       h('h3', { text: 'Son hareketler' }), d.recent.length ? h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, ['Zaman', 'Tür', 'Tutar', 'Bakiye', 'Ref', ''].map((x) => h('th', { text: x })))), h('tbody', {}, d.recent.map((t) => h('tr', {}, h('td', { text: dt(t.created_at) }), h('td', { text: t.type }), h('td', { text: money(t.amount) }), h('td', { text: money(t.balance_after) }), h('td', { text: t.tx_ref }),
         h('td', {}, isSuper() && !['reversal', 'refund'].includes(t.type) ? h('button', { class: 'btn small danger', type: 'button', text: 'Ters kayıt', onClick: async (e) => { const r = ask(`${t.tx_ref} için ters kayıt gerekçesi:`); if (!r) return; await busy(e.currentTarget, async () => { try { const x = await api.post('/api/admin/ledger/reverse', { ref: t.tx_ref, reason: r }); toast(`Ters kayıt: ${x.reversal_ref}`, 'ok'); openUser(id, holder); } catch (ex) { toast(ex.message, 'error'); } }); } }) : null)))))) : empty('Hareket yok'));

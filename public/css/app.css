@@ -329,3 +329,48 @@ th{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--sil
 .card-tile:hover .card-svg:not(.disabled),.card-link:hover .card-svg:not(.disabled){filter:drop-shadow(0 0 10px rgba(190,205,230,.16)) drop-shadow(0 18px 28px rgba(0,0,0,.45))}
 @keyframes fnx-foil-pass{0%{transform:translateX(-110%)}100%{transform:translateX(110%)}}
 @media(prefers-reduced-motion:reduce){.card-frame::after{animation:none!important;transition:none!important}}
+
+/* ===== Pro katmanı (20261127-pro-v1): yalnızca görünüm ===== */
+html{color-scheme:dark;-webkit-text-size-adjust:100%}
+body{font-feature-settings:"tnum" 1;text-rendering:optimizeLegibility}
+::selection{background:rgba(160,200,255,.28)}
+.avatar .ic,.success .big .ic{width:20px;height:20px}.success .big .ic{width:30px;height:30px}
+.avatar{background:linear-gradient(180deg,var(--surface-3),var(--surface-2))}
+a.item{transition:background .15s}
+@media (hover:hover){a.item:hover{background:rgba(255,255,255,.03)}}
+.back .ic{width:18px;height:18px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ===== v2: grafik, ayrıntı penceresi, işlem notu, yönetim ===== */
+.chart{height:230px;margin:14px 0 8px}
+.chart .line{stroke:var(--ok);stroke-width:2.25;stroke-linejoin:round;stroke-linecap:round}
+.chart .area{fill:url(#chartFill)}
+.chart .g-top{stop-color:var(--ok);stop-opacity:.28}.chart .g-bot{stop-color:var(--ok);stop-opacity:0}
+.chart.down .line{stroke:var(--danger)}.chart.down .g-top{stop-color:var(--danger)}.chart.down .g-bot{stop-color:var(--danger)}.chart.down .area{fill:url(#chartFill)}
+.chart-grid{stroke:var(--line);stroke-width:1;stroke-dasharray:2 6;vector-effect:non-scaling-stroke;opacity:.8}
+.chart-crosshair{stroke:var(--muted);opacity:.55}
+.chart-dot{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--surface);border:2px solid var(--silver);box-shadow:0 0 0 5px rgba(255,255,255,.07);pointer-events:none;z-index:1}
+.chart-axis{position:absolute;right:6px;font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums;pointer-events:none;background:rgba(15,17,20,.6);padding:1px 6px;border-radius:6px}
+.chart-axis.hi{top:6px}.chart-axis.lo{bottom:6px}
+.chart-tooltip{backdrop-filter:blur(10px);box-shadow:0 14px 32px -12px rgba(0,0,0,.8)}
+.tx{cursor:pointer;border-radius:12px;padding-left:8px;padding-right:8px}
+.tx:focus-visible{outline:2px solid var(--focus,#8DB8FF);outline-offset:2px}
+@media (hover:hover){.tx:hover{background:var(--surface-2)}}
+.tx-note{display:flex;gap:6px;align-items:flex-start;margin:4px 0 2px;padding:6px 9px;border-radius:9px;background:rgba(255,255,255,.045);border:1px solid var(--line);font-size:.86rem;color:var(--text);word-break:break-word}
+.tx-note .ic{flex:none;margin-top:2px;color:var(--muted)}
+.sheet-veil{position:fixed;inset:0;z-index:60;display:grid;place-items:end center;background:rgba(5,7,10,.62);backdrop-filter:blur(6px);animation:veil .18s ease-out}
+.sheet{width:min(520px,100%);max-height:88vh;overflow:auto;background:var(--surface);border:1px solid var(--line-2);border-radius:20px 20px 0 0;box-shadow:0 -20px 60px -20px rgba(0,0,0,.8);padding:0 20px calc(20px + env(safe-area-inset-bottom));animation:rise .24s cubic-bezier(.2,.7,.2,1)}
+.sheet-h{display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;background:var(--surface);padding:16px 0 10px}
+.sheet-h h2{margin:0;font-size:1.05rem;font-weight:600}
+.sheet-b{display:grid;gap:14px}
+.sheet-amt{font-size:2rem;font-weight:300;letter-spacing:-.02em;text-align:center;font-variant-numeric:tabular-nums;padding:6px 0 2px}
+@media (min-width:640px){.sheet-veil{place-items:center}.sheet{border-radius:20px}}
+@keyframes veil{from{opacity:0}}@keyframes rise{from{transform:translateY(24px);opacity:0}}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px}
+.stat{padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.stat span{display:block;font-size:.8rem;color:var(--muted);margin-bottom:4px}.stat b{font-size:1.35rem;font-weight:500;font-variant-numeric:tabular-nums}
+.bal-table td,.bal-table th{vertical-align:middle;white-space:nowrap}.bal-table .num{font-variant-numeric:tabular-nums}
+.bar{height:4px;border-radius:4px;background:var(--surface-3,#242830);margin-top:6px;min-width:120px;overflow:hidden}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--silver),var(--ok));border-radius:4px}
+.admin textarea,.sheet textarea{width:100%}
+.btn.danger{border-color:rgba(255,122,112,.4);color:var(--danger)}
+@media(max-width:640px){.chart{height:200px}.bal-table th:nth-child(3),.bal-table td:nth-child(3){display:none}}

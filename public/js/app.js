@@ -2,9 +2,9 @@ import { api, onUnauth } from './api.js';
 import { h, mount, toast, money, dt, load, field, pwField, busy, empty, icon, back } from './ui.js';
 import { state, refreshMe, setHide, cur, initial } from './state.js';
 import { renderCard } from './cardview.js';
-import { opsMenu, txList, txRow, sendFlow, giftFlow } from './views-ops.js?v=20261124-v6';
+import { opsMenu, txList, txRow, sendFlow, giftFlow } from './views-ops.js?v=20261128-pro-v2';
 import { cardsList, cardNew, cardDetail, cardPayView, editorLaunch, vaultView, scanView } from './views-cards.js';
-import { marketView, marketMini } from './views-market.js';
+import { marketView, marketMini } from './views-market.js?v=20261128-pro-v2';
 import { passView } from './views-pass.js';
 import { shopView, openShop } from './views-shop.js';
 

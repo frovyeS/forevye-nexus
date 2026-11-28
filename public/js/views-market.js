@@ -34,6 +34,12 @@ function sparkline(points) {
   svg.setAttribute('role', 'img');
   svg.setAttribute('aria-label', 'Kristal fiyat grafiği. Kesin fiyat, saat ve değişim için grafiğin üzerinde gezinin.');
   const coords = xy.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+  const defs = mk('defs', {});
+  const grad = mk('linearGradient', { id: 'chartFill', x1: 0, y1: 0, x2: 0, y2: 1 });
+  grad.append(mk('stop', { offset: '0%', class: 'g-top' }), mk('stop', { offset: '100%', class: 'g-bot' }));
+  defs.append(grad);
+  svg.append(defs);
+  for (let i = 0; i < 4; i += 1) { const gy = top + ((bottom - top) * i) / 3; svg.append(mk('line', { class: 'chart-grid', x1: left, x2: right, y1: gy, y2: gy })); }
   svg.append(
     mk('polygon', { class: 'area', points: `${left},${bottom + 6} ${coords} ${right},${bottom + 6}` }),
     mk('polyline', { class: 'line', points: coords }),
@@ -41,14 +47,15 @@ function sparkline(points) {
   if (values[values.length - 1] < values[0]) svg.classList.add('down');
   const vertical = mk('line', { class: 'chart-crosshair', x1: left, x2: left, y1: top, y2: bottom, visibility: 'hidden' });
   const horizontal = mk('line', { class: 'chart-crosshair', x1: left, x2: right, y1: top, y2: top, visibility: 'hidden' });
-  const marker = mk('circle', { class: 'chart-marker', cx: left, cy: top, r: 5, visibility: 'hidden' });
-  svg.append(vertical, horizontal, marker);
+  const marker = h('div', { class: 'chart-dot', hidden: true });
+  svg.append(vertical, horizontal);
   const tooltip = h('div', { class: 'chart-tooltip', hidden: true, role: 'status', 'aria-live': 'polite' });
-  const wrap = h('div', { class: 'chart-wrap' }, svg, tooltip);
+  const hiLabel = h('span', { class: 'chart-axis hi', text: fnPriceExact(high) }), loLabel = h('span', { class: 'chart-axis lo', text: fnPriceExact(low) });
+  const wrap = h('div', { class: 'chart-wrap' }, svg, hiLabel, loLabel, marker, tooltip);
   const hide = () => {
     vertical.setAttribute('visibility', 'hidden');
     horizontal.setAttribute('visibility', 'hidden');
-    marker.setAttribute('visibility', 'hidden');
+    marker.hidden = true;
     tooltip.hidden = true;
   };
   svg.addEventListener('pointermove', (event) => {
@@ -63,7 +70,7 @@ function sparkline(points) {
     const point = xy[nearest];
     vertical.setAttribute('x1', point.x); vertical.setAttribute('x2', point.x); vertical.setAttribute('visibility', 'visible');
     horizontal.setAttribute('y1', point.y); horizontal.setAttribute('y2', point.y); horizontal.setAttribute('visibility', 'visible');
-    marker.setAttribute('cx', point.x); marker.setAttribute('cy', point.y); marker.setAttribute('visibility', 'visible');
+    marker.hidden = false; marker.style.left = `${(point.x / width) * wrap.clientWidth}px`; marker.style.top = `${(point.y / height) * svg.clientHeight}px`;
     const change = values[0] ? ((point.value - values[0]) / values[0]) * 100 : 0;
     tooltip.replaceChildren(
       h('strong', { text: fnPriceExact(point.value) }),
